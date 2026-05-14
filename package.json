@@ -5,6 +5,10 @@
   "version": "0.1.0",
   "publisher": "AOSSoftware",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:ayanozturk/vscode-phpunit-runner.git"
+  },
   "engines": {
     "vscode": "^1.89.0"
   },
