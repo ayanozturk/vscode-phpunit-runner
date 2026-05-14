@@ -19,12 +19,7 @@ It parses PHPUnit test files, organizes them by folder structure, and lets you r
 
 ## Installation
 
-Install from the VS Code Marketplace, or build locally:
-
-```sh
-npm install
-make install
-```
+Install from the VS Code Marketplace.
 
 ## Configuration
 
@@ -71,19 +66,6 @@ Docker settings:
 - `PHPUnit Runner: Run Current File`
 - `PHPUnit Runner: Run Test At Cursor`
 - `PHPUnit Runner: Show Output`
-
-## Build and Publish
-
-```sh
-make package
-```
-
-To publish:
-
-```sh
-export VSCE_PAT=your_marketplace_token
-make publish
-```
 
 ## Repository
 
