@@ -70,7 +70,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.workspace.onDidDeleteFiles(async (event) => {
       for (const uri of event.files) {
-        controller.items.delete(uri.toString());
+        removeFileItem(uri);
       }
     }),
   );
@@ -85,7 +85,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await refreshUri(uri);
     }),
     watcher.onDidDelete((uri) => {
-      controller.items.delete(uri.toString());
+      removeFileItem(uri);
     }),
   );
 
@@ -98,15 +98,8 @@ export function deactivate(): void {
 
 async function discoverWorkspaceTests(): Promise<void> {
   const uris = await findCandidateTestFiles();
-  const seen = new Set(uris.map((uri) => uri.toString()));
-
+  controller.items.replace([]);
   await Promise.all(uris.map((uri) => refreshUri(uri)));
-
-  for (const [id] of controller.items) {
-    if (!seen.has(id)) {
-      controller.items.delete(id);
-    }
-  }
 }
 
 async function findCandidateTestFiles(): Promise<vscode.Uri[]> {
@@ -140,12 +133,12 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
 
   const parsed = await parseTestFile(uri, text);
   if (!parsed || parsed.classes.length === 0) {
-    controller.items.delete(uri.toString());
+    removeFileItem(uri);
     return;
   }
 
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-  const label = workspaceFolder ? path.relative(workspaceFolder.uri.fsPath, uri.fsPath) : path.basename(uri.fsPath);
+  const label = path.basename(uri.fsPath);
 
   const fileItem = controller.createTestItem(uri.toString(), label, uri);
   fileItem.range = new vscode.Range(0, 0, 0, 0);
@@ -173,10 +166,7 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
     fileItem.children.add(classItem);
   }
 
-  controller.items.replace([...
-    collectTestItems(controller.items).filter((existing) => existing.id !== fileItem.id),
-    fileItem,
-  ]);
+  addFileItemToHierarchy(fileItem, workspaceFolder);
 }
 
 async function parseTestFile(uri: vscode.Uri, text?: string): Promise<ParsedTestFile | undefined> {
@@ -222,15 +212,18 @@ async function parseTestFile(uri: vscode.Uri, text?: string): Promise<ParsedTest
 function parseTestMethods(body: string, bodyOffset: number, lineStarts: number[]): TestMethod[] {
   const methods: TestMethod[] = [];
   const methodPattern = /((?:\s*#\[[^\]]*Test[^\]]*\])|(?:\s*\/\*\*[\s\S]*?@test[\s\S]*?\*\/))?\s*(?:final\s+)?(?:public|protected)\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+  const signaturePattern = /(?:final\s+)?(?:public|protected)\s+function\b/;
 
   for (const match of body.matchAll(methodPattern)) {
     const annotationBlock = match[1] ?? '';
     const methodName = match[2];
-    const start = bodyOffset + (match.index ?? 0);
     const isTest = methodName.startsWith('test') || annotationBlock.includes('@test') || annotationBlock.includes('#[');
     if (!isTest) {
       continue;
     }
+
+    const signatureOffset = match[0].search(signaturePattern);
+    const start = bodyOffset + (match.index ?? 0) + Math.max(signatureOffset, 0);
 
     methods.push({
       name: methodName,
@@ -354,7 +347,7 @@ async function runCurrentFile(): Promise<void> {
   }
 
   await refreshUri(editor.document.uri, editor.document.getText());
-  const item = controller.items.get(editor.document.uri.toString());
+  const item = findFileItem(editor.document.uri);
   if (!item) {
     void vscode.window.showErrorMessage('No PHPUnit tests were found in the current file.');
     return;
@@ -371,7 +364,7 @@ async function runTestAtCursor(): Promise<void> {
   }
 
   await refreshUri(editor.document.uri, editor.document.getText());
-  const fileItem = controller.items.get(editor.document.uri.toString());
+  const fileItem = findFileItem(editor.document.uri);
   if (!fileItem) {
     void vscode.window.showErrorMessage('No PHPUnit tests were found in the current file.');
     return;
@@ -566,6 +559,125 @@ function escapeRegex(value: string): string {
 
 function getConfig(scope?: vscode.ConfigurationScope): vscode.WorkspaceConfiguration {
   return vscode.workspace.getConfiguration('phpunitRunner', scope);
+}
+
+function addFileItemToHierarchy(fileItem: vscode.TestItem, workspaceFolder?: vscode.WorkspaceFolder): void {
+  removeFileItem(fileItem.uri!);
+
+  if (!workspaceFolder) {
+    controller.items.add(fileItem);
+    return;
+  }
+
+  const root = getOrCreateWorkspaceItem(workspaceFolder);
+  const relativePath = path.relative(workspaceFolder.uri.fsPath, fileItem.uri!.fsPath);
+  const segments = path.dirname(relativePath).split(path.sep).filter((segment) => segment && segment !== '.');
+
+  let parent = root;
+  const folderSegments: string[] = [];
+  for (const segment of segments) {
+    folderSegments.push(segment);
+    const folderId = makeFolderItemId(workspaceFolder, folderSegments);
+    let folderItem = parent.children.get(folderId);
+    if (!folderItem) {
+      folderItem = controller.createTestItem(folderId, segment);
+      parent.children.add(folderItem);
+    }
+    parent = folderItem;
+  }
+
+  parent.children.add(fileItem);
+}
+
+function findFileItem(uri: vscode.Uri): vscode.TestItem | undefined {
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+  if (!workspaceFolder) {
+    return controller.items.get(uri.toString());
+  }
+
+  const root = controller.items.get(makeWorkspaceItemId(workspaceFolder));
+  if (!root) {
+    return undefined;
+  }
+
+  const relativePath = path.relative(workspaceFolder.uri.fsPath, uri.fsPath);
+  const segments = path.dirname(relativePath).split(path.sep).filter((segment) => segment && segment !== '.');
+
+  let parent = root;
+  const folderSegments: string[] = [];
+  for (const segment of segments) {
+    folderSegments.push(segment);
+    const folderItem = parent.children.get(makeFolderItemId(workspaceFolder, folderSegments));
+    if (!folderItem) {
+      return undefined;
+    }
+    parent = folderItem;
+  }
+
+  return parent.children.get(uri.toString());
+}
+
+function removeFileItem(uri: vscode.Uri): void {
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+  if (!workspaceFolder) {
+    controller.items.delete(uri.toString());
+    return;
+  }
+
+  const rootId = makeWorkspaceItemId(workspaceFolder);
+  const root = controller.items.get(rootId);
+  if (!root) {
+    return;
+  }
+
+  const relativePath = path.relative(workspaceFolder.uri.fsPath, uri.fsPath);
+  const segments = path.dirname(relativePath).split(path.sep).filter((segment) => segment && segment !== '.');
+  const ancestors: vscode.TestItem[] = [root];
+
+  let parent = root;
+  const folderSegments: string[] = [];
+  for (const segment of segments) {
+    folderSegments.push(segment);
+    const folderItem = parent.children.get(makeFolderItemId(workspaceFolder, folderSegments));
+    if (!folderItem) {
+      return;
+    }
+    ancestors.push(folderItem);
+    parent = folderItem;
+  }
+
+  parent.children.delete(uri.toString());
+
+  for (let index = ancestors.length - 1; index > 0; index -= 1) {
+    const item = ancestors[index];
+    if (item.children.size > 0) {
+      break;
+    }
+    ancestors[index - 1].children.delete(item.id);
+  }
+
+  const refreshedRoot = controller.items.get(rootId);
+  if (refreshedRoot && refreshedRoot.children.size === 0) {
+    controller.items.delete(rootId);
+  }
+}
+
+function getOrCreateWorkspaceItem(workspaceFolder: vscode.WorkspaceFolder): vscode.TestItem {
+  const rootId = makeWorkspaceItemId(workspaceFolder);
+  let root = controller.items.get(rootId);
+  if (!root) {
+    root = controller.createTestItem(rootId, workspaceFolder.name, workspaceFolder.uri);
+    controller.items.add(root);
+  }
+  return root;
+}
+
+function makeWorkspaceItemId(workspaceFolder: vscode.WorkspaceFolder): string {
+  return `workspace:${workspaceFolder.uri.toString()}`;
+}
+
+function makeFolderItemId(workspaceFolder: vscode.WorkspaceFolder, segments: string[]): string {
+  return `folder:${workspaceFolder.uri.toString()}:${segments.join('/')}`;
 }
 
 function collectTestItems(collection: vscode.TestItemCollection): vscode.TestItem[] {
