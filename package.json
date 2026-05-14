@@ -2,7 +2,7 @@
   "name": "aos-phpunit",
   "displayName": "PHPUnit Runner",
   "description": "Parse PHPUnit tests in PHP files and run them from VS Code.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "AOSSoftware",
   "license": "MIT",
   "repository": {
