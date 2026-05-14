@@ -2,7 +2,7 @@
   "name": "aos-phpunit",
   "displayName": "PHPUnit Runner",
   "description": "Parse PHPUnit tests in PHP files and run them from VS Code.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "AOSSoftware",
   "license": "MIT",
   "repository": {
@@ -24,10 +24,7 @@
     "testing"
   ],
   "activationEvents": [
-    "onLanguage:php",
-    "onCommand:phpunitRunner.refreshTests",
-    "onCommand:phpunitRunner.runCurrentFile",
-    "onCommand:phpunitRunner.runTestAtCursor"
+    "onLanguage:php"
   ],
   "icon": "phpunit-runner-logo.png",
   "main": "./dist/extension.js",
@@ -54,6 +51,34 @@
           "type": "string",
           "default": "",
           "description": "Optional working directory relative to the workspace folder or absolute on disk. Defaults to the current file's workspace folder."
+        },
+        "phpunitRunner.docker.enable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Execute PHPUnit inside a Docker container using docker exec."
+        },
+        "phpunitRunner.docker.command": {
+          "type": "string",
+          "default": "docker",
+          "description": "Docker CLI command used to execute PHPUnit inside a container."
+        },
+        "phpunitRunner.docker.container": {
+          "type": "string",
+          "default": "",
+          "description": "Target Docker container name or ID used when docker execution is enabled."
+        },
+        "phpunitRunner.docker.workspacePath": {
+          "type": "string",
+          "default": "",
+          "description": "Workspace root path inside the Docker container. Leave empty to reuse the host workspace path."
+        },
+        "phpunitRunner.docker.execArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional arguments appended to docker exec before the container name."
         },
         "phpunitRunner.additionalArgs": {
           "type": "array",

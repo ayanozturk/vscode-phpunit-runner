@@ -493,6 +493,7 @@ async function resolveInvocation(workspaceFolder: vscode.WorkspaceFolder, data: 
   const configuredCommand = config.get<string>('phpunitCommand', '').trim();
   const phpExecutable = config.get<string>('phpExecutable', 'php').trim() || 'php';
   const additionalArgs = config.get<string[]>('additionalArgs', []);
+  const dockerEnabled = config.get<boolean>('docker.enable', false);
   const configuredWorkingDirectory = config.get<string>('workingDirectory', '').trim();
   const cwd = configuredWorkingDirectory
     ? resolvePath(workspaceFolder, configuredWorkingDirectory)
@@ -523,7 +524,61 @@ async function resolveInvocation(workspaceFolder: vscode.WorkspaceFolder, data: 
 
   args.push(data.uri.fsPath);
 
-  return { command, args, cwd };
+  if (!dockerEnabled) {
+    return { command, args, cwd };
+  }
+
+  return resolveDockerInvocation(workspaceFolder, config, { command, args, cwd });
+
+}
+
+function resolveDockerInvocation(
+  workspaceFolder: vscode.WorkspaceFolder,
+  config: vscode.WorkspaceConfiguration,
+  invocation: { command: string; args: string[]; cwd: string },
+): { command: string; args: string[]; cwd: string } {
+  const dockerCommand = config.get<string>('docker.command', 'docker').trim() || 'docker';
+  const container = config.get<string>('docker.container', '').trim();
+  const dockerExecArgs = config.get<string[]>('docker.execArgs', []);
+  const configuredWorkspacePath = config.get<string>('docker.workspacePath', '').trim();
+
+  if (!container) {
+    throw new Error('phpunitRunner.docker.container must be set when docker execution is enabled.');
+  }
+
+  const containerWorkspacePath = configuredWorkspacePath || workspaceFolder.uri.fsPath;
+  const containerCwd = mapHostPathToContainer(invocation.cwd, workspaceFolder.uri.fsPath, containerWorkspacePath);
+  const containerCommand = mapCommandForContainer(invocation.command, workspaceFolder.uri.fsPath, containerWorkspacePath);
+  const containerArgs = invocation.args.map((arg) =>
+    mapHostPathToContainer(arg, workspaceFolder.uri.fsPath, containerWorkspacePath),
+  );
+
+  return {
+    command: dockerCommand,
+    args: ['exec', '-i', ...dockerExecArgs, '-w', containerCwd, container, containerCommand, ...containerArgs],
+    cwd: workspaceFolder.uri.fsPath,
+  };
+}
+
+function mapCommandForContainer(command: string, hostWorkspacePath: string, containerWorkspacePath: string): string {
+  if (path.isAbsolute(command)) {
+    return mapHostPathToContainer(command, hostWorkspacePath, containerWorkspacePath);
+  }
+
+  return command;
+}
+
+function mapHostPathToContainer(targetPath: string, hostWorkspacePath: string, containerWorkspacePath: string): string {
+  const normalizedHostWorkspace = normalizePathForComparison(hostWorkspacePath);
+  const normalizedTarget = normalizePathForComparison(targetPath);
+
+  if (normalizedTarget === normalizedHostWorkspace || normalizedTarget.startsWith(`${normalizedHostWorkspace}/`)) {
+    const relativePath = path.relative(hostWorkspacePath, targetPath);
+    return relativePath ? path.posix.join(toPosixPath(containerWorkspacePath), toPosixPath(relativePath)) : toPosixPath(containerWorkspacePath);
+  }
+
+  return targetPath;
+
 }
 
 async function autoDetectPhpUnit(workspaceFolder: vscode.WorkspaceFolder): Promise<string> {
@@ -551,6 +606,14 @@ function isPhpScript(command: string): boolean {
 
 function resolvePath(workspaceFolder: vscode.WorkspaceFolder, targetPath: string): string {
   return path.isAbsolute(targetPath) ? targetPath : path.join(workspaceFolder.uri.fsPath, targetPath);
+}
+
+function normalizePathForComparison(targetPath: string): string {
+  return toPosixPath(path.resolve(targetPath));
+}
+
+function toPosixPath(targetPath: string): string {
+  return targetPath.replace(/\\/g, '/');
 }
 
 function escapeRegex(value: string): string {
