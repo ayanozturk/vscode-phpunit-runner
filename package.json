@@ -1,0 +1,135 @@
+{
+  "name": "phpunit-runner",
+  "displayName": "PHPUnit Runner",
+  "description": "Parse PHPUnit tests in PHP files and run them from VS Code.",
+  "version": "0.1.0",
+  "publisher": "AOSSoftware",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.89.0"
+  },
+  "categories": [
+    "Testing",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "php",
+    "phpunit",
+    "test",
+    "testing"
+  ],
+  "activationEvents": [
+    "onLanguage:php",
+    "onCommand:phpunitRunner.refreshTests",
+    "onCommand:phpunitRunner.runCurrentFile",
+    "onCommand:phpunitRunner.runTestAtCursor"
+  ],
+  "icon": "phpunit-runner-logo.png",
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "PHPUnit Runner",
+      "properties": {
+        "phpunitRunner.phpExecutable": {
+          "type": "string",
+          "default": "php",
+          "description": "PHP executable used when launching PHPUnit."
+        },
+        "phpunitRunner.phpunitCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Explicit PHPUnit executable or script path. Leave empty to auto-detect vendor/bin/phpunit or fallback to phpunit on PATH."
+        },
+        "phpunitRunner.configurationFile": {
+          "type": "string",
+          "default": "",
+          "description": "Optional phpunit.xml or phpunit.xml.dist path relative to the workspace folder or absolute on disk."
+        },
+        "phpunitRunner.workingDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Optional working directory relative to the workspace folder or absolute on disk. Defaults to the current file's workspace folder."
+        },
+        "phpunitRunner.additionalArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional arguments appended to every PHPUnit invocation."
+        },
+        "phpunitRunner.testFileGlobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/*Test.php",
+            "**/tests/**/*.php"
+          ],
+          "description": "Glob patterns used when refreshing PHPUnit tests across the workspace."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "phpunitRunner.refreshTests",
+        "title": "PHPUnit Runner: Refresh Tests"
+      },
+      {
+        "command": "phpunitRunner.runCurrentFile",
+        "title": "PHPUnit Runner: Run Current File"
+      },
+      {
+        "command": "phpunitRunner.runTestAtCursor",
+        "title": "PHPUnit Runner: Run Test At Cursor"
+      },
+      {
+        "command": "phpunitRunner.showOutput",
+        "title": "PHPUnit Runner: Show Output"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "phpunitRunner.refreshTests"
+        },
+        {
+          "command": "phpunitRunner.runCurrentFile"
+        },
+        {
+          "command": "phpunitRunner.runTestAtCursor"
+        },
+        {
+          "command": "phpunitRunner.showOutput"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "phpunitRunner.runCurrentFile",
+          "when": "resourceLangId == php",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "tsc -p ./tsconfig.json",
+    "watch": "tsc -watch -p ./tsconfig.json",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "vsix": "vsce package --no-dependencies",
+    "publish:marketplace": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/vscode": "^1.89.0",
+    "@vscode/test-electron": "^2.3.9",
+    "@vscode/vsce": "^3.9.1",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.4.5",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.4"
+  }
+}
