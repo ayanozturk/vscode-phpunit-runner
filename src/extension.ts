@@ -141,7 +141,6 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
   const label = path.basename(uri.fsPath);
 
   const fileItem = controller.createTestItem(uri.toString(), label, uri);
-  fileItem.range = new vscode.Range(0, 0, 0, 0);
   itemData.set(fileItem, { kind: 'file', uri });
 
   for (const cls of parsed.classes) {
@@ -185,6 +184,8 @@ async function parseTestFile(uri: vscode.Uri, text?: string): Promise<ParsedTest
     const matchText = match[0];
     const className = match[1];
     const matchIndex = match.index ?? 0;
+    const classKeywordOffset = matchText.indexOf('class');
+    const classKeywordIndex = matchIndex + Math.max(classKeywordOffset, 0);
     const openBraceIndex = matchIndex + matchText.lastIndexOf('{');
     const closeBraceIndex = findMatchingBrace(source, openBraceIndex);
     if (closeBraceIndex === -1) {
@@ -201,7 +202,7 @@ async function parseTestFile(uri: vscode.Uri, text?: string): Promise<ParsedTest
     classes.push({
       name: className,
       fullyQualifiedName: fqcn,
-      range: rangeFromOffsets(lineStarts, matchIndex, closeBraceIndex),
+      range: rangeFromOffsets(lineStarts, classKeywordIndex, openBraceIndex),
       methods,
     });
   }
@@ -450,7 +451,6 @@ async function executePhpUnit(data: TestItemData, token: vscode.CancellationToke
   const start = Date.now();
 
   outputChannel.appendLine(`[phpunit-runner] ${[invocation.command, ...invocation.args].join(' ')}`);
-  outputChannel.show(true);
 
   return await new Promise((resolve, reject) => {
     const child = spawn(invocation.command, invocation.args, {
