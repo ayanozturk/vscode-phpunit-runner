@@ -409,14 +409,14 @@ async function runTests(request: vscode.TestRunRequest, token: vscode.Cancellati
 }
 
 async function runItem(item: vscode.TestItem, run: vscode.TestRun, token: vscode.CancellationToken): Promise<void> {
-  if (item.children.size > 0) {
+  const data = itemData.get(item);
+  if (!data && item.children.size > 0) {
     for (const child of collectTestItems(item.children)) {
       await runItem(child, run, token);
     }
     return;
   }
 
-  const data = itemData.get(item);
   if (!data) {
     return;
   }
@@ -431,13 +431,37 @@ async function runItem(item: vscode.TestItem, run: vscode.TestRun, token: vscode
 
     if (result.exitCode === 0) {
       run.passed(item, result.duration);
+      markDescendants(run, item, 'passed', result.duration);
       return;
     }
 
     run.failed(item, message, result.duration);
+    markDescendants(run, item, 'skipped');
   } catch (error) {
     const message = new vscode.TestMessage(String(error));
     run.failed(item, message);
+    markDescendants(run, item, 'skipped');
+  }
+}
+
+function markDescendants(
+  run: vscode.TestRun,
+  item: vscode.TestItem,
+  state: 'passed' | 'skipped',
+  duration?: number,
+): void {
+  if (item.children.size === 0) {
+    return;
+  }
+
+  for (const child of collectTestItems(item.children)) {
+    if (state === 'passed') {
+      run.passed(child, duration);
+    } else {
+      run.skipped(child);
+    }
+
+    markDescendants(run, child, state, duration);
   }
 }
 
