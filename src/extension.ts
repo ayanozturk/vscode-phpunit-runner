@@ -2,30 +2,18 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import * as vscode from 'vscode';
+import { autoDetectConfigurationFile, resolveInvocation } from './invoke';
+import {
+  aggregateMethodStatus,
+  firstFailureLocation,
+  firstFailureMessage,
+  parseJUnitXml,
+} from './junit';
+import { classNamesMatch, methodNameFromTestCase, parseTestSource } from './parser';
+import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
+import type { JUnitTestCase, RunnerConfig, SourceRange, TestTarget } from './types';
 
-type TestMethod = {
-  name: string;
-  range: vscode.Range;
-};
-
-type TestClass = {
-  name: string;
-  fullyQualifiedName: string;
-  range: vscode.Range;
-  methods: TestMethod[];
-};
-
-type ParsedTestFile = {
-  uri: vscode.Uri;
-  classes: TestClass[];
-};
-
-type TestItemData = {
-  kind: 'file' | 'class' | 'method';
-  uri: vscode.Uri;
-  className?: string;
-  methodName?: string;
-};
+type TestItemData = TestTarget & { uri: vscode.Uri };
 
 const itemData = new WeakMap<vscode.TestItem, TestItemData>();
 
@@ -76,6 +64,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   const watcher = vscode.workspace.createFileSystemWatcher('**/*.php');
+  const configWatcher = vscode.workspace.createFileSystemWatcher('**/phpunit.xml*');
   context.subscriptions.push(
     watcher,
     watcher.onDidCreate(async (uri) => {
@@ -86,6 +75,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     watcher.onDidDelete((uri) => {
       removeFileItem(uri);
+    }),
+    configWatcher,
+    configWatcher.onDidCreate(async () => {
+      await discoverWorkspaceTests();
+    }),
+    configWatcher.onDidChange(async () => {
+      await discoverWorkspaceTests();
+    }),
+    configWatcher.onDidDelete(async () => {
+      await discoverWorkspaceTests();
     }),
   );
 
@@ -104,11 +103,13 @@ async function discoverWorkspaceTests(): Promise<void> {
 
 async function findCandidateTestFiles(): Promise<vscode.Uri[]> {
   const config = getConfig();
-  const globs = config.get<string[]>('testFileGlobs', ['**/*Test.php', '**/tests/**/*.php']);
+  const globs = config.get<string[]>('testFileGlobs', DEFAULT_TEST_GLOBS);
+  const excludes = config.get<string[]>('excludeGlobs', DEFAULT_EXCLUDE_GLOBS);
+  const excludeGlob = excludes.length > 0 ? `{${excludes.join(',')}}` : undefined;
   const unique = new Map<string, vscode.Uri>();
 
   for (const pattern of globs) {
-    const files = await vscode.workspace.findFiles(pattern);
+    const files = await vscode.workspace.findFiles(pattern, excludeGlob);
     for (const file of files) {
       unique.set(file.toString(), file);
     }
@@ -141,21 +142,27 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
   const label = path.basename(uri.fsPath);
 
   const fileItem = controller.createTestItem(uri.toString(), label, uri);
-  itemData.set(fileItem, { kind: 'file', uri });
+  itemData.set(fileItem, { kind: 'file', uri, filePath: uri.fsPath });
 
   for (const cls of parsed.classes) {
     const classId = `${uri.toString()}::${cls.fullyQualifiedName}`;
     const classItem = controller.createTestItem(classId, cls.name, uri);
-    classItem.range = cls.range;
-    itemData.set(classItem, { kind: 'class', uri, className: cls.fullyQualifiedName });
+    classItem.range = toVscodeRange(cls.range);
+    itemData.set(classItem, {
+      kind: 'class',
+      uri,
+      filePath: uri.fsPath,
+      className: cls.fullyQualifiedName,
+    });
 
     for (const method of cls.methods) {
       const methodId = `${classId}::${method.name}`;
       const methodItem = controller.createTestItem(methodId, method.name, uri);
-      methodItem.range = method.range;
+      methodItem.range = toVscodeRange(method.range);
       itemData.set(methodItem, {
         kind: 'method',
         uri,
+        filePath: uri.fsPath,
         className: cls.fullyQualifiedName,
         methodName: method.name,
       });
@@ -168,167 +175,13 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
   addFileItemToHierarchy(fileItem, workspaceFolder);
 }
 
-async function parseTestFile(uri: vscode.Uri, text?: string): Promise<ParsedTestFile | undefined> {
+async function parseTestFile(uri: vscode.Uri, text?: string) {
   const source = text ?? await readFileText(uri);
   if (source === undefined) {
     return undefined;
   }
 
-  const namespaceMatch = /^\s*namespace\s+([^;]+);/m.exec(source);
-  const namespace = namespaceMatch?.[1]?.trim() ?? '';
-  const lineStarts = getLineStarts(source);
-  const classes: TestClass[] = [];
-
-  const classPattern = /(?:final\s+|abstract\s+)?class\s+([A-Za-z_][A-Za-z0-9_]*)[^\{]*\{/g;
-  for (const match of source.matchAll(classPattern)) {
-    const matchText = match[0];
-    const className = match[1];
-    const matchIndex = match.index ?? 0;
-    const classKeywordOffset = matchText.indexOf('class');
-    const classKeywordIndex = matchIndex + Math.max(classKeywordOffset, 0);
-    const openBraceIndex = matchIndex + matchText.lastIndexOf('{');
-    const closeBraceIndex = findMatchingBrace(source, openBraceIndex);
-    if (closeBraceIndex === -1) {
-      continue;
-    }
-
-    const body = source.slice(openBraceIndex + 1, closeBraceIndex);
-    const methods = parseTestMethods(body, openBraceIndex + 1, lineStarts);
-    if (methods.length === 0) {
-      continue;
-    }
-
-    const fqcn = namespace ? `${namespace}\\${className}` : className;
-    classes.push({
-      name: className,
-      fullyQualifiedName: fqcn,
-      range: rangeFromOffsets(lineStarts, classKeywordIndex, openBraceIndex),
-      methods,
-    });
-  }
-
-  return { uri, classes };
-}
-
-function parseTestMethods(body: string, bodyOffset: number, lineStarts: number[]): TestMethod[] {
-  const methods: TestMethod[] = [];
-  const methodPattern = /((?:\s*#\[[^\]]*Test[^\]]*\])|(?:\s*\/\*\*[\s\S]*?@test[\s\S]*?\*\/))?\s*(?:final\s+)?(?:public|protected)\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
-  const signaturePattern = /(?:final\s+)?(?:public|protected)\s+function\b/;
-
-  for (const match of body.matchAll(methodPattern)) {
-    const annotationBlock = match[1] ?? '';
-    const methodName = match[2];
-    const isTest = methodName.startsWith('test') || annotationBlock.includes('@test') || annotationBlock.includes('#[');
-    if (!isTest) {
-      continue;
-    }
-
-    const signatureOffset = match[0].search(signaturePattern);
-    const start = bodyOffset + (match.index ?? 0) + Math.max(signatureOffset, 0);
-
-    methods.push({
-      name: methodName,
-      range: rangeFromOffsets(lineStarts, start, start + match[0].length),
-    });
-  }
-
-  return methods;
-}
-
-function getLineStarts(source: string): number[] {
-  const starts = [0];
-  for (let index = 0; index < source.length; index += 1) {
-    if (source[index] === '\n') {
-      starts.push(index + 1);
-    }
-  }
-  return starts;
-}
-
-function rangeFromOffsets(lineStarts: number[], start: number, end: number): vscode.Range {
-  return new vscode.Range(positionFromOffset(lineStarts, start), positionFromOffset(lineStarts, end));
-}
-
-function positionFromOffset(lineStarts: number[], offset: number): vscode.Position {
-  let low = 0;
-  let high = lineStarts.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    if (lineStarts[mid] <= offset) {
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
-  }
-
-  const line = Math.max(high, 0);
-  return new vscode.Position(line, Math.max(offset - lineStarts[line], 0));
-}
-
-function findMatchingBrace(source: string, openBraceIndex: number): number {
-  let depth = 0;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let inLineComment = false;
-  let inBlockComment = false;
-
-  for (let index = openBraceIndex; index < source.length; index += 1) {
-    const char = source[index];
-    const next = source[index + 1] ?? '';
-    const prev = source[index - 1] ?? '';
-
-    if (inLineComment) {
-      if (char === '\n') {
-        inLineComment = false;
-      }
-      continue;
-    }
-
-    if (inBlockComment) {
-      if (prev === '*' && char === '/') {
-        inBlockComment = false;
-      }
-      continue;
-    }
-
-    if (!inSingleQuote && !inDoubleQuote) {
-      if (char === '/' && next === '/') {
-        inLineComment = true;
-        continue;
-      }
-
-      if (char === '/' && next === '*') {
-        inBlockComment = true;
-        continue;
-      }
-    }
-
-    if (char === '\'' && !inDoubleQuote && prev !== '\\') {
-      inSingleQuote = !inSingleQuote;
-      continue;
-    }
-
-    if (char === '"' && !inSingleQuote && prev !== '\\') {
-      inDoubleQuote = !inDoubleQuote;
-      continue;
-    }
-
-    if (inSingleQuote || inDoubleQuote) {
-      continue;
-    }
-
-    if (char === '{') {
-      depth += 1;
-    } else if (char === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        return index;
-      }
-    }
-  }
-
-  return -1;
+  return parseTestSource(uri.fsPath, source);
 }
 
 async function readFileText(uri: vscode.Uri): Promise<string | undefined> {
@@ -421,14 +274,31 @@ async function runItem(item: vscode.TestItem, run: vscode.TestRun, token: vscode
     return;
   }
 
-  run.enqueued(item);
-  run.started(item);
+  const targets = collectExecutableItems(item);
+  for (const target of targets) {
+    run.enqueued(target);
+    run.started(target);
+  }
 
   try {
     const result = await executePhpUnit(data, token);
-    const message = new vscode.TestMessage(result.output || 'PHPUnit completed without output.');
     run.appendOutput(result.output);
+    applyExecutionResult(run, item, result);
+  } catch (error) {
+    const message = new vscode.TestMessage(String(error));
+    run.failed(item, message);
+    markDescendants(run, item, 'skipped');
+  }
+}
 
+function applyExecutionResult(
+  run: vscode.TestRun,
+  item: vscode.TestItem,
+  result: { output: string; exitCode: number; duration: number; cases: JUnitTestCase[] },
+): void {
+  const methods = collectMethodItems(item);
+  if (result.cases.length === 0 || methods.length === 0) {
+    const message = new vscode.TestMessage(result.output || 'PHPUnit completed without output.');
     if (result.exitCode === 0) {
       run.passed(item, result.duration);
       markDescendants(run, item, 'passed', result.duration);
@@ -437,11 +307,68 @@ async function runItem(item: vscode.TestItem, run: vscode.TestRun, token: vscode
 
     run.failed(item, message, result.duration);
     markDescendants(run, item, 'skipped');
-  } catch (error) {
-    const message = new vscode.TestMessage(String(error));
-    run.failed(item, message);
-    markDescendants(run, item, 'skipped');
+    return;
   }
+
+  let anyFailed = false;
+
+  for (const methodItem of methods) {
+    const data = itemData.get(methodItem);
+    if (!data?.className || !data.methodName) {
+      continue;
+    }
+
+    const cases = findCasesForMethod(result.cases, data.className, data.methodName);
+    if (!cases || cases.length === 0) {
+      run.skipped(methodItem);
+      continue;
+    }
+
+    const status = aggregateMethodStatus(cases);
+    const duration = Math.round(cases.reduce((sum, testCase) => sum + testCase.timeSeconds, 0) * 1000);
+    if (status === 'passed') {
+      run.passed(methodItem, duration);
+      continue;
+    }
+
+    if (status === 'skipped') {
+      run.skipped(methodItem);
+      continue;
+    }
+
+    anyFailed = true;
+    run.failed(methodItem, createFailureMessage(methodItem, cases), duration);
+  }
+
+  const data = itemData.get(item);
+  if (data?.kind === 'method') {
+    return;
+  }
+
+  if (anyFailed || result.exitCode !== 0) {
+    run.failed(item, new vscode.TestMessage(result.output || 'One or more PHPUnit tests failed.'), result.duration);
+    return;
+  }
+
+  run.passed(item, result.duration);
+}
+
+function findCasesForMethod(cases: JUnitTestCase[], className: string, methodName: string): JUnitTestCase[] {
+  return cases.filter((item) => (
+    classNamesMatch(item.className, className)
+    && methodNameFromTestCase(item.name) === methodName
+  ));
+}
+
+function createFailureMessage(item: vscode.TestItem, cases: JUnitTestCase[]): vscode.TestMessage {
+  const message = new vscode.TestMessage(firstFailureMessage(cases) || 'PHPUnit test failed.');
+  const location = firstFailureLocation(cases);
+  const line = location.line && location.line > 0 ? location.line - 1 : item.range?.start.line;
+  const uri = location.file ? vscode.Uri.file(location.file) : item.uri;
+  if (uri && line !== undefined) {
+    message.location = new vscode.Location(uri, new vscode.Position(line, 0));
+  }
+  return message;
 }
 
 function markDescendants(
@@ -465,183 +392,102 @@ function markDescendants(
   }
 }
 
-async function executePhpUnit(data: TestItemData, token: vscode.CancellationToken): Promise<{ output: string; exitCode: number; duration: number }> {
+async function executePhpUnit(
+  data: TestItemData,
+  token: vscode.CancellationToken,
+): Promise<{ output: string; exitCode: number; duration: number; cases: JUnitTestCase[] }> {
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(data.uri);
   if (!workspaceFolder) {
     throw new Error(`No workspace folder found for ${data.uri.fsPath}`);
   }
 
-  const invocation = await resolveInvocation(workspaceFolder, data);
+  const runnerDir = path.join(workspaceFolder.uri.fsPath, '.phpunit-runner');
+  await fs.mkdir(runnerDir, { recursive: true });
+  const junitLogPath = path.join(runnerDir, `junit-${Date.now()}-${Math.random().toString(16).slice(2)}.xml`);
+
+  const config = readRunnerConfig(workspaceFolder);
+  const invocation = await resolveInvocation({
+    workspacePath: workspaceFolder.uri.fsPath,
+    target: data,
+    config,
+    junitLogPath,
+    detectedConfigurationFile: config.configurationFile
+      ? undefined
+      : await autoDetectConfigurationFile(workspaceFolder.uri.fsPath),
+  });
   const start = Date.now();
 
   outputChannel.appendLine(`[phpunit-runner] ${[invocation.command, ...invocation.args].join(' ')}`);
 
-  return await new Promise((resolve, reject) => {
-    const child = spawn(invocation.command, invocation.args, {
-      cwd: invocation.cwd,
-      env: process.env,
-    });
+  try {
+    const result = await new Promise<{ output: string; exitCode: number }>((resolve, reject) => {
+      const child = spawn(invocation.command, invocation.args, {
+        cwd: invocation.cwd,
+        env: process.env,
+      });
 
-    let output = '';
-    const append = (chunk: string | Buffer) => {
-      const text = chunk.toString();
-      output += text;
-      outputChannel.append(text);
-    };
+      let output = '';
+      const append = (chunk: string | Buffer) => {
+        const text = chunk.toString();
+        output += text;
+        outputChannel.append(text);
+      };
 
-    child.stdout.on('data', append);
-    child.stderr.on('data', append);
+      child.stdout.on('data', append);
+      child.stderr.on('data', append);
 
-    const subscription = token.onCancellationRequested(() => {
-      child.kill();
-    });
+      const subscription = token.onCancellationRequested(() => {
+        child.kill();
+      });
 
-    child.on('error', (error) => {
-      subscription.dispose();
-      reject(error);
-    });
+      child.on('error', (error) => {
+        subscription.dispose();
+        reject(error);
+      });
 
-    child.on('close', (exitCode) => {
-      subscription.dispose();
-      resolve({
-        output,
-        exitCode: exitCode ?? 1,
-        duration: Date.now() - start,
+      child.on('close', (exitCode) => {
+        subscription.dispose();
+        resolve({
+          output,
+          exitCode: exitCode ?? 1,
+        });
       });
     });
-  });
+
+    const cases = await readJUnitCases(junitLogPath);
+    return {
+      ...result,
+      duration: Date.now() - start,
+      cases,
+    };
+  } finally {
+    await fs.rm(junitLogPath, { force: true }).catch(() => undefined);
+  }
 }
 
-async function resolveInvocation(workspaceFolder: vscode.WorkspaceFolder, data: TestItemData): Promise<{ command: string; args: string[]; cwd: string }> {
-  const config = getConfig(workspaceFolder);
-  const configuredCommand = config.get<string>('phpunitCommand', '').trim();
-  const phpExecutable = config.get<string>('phpExecutable', 'php').trim() || 'php';
-  const additionalArgs = config.get<string[]>('additionalArgs', []);
-  const dockerEnabled = config.get<boolean>('docker.enable', false);
-  const configuredWorkingDirectory = config.get<string>('workingDirectory', '').trim();
-  const cwd = configuredWorkingDirectory
-    ? resolvePath(workspaceFolder, configuredWorkingDirectory)
-    : workspaceFolder.uri.fsPath;
-
-  const configurationFile = config.get<string>('configurationFile', '').trim();
-  const phpunitExecutable = configuredCommand || await autoDetectPhpUnit(workspaceFolder);
-  const args: string[] = [];
-
-  const needsPhp = isPhpScript(phpunitExecutable);
-  const command = needsPhp ? phpExecutable : phpunitExecutable;
-  if (needsPhp) {
-    args.push(phpunitExecutable);
+async function readJUnitCases(junitLogPath: string): Promise<JUnitTestCase[]> {
+  try {
+    const xml = await fs.readFile(junitLogPath, 'utf8');
+    return parseJUnitXml(xml);
+  } catch {
+    return [];
   }
-
-  if (configurationFile) {
-    args.push('--configuration', resolvePath(workspaceFolder, configurationFile));
-  }
-
-  args.push('--colors=always');
-  args.push(...additionalArgs);
-
-  if (data.className && data.methodName) {
-    args.push('--filter', `^${escapeRegex(data.className)}::${escapeRegex(data.methodName)}$`);
-  } else if (data.className) {
-    args.push('--filter', `^${escapeRegex(data.className)}(?:::.*)?$`);
-  }
-
-  args.push(data.uri.fsPath);
-
-  if (!dockerEnabled) {
-    return { command, args, cwd };
-  }
-
-  return resolveDockerInvocation(workspaceFolder, config, { command, args, cwd });
-
 }
 
-function resolveDockerInvocation(
-  workspaceFolder: vscode.WorkspaceFolder,
-  config: vscode.WorkspaceConfiguration,
-  invocation: { command: string; args: string[]; cwd: string },
-): { command: string; args: string[]; cwd: string } {
-  const dockerCommand = config.get<string>('docker.command', 'docker').trim() || 'docker';
-  const container = config.get<string>('docker.container', '').trim();
-  const dockerExecArgs = config.get<string[]>('docker.execArgs', []);
-  const configuredWorkspacePath = config.get<string>('docker.workspacePath', '').trim();
-
-  if (!container) {
-    throw new Error('phpunitRunner.docker.container must be set when docker execution is enabled.');
-  }
-
-  const containerWorkspacePath = configuredWorkspacePath || workspaceFolder.uri.fsPath;
-  const containerCwd = mapHostPathToContainer(invocation.cwd, workspaceFolder.uri.fsPath, containerWorkspacePath);
-  const containerCommand = mapCommandForContainer(invocation.command, workspaceFolder.uri.fsPath, containerWorkspacePath);
-  const containerArgs = invocation.args.map((arg) =>
-    mapHostPathToContainer(arg, workspaceFolder.uri.fsPath, containerWorkspacePath),
-  );
-
+function readRunnerConfig(scope?: vscode.ConfigurationScope): RunnerConfig {
+  const config = getConfig(scope);
   return {
-    command: dockerCommand,
-    args: ['exec', '-i', ...dockerExecArgs, '-w', containerCwd, container, containerCommand, ...containerArgs],
-    cwd: workspaceFolder.uri.fsPath,
+    phpExecutable: config.get<string>('phpExecutable', 'php'),
+    phpunitCommand: config.get<string>('phpunitCommand', ''),
+    configurationFile: config.get<string>('configurationFile', ''),
+    workingDirectory: config.get<string>('workingDirectory', ''),
+    additionalArgs: config.get<string[]>('additionalArgs', []),
+    dockerEnable: config.get<boolean>('docker.enable', false),
+    dockerCommand: config.get<string>('docker.command', 'docker'),
+    dockerContainer: config.get<string>('docker.container', ''),
+    dockerWorkspacePath: config.get<string>('docker.workspacePath', ''),
+    dockerExecArgs: config.get<string[]>('docker.execArgs', []),
   };
-}
-
-function mapCommandForContainer(command: string, hostWorkspacePath: string, containerWorkspacePath: string): string {
-  if (path.isAbsolute(command)) {
-    return mapHostPathToContainer(command, hostWorkspacePath, containerWorkspacePath);
-  }
-
-  return command;
-}
-
-function mapHostPathToContainer(targetPath: string, hostWorkspacePath: string, containerWorkspacePath: string): string {
-  const normalizedHostWorkspace = normalizePathForComparison(hostWorkspacePath);
-  const normalizedTarget = normalizePathForComparison(targetPath);
-
-  if (normalizedTarget === normalizedHostWorkspace || normalizedTarget.startsWith(`${normalizedHostWorkspace}/`)) {
-    const relativePath = path.relative(hostWorkspacePath, targetPath);
-    return relativePath ? path.posix.join(toPosixPath(containerWorkspacePath), toPosixPath(relativePath)) : toPosixPath(containerWorkspacePath);
-  }
-
-  return targetPath;
-
-}
-
-async function autoDetectPhpUnit(workspaceFolder: vscode.WorkspaceFolder): Promise<string> {
-  const candidates = process.platform === 'win32'
-    ? ['vendor\\bin\\phpunit.bat', 'vendor\\bin\\phpunit']
-    : ['vendor/bin/phpunit'];
-
-  for (const candidate of candidates) {
-    const resolved = path.join(workspaceFolder.uri.fsPath, candidate);
-    try {
-      await fs.access(resolved);
-      return resolved;
-    } catch {
-      continue;
-    }
-  }
-
-  return 'phpunit';
-}
-
-function isPhpScript(command: string): boolean {
-  const normalized = command.toLowerCase();
-  return normalized.endsWith('/phpunit') || normalized.endsWith('\\phpunit') || normalized.endsWith('.php');
-}
-
-function resolvePath(workspaceFolder: vscode.WorkspaceFolder, targetPath: string): string {
-  return path.isAbsolute(targetPath) ? targetPath : path.join(workspaceFolder.uri.fsPath, targetPath);
-}
-
-function normalizePathForComparison(targetPath: string): string {
-  return toPosixPath(path.resolve(targetPath));
-}
-
-function toPosixPath(targetPath: string): string {
-  return targetPath.replace(/\\/g, '/');
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function getConfig(scope?: vscode.ConfigurationScope): vscode.WorkspaceConfiguration {
@@ -736,11 +582,11 @@ function removeFileItem(uri: vscode.Uri): void {
   parent.children.delete(uri.toString());
 
   for (let index = ancestors.length - 1; index > 0; index -= 1) {
-    const item = ancestors[index];
-    if (item.children.size > 0) {
+    const folder = ancestors[index];
+    if (folder.children.size > 0) {
       break;
     }
-    ancestors[index - 1].children.delete(item.id);
+    ancestors[index - 1].children.delete(folder.id);
   }
 
   const refreshedRoot = controller.items.get(rootId);
@@ -773,4 +619,28 @@ function collectTestItems(collection: vscode.TestItemCollection): vscode.TestIte
     items.push(item);
   });
   return items;
+}
+
+function collectExecutableItems(item: vscode.TestItem): vscode.TestItem[] {
+  return [item, ...collectMethodItems(item).filter((candidate) => candidate !== item)];
+}
+
+function collectMethodItems(item: vscode.TestItem): vscode.TestItem[] {
+  const data = itemData.get(item);
+  if (data?.kind === 'method') {
+    return [item];
+  }
+
+  const methods: vscode.TestItem[] = [];
+  for (const child of collectTestItems(item.children)) {
+    methods.push(...collectMethodItems(child));
+  }
+  return methods;
+}
+
+function toVscodeRange(range: SourceRange): vscode.Range {
+  return new vscode.Range(
+    new vscode.Position(range.start.line, range.start.character),
+    new vscode.Position(range.end.line, range.end.character),
+  );
 }

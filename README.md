@@ -6,13 +6,16 @@ It parses PHPUnit test files, organizes them by folder structure, and lets you r
 
 ## Features
 
-- Discovers PHPUnit test files across the workspace
+- Discovers PHPUnit test files across the workspace (vendor and `node_modules` excluded by default)
+- Auto-detects `phpunit.xml` / `phpunit.xml.dist` and reloads when they change
 - Detects test methods by:
   - `test*` method names
   - `@test` docblocks
-  - `#[Test]` attributes
+  - `#[Test]` and `#[PHPUnit\Framework\Attributes\Test]` attributes
 - Organizes tests in the Testing panel by workspace, folders, files, classes, and methods
-- Run the current file from the editor title
+- Maps PHPUnit JUnit output onto individual Test Explorer items (pass / fail / skip)
+- Shows assertion failures with file locations in the Test Results panel
+- Run the current file from the editor title or context menu
 - Run the test at the current cursor position
 - Shows PHPUnit output in a dedicated output channel
 - Supports local execution and Docker container execution
@@ -31,6 +34,7 @@ Core settings:
 - `phpunitRunner.workingDirectory`
 - `phpunitRunner.additionalArgs`
 - `phpunitRunner.testFileGlobs`
+- `phpunitRunner.excludeGlobs`
 
 Docker settings:
 

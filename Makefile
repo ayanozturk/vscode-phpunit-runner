@@ -1,11 +1,16 @@
-.PHONY: all build install package publish clean dev
+.PHONY: all build install package publish clean dev test
 
 VSIX := $(shell node -p "require('./package.json').name + '-' + require('./package.json').version + '.vsix'" 2>/dev/null || echo "phpunit-runner-0.1.0.vsix")
 
 all: build
 
+## test: run unit tests
+test:
+	@echo "==> Running unit tests..."
+	npm test
+
 ## build: compile TypeScript and bundle the extension
-build:
+build: test
 	@echo "==> Compiling TypeScript extension..."
 	npm run compile
 	@echo "==> Bundling extension..."

@@ -1,0 +1,14 @@
+---
+description: Commit and push every completed change set
+alwaysApply: true
+---
+
+# Git workflow
+
+When a task is finished (feature, fix, docs, or chore):
+
+1. Commit all relevant changes on the current branch. Follow the repo commit style. Do not skip hooks.
+2. Push the branch to `origin` (`git push -u origin HEAD` if it has no upstream).
+3. If the work includes a version bump, create an annotated tag (`vX.Y.Z`) and push the tag.
+
+Do this without waiting to be asked. Do not force-push `main`/`master`. Do not commit secrets.
