@@ -13,6 +13,9 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
     const matchIndex = match.index ?? 0;
     const classKeywordOffset = matchText.indexOf('class');
     const classKeywordIndex = matchIndex + Math.max(classKeywordOffset, 0);
+    if (/\babstract\s+class\b/.test(matchText)) {
+      continue;
+    }
     const openBraceIndex = matchIndex + matchText.lastIndexOf('{');
     const closeBraceIndex = findMatchingBrace(source, openBraceIndex);
     if (closeBraceIndex === -1) {
@@ -39,29 +42,47 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
 
 export function parseTestMethods(body: string, bodyOffset: number, lineStarts: number[]): TestMethod[] {
   const methods: TestMethod[] = [];
-  const methodPattern = /((?:\s*#\[[^\]]*Test[^\]]*\])|(?:\s*\/\*\*[\s\S]*?@test[\s\S]*?\*\/))?\s*(?:final\s+)?(?:public|protected)\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
-  const signaturePattern = /(?:final\s+)?(?:public|protected)\s+function\b/;
+  const methodPattern = /(?:abstract\s+)?(?:final\s+)?(?:public|protected)\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+  let previousEnd = 0;
 
   for (const match of body.matchAll(methodPattern)) {
-    const annotationBlock = match[1] ?? '';
-    const methodName = match[2];
+    const methodName = match[1];
+    const header = body.slice(previousEnd, match.index ?? 0);
+    previousEnd = (match.index ?? 0) + match[0].length;
+
+    if (/abstract\s+(?:final\s+)?(?:public|protected)\s+function/.test(match[0])) {
+      continue;
+    }
+
     const isTest = methodName.startsWith('test')
-      || annotationBlock.includes('@test')
-      || /#\[\s*(?:\\?PHPUnit\\Framework\\Attributes\\)?Test\b/.test(annotationBlock);
+      || /@test\b/.test(header)
+      || /#\[\s*(?:\\?PHPUnit\\Framework\\Attributes\\)?Test\b/.test(header);
     if (!isTest) {
       continue;
     }
 
-    const signatureOffset = match[0].search(signaturePattern);
-    const start = bodyOffset + (match.index ?? 0) + Math.max(signatureOffset, 0);
-
+    const start = bodyOffset + (match.index ?? 0);
     methods.push({
       name: methodName,
       range: rangeFromOffsets(lineStarts, start, start + match[0].length),
+      groups: extractGroups(header),
     });
   }
 
   return methods;
+}
+
+export function extractGroups(header: string): string[] {
+  const groups = new Set<string>();
+  const attributePattern = /#\[\s*(?:\\?PHPUnit\\Framework\\Attributes\\)?Group\s*\(\s*['"]([^'"]+)['"]/g;
+  for (const match of header.matchAll(attributePattern)) {
+    groups.add(match[1]);
+  }
+  const docPattern = /@group\s+(\S+)/g;
+  for (const match of header.matchAll(docPattern)) {
+    groups.add(match[1]);
+  }
+  return [...groups];
 }
 
 export function getLineStarts(source: string): number[] {

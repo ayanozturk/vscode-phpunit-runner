@@ -15,6 +15,8 @@ const config: RunnerConfig = {
   dockerContainer: 'app',
   dockerWorkspacePath: '/var/www/html',
   dockerExecArgs: ['-u', 'www-data'],
+  debuggerConfig: '',
+  xdebugPort: 9003,
 };
 
 const fileTarget: TestTarget = {
@@ -69,6 +71,25 @@ describe('resolveInvocation', () => {
     assert.ok(invocation.args.some((arg) => arg.includes('ExampleTest::testItWorks')));
     assert.ok(invocation.args.includes('/var/www/html/vendor/bin/phpunit'));
     assert.ok(invocation.args.includes('/var/www/html/tests/ExampleTest.php'));
+  });
+
+  it('adds debug, coverage, and group flags and omits a file when running a group', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: { kind: 'file', group: 'unit' },
+      config,
+      phpunitExecutable: '/proj/vendor/bin/phpunit',
+      detectedConfigurationFile: '/proj/phpunit.xml',
+      coverageCloverPath: '/proj/.phpunit-runner/clover.xml',
+      debug: true,
+    });
+
+    assert.ok(invocation.args.includes('-dxdebug.mode=debug'));
+    assert.ok(invocation.args.includes('--coverage-clover'));
+    assert.ok(invocation.args.includes('--group'));
+    assert.ok(invocation.args.includes('unit'));
+    assert.ok(!invocation.args.includes(undefined as unknown as string));
+    assert.equal(invocation.args.at(-1), 'unit');
   });
 
   it('throws when docker is enabled without a container', () => {

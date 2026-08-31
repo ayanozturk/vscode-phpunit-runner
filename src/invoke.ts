@@ -46,6 +46,8 @@ export async function resolveInvocation(options: {
   target: TestTarget;
   config: RunnerConfig;
   junitLogPath?: string;
+  coverageCloverPath?: string;
+  debug?: boolean;
   phpunitExecutable?: string;
   detectedConfigurationFile?: string;
 }): Promise<Invocation> {
@@ -63,6 +65,13 @@ export async function resolveInvocation(options: {
   const needsPhp = isPhpScript(phpunitExecutable);
   const command = needsPhp ? phpExecutable : phpunitExecutable;
   if (needsPhp) {
+    if (options.debug && !config.dockerEnable) {
+      args.push(
+        `-dxdebug.mode=debug`,
+        `-dxdebug.start_with_request=yes`,
+        `-dxdebug.client_port=${config.xdebugPort || 9003}`,
+      );
+    }
     args.push(phpunitExecutable);
   }
 
@@ -80,26 +89,37 @@ export async function resolveInvocation(options: {
     args.push('--log-junit', options.junitLogPath);
   }
 
+  if (options.coverageCloverPath) {
+    args.push('--coverage-clover', options.coverageCloverPath);
+  }
+
+  if (target.group) {
+    args.push('--group', target.group);
+  }
+
   if (target.className && target.methodName) {
     args.push('--filter', `^${escapeRegex(target.className)}::${escapeRegex(target.methodName)}$`);
   } else if (target.className) {
     args.push('--filter', `^${escapeRegex(target.className)}(?:::.*)?$`);
   }
 
-  args.push(target.filePath);
+  if (target.filePath) {
+    args.push(target.filePath);
+  }
 
   const invocation = { command, args, cwd };
   if (!config.dockerEnable) {
     return invocation;
   }
 
-  return resolveDockerInvocation(workspacePath, config, invocation);
+  return resolveDockerInvocation(workspacePath, config, invocation, options.debug === true);
 }
 
 export function resolveDockerInvocation(
   workspacePath: string,
   config: RunnerConfig,
   invocation: Invocation,
+  debug = false,
 ): Invocation {
   const dockerCommand = config.dockerCommand.trim() || 'docker';
   const container = config.dockerContainer.trim();
@@ -113,10 +133,13 @@ export function resolveDockerInvocation(
   const containerArgs = invocation.args.map((arg) =>
     mapHostPathToContainer(arg, workspacePath, containerWorkspacePath),
   );
+  const debugEnv = debug
+    ? ['-e', 'XDEBUG_TRIGGER=1', '-e', 'XDEBUG_SESSION=1']
+    : [];
 
   return {
     command: dockerCommand,
-    args: ['exec', '-i', ...config.dockerExecArgs, '-w', containerCwd, container, containerCommand, ...containerArgs],
+    args: ['exec', '-i', ...debugEnv, ...config.dockerExecArgs, '-w', containerCwd, container, containerCommand, ...containerArgs],
     cwd: workspacePath,
   };
 }

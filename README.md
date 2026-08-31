@@ -14,6 +14,9 @@ It parses PHPUnit test files, organizes them by folder structure, and lets you r
   - `#[Test]` and `#[PHPUnit\Framework\Attributes\Test]` attributes
 - Organizes tests in the Testing panel by workspace, folders, files, classes, and methods
 - Maps PHPUnit JUnit output onto individual Test Explorer items (pass / fail / skip)
+- Debug and coverage run profiles (Xdebug listener + Clover overlay)
+- Run all, rerun last, run failed, and run by `#[Group]` / `@group`
+- Discovers tests from `phpunit.xml` testsuites when present
 - Shows assertion failures with file locations in the Test Results panel
 - Run the current file from the editor title or context menu
 - Run the test at the current cursor position
@@ -35,6 +38,8 @@ Core settings:
 - `phpunitRunner.additionalArgs`
 - `phpunitRunner.testFileGlobs`
 - `phpunitRunner.excludeGlobs`
+- `phpunitRunner.debuggerConfig`
+- `phpunitRunner.xdebugPort`
 
 Docker settings:
 
@@ -69,6 +74,10 @@ Docker settings:
 - `PHPUnit Runner: Refresh Tests`
 - `PHPUnit Runner: Run Current File`
 - `PHPUnit Runner: Run Test At Cursor`
+- `PHPUnit Runner: Run All Tests`
+- `PHPUnit Runner: Rerun Last Run`
+- `PHPUnit Runner: Run Failed Tests`
+- `PHPUnit Runner: Run By Group`
 - `PHPUnit Runner: Show Output`
 
 ## Repository

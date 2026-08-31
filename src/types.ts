@@ -11,6 +11,7 @@ export type SourceRange = {
 export type TestMethod = {
   name: string;
   range: SourceRange;
+  groups: string[];
 };
 
 export type TestClass = {
@@ -29,9 +30,10 @@ export type TestItemKind = 'file' | 'class' | 'method';
 
 export type TestTarget = {
   kind: TestItemKind;
-  filePath: string;
+  filePath?: string;
   className?: string;
   methodName?: string;
+  group?: string;
 };
 
 export type RunnerConfig = {
@@ -45,6 +47,8 @@ export type RunnerConfig = {
   dockerContainer: string;
   dockerWorkspacePath: string;
   dockerExecArgs: string[];
+  debuggerConfig: string;
+  xdebugPort: number;
 };
 
 export type Invocation = {

@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import * as vscode from 'vscode';
+import { parseCloverXml } from './clover';
 import { autoDetectConfigurationFile, resolveInvocation } from './invoke';
 import {
   aggregateMethodStatus,
@@ -11,14 +12,20 @@ import {
 } from './junit';
 import { classNamesMatch, methodNameFromTestCase, parseTestSource } from './parser';
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
+import { resolveDiscoveryGlobs } from './phpunitXml';
 import type { JUnitTestCase, RunnerConfig, SourceRange, TestTarget } from './types';
 
-type TestItemData = TestTarget & { uri: vscode.Uri };
+type TestItemData = TestTarget & { uri: vscode.Uri; groups?: string[] };
 
 const itemData = new WeakMap<vscode.TestItem, TestItemData>();
+const coverageDetails = new WeakMap<vscode.FileCoverage, vscode.FileCoverageDetail[]>();
 
 let outputChannel: vscode.OutputChannel;
 let controller: vscode.TestController;
+let runProfile: vscode.TestRunProfile;
+let lastIncludeIds: string[] | undefined;
+let lastFailedIds: string[] = [];
+let debugListenStarted = false;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   outputChannel = vscode.window.createOutputChannel('PHPUnit Runner');
@@ -35,8 +42,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await discoverWorkspaceTests();
   };
 
+  runProfile = controller.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, runTests, true);
+  const debugProfile = controller.createRunProfile('Debug Tests', vscode.TestRunProfileKind.Debug, runTests, true);
+  const coverageProfile = controller.createRunProfile('Coverage Tests', vscode.TestRunProfileKind.Coverage, runTests, true);
+  coverageProfile.loadDetailedCoverage = async (_run, fileCoverage) => coverageDetails.get(fileCoverage) ?? [];
+
   context.subscriptions.push(
-    controller.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, runTests, true),
+    runProfile,
+    debugProfile,
+    coverageProfile,
     vscode.commands.registerCommand('phpunitRunner.refreshTests', async () => {
       await discoverWorkspaceTests();
     }),
@@ -45,6 +59,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand('phpunitRunner.runTestAtCursor', async () => {
       await runTestAtCursor();
+    }),
+    vscode.commands.registerCommand('phpunitRunner.runAll', async () => {
+      await runTests(new vscode.TestRunRequest(undefined, undefined, runProfile), new vscode.CancellationTokenSource().token);
+    }),
+    vscode.commands.registerCommand('phpunitRunner.rerun', async () => {
+      await rerunLast();
+    }),
+    vscode.commands.registerCommand('phpunitRunner.runFailed', async () => {
+      await runFailedTests();
+    }),
+    vscode.commands.registerCommand('phpunitRunner.runByGroup', async () => {
+      await runByGroup();
     }),
     vscode.commands.registerCommand('phpunitRunner.showOutput', () => {
       outputChannel.show();
@@ -103,18 +129,45 @@ async function discoverWorkspaceTests(): Promise<void> {
 
 async function findCandidateTestFiles(): Promise<vscode.Uri[]> {
   const config = getConfig();
-  const globs = config.get<string[]>('testFileGlobs', DEFAULT_TEST_GLOBS);
-  const excludes = config.get<string[]>('excludeGlobs', DEFAULT_EXCLUDE_GLOBS);
-  const excludeGlob = excludes.length > 0 ? `{${excludes.join(',')}}` : undefined;
+  const configuredIncludes = config.get<string[]>('testFileGlobs', DEFAULT_TEST_GLOBS);
+  const configuredExcludes = config.get<string[]>('excludeGlobs', DEFAULT_EXCLUDE_GLOBS);
   const unique = new Map<string, vscode.Uri>();
 
-  for (const pattern of globs) {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folders.length === 0) {
+    return findWithGlobs(configuredIncludes, configuredExcludes, unique);
+  }
+
+  for (const folder of folders) {
+    const xmlPath = await autoDetectConfigurationFile(folder.uri.fsPath);
+    const xmlText = xmlPath ? await fs.readFile(xmlPath, 'utf8').catch(() => undefined) : undefined;
+    const xmlDirectoryRelative = xmlPath
+      ? path.relative(folder.uri.fsPath, path.dirname(xmlPath)) || '.'
+      : '.';
+    const resolved = resolveDiscoveryGlobs({
+      configuredIncludes,
+      configuredExcludes,
+      xmlText,
+      xmlDirectoryRelative,
+    });
+    await findWithGlobs(resolved.includeGlobs, resolved.excludeGlobs, unique);
+  }
+
+  return [...unique.values()];
+}
+
+async function findWithGlobs(
+  includes: string[],
+  excludes: string[],
+  unique: Map<string, vscode.Uri>,
+): Promise<vscode.Uri[]> {
+  const excludeGlob = excludes.length > 0 ? `{${excludes.join(',')}}` : undefined;
+  for (const pattern of includes) {
     const files = await vscode.workspace.findFiles(pattern, excludeGlob);
     for (const file of files) {
       unique.set(file.toString(), file);
     }
   }
-
   return [...unique.values()];
 }
 
@@ -165,7 +218,9 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
         filePath: uri.fsPath,
         className: cls.fullyQualifiedName,
         methodName: method.name,
+        groups: method.groups,
       });
+      methodItem.tags = method.groups.map((group) => new vscode.TestTag(`group:${group}`));
       classItem.children.add(methodItem);
     }
 
@@ -247,6 +302,10 @@ function findNarrowestTestItem(item: vscode.TestItem, position: vscode.Position)
 async function runTests(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
   const run = controller.createTestRun(request);
   const queue = request.include?.length ? [...request.include] : collectTestItems(controller.items);
+  lastIncludeIds = request.include?.map((item) => item.id);
+  lastFailedIds = [];
+  debugListenStarted = false;
+  const kind = request.profile?.kind ?? vscode.TestRunProfileKind.Run;
 
   try {
     for (const item of queue) {
@@ -254,18 +313,23 @@ async function runTests(request: vscode.TestRunRequest, token: vscode.Cancellati
         break;
       }
 
-      await runItem(item, run, token);
+      await runItem(item, run, token, kind);
     }
   } finally {
     run.end();
   }
 }
 
-async function runItem(item: vscode.TestItem, run: vscode.TestRun, token: vscode.CancellationToken): Promise<void> {
+async function runItem(
+  item: vscode.TestItem,
+  run: vscode.TestRun,
+  token: vscode.CancellationToken,
+  kind: vscode.TestRunProfileKind,
+): Promise<void> {
   const data = itemData.get(item);
   if (!data && item.children.size > 0) {
     for (const child of collectTestItems(item.children)) {
-      await runItem(child, run, token);
+      await runItem(child, run, token, kind);
     }
     return;
   }
@@ -281,7 +345,7 @@ async function runItem(item: vscode.TestItem, run: vscode.TestRun, token: vscode
   }
 
   try {
-    const result = await executePhpUnit(data, token);
+    const result = await executePhpUnit(data, token, kind, run);
     run.appendOutput(result.output);
     applyExecutionResult(run, item, result);
   } catch (error) {
@@ -307,6 +371,7 @@ function applyExecutionResult(
 
     run.failed(item, message, result.duration);
     markDescendants(run, item, 'skipped');
+    lastFailedIds.push(item.id);
     return;
   }
 
@@ -337,6 +402,7 @@ function applyExecutionResult(
     }
 
     anyFailed = true;
+    lastFailedIds.push(methodItem.id);
     run.failed(methodItem, createFailureMessage(methodItem, cases), duration);
   }
 
@@ -395,22 +461,35 @@ function markDescendants(
 async function executePhpUnit(
   data: TestItemData,
   token: vscode.CancellationToken,
+  kind: vscode.TestRunProfileKind,
+  run: vscode.TestRun,
 ): Promise<{ output: string; exitCode: number; duration: number; cases: JUnitTestCase[] }> {
-  const workspaceFolder = vscode.workspace.getWorkspaceFolder(data.uri);
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(data.uri)
+    ?? vscode.workspace.workspaceFolders?.[0];
   if (!workspaceFolder) {
     throw new Error(`No workspace folder found for ${data.uri.fsPath}`);
   }
 
+  const debug = kind === vscode.TestRunProfileKind.Debug;
+  const coverage = kind === vscode.TestRunProfileKind.Coverage;
   const runnerDir = path.join(workspaceFolder.uri.fsPath, '.phpunit-runner');
   await fs.mkdir(runnerDir, { recursive: true });
-  const junitLogPath = path.join(runnerDir, `junit-${Date.now()}-${Math.random().toString(16).slice(2)}.xml`);
+  const stamp = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const junitLogPath = path.join(runnerDir, `junit-${stamp}.xml`);
+  const coverageCloverPath = coverage ? path.join(runnerDir, `clover-${stamp}.xml`) : undefined;
 
   const config = readRunnerConfig(workspaceFolder);
+  if (debug) {
+    await ensureDebugListen(workspaceFolder, config);
+  }
+
   const invocation = await resolveInvocation({
     workspacePath: workspaceFolder.uri.fsPath,
     target: data,
     config,
     junitLogPath,
+    coverageCloverPath,
+    debug,
     detectedConfigurationFile: config.configurationFile
       ? undefined
       : await autoDetectConfigurationFile(workspaceFolder.uri.fsPath),
@@ -423,7 +502,10 @@ async function executePhpUnit(
     const result = await new Promise<{ output: string; exitCode: number }>((resolve, reject) => {
       const child = spawn(invocation.command, invocation.args, {
         cwd: invocation.cwd,
-        env: process.env,
+        env: {
+          ...process.env,
+          ...(debug ? { XDEBUG_TRIGGER: '1', XDEBUG_SESSION: '1' } : {}),
+        },
       });
 
       let output = '';
@@ -455,6 +537,9 @@ async function executePhpUnit(
     });
 
     const cases = await readJUnitCases(junitLogPath);
+    if (coverageCloverPath) {
+      await applyCloverCoverage(run, coverageCloverPath);
+    }
     return {
       ...result,
       duration: Date.now() - start,
@@ -462,7 +547,143 @@ async function executePhpUnit(
     };
   } finally {
     await fs.rm(junitLogPath, { force: true }).catch(() => undefined);
+    if (coverageCloverPath) {
+      await fs.rm(coverageCloverPath, { force: true }).catch(() => undefined);
+    }
   }
+}
+
+async function ensureDebugListen(folder: vscode.WorkspaceFolder, config: RunnerConfig): Promise<void> {
+  if (debugListenStarted) {
+    return;
+  }
+  debugListenStarted = true;
+
+  const named = config.debuggerConfig.trim();
+  const launched = named
+    ? await vscode.debug.startDebugging(folder, named)
+    : await vscode.debug.startDebugging(folder, {
+      type: 'php',
+      request: 'launch',
+      name: 'Listen for Xdebug (PHPUnit Runner)',
+      port: config.xdebugPort || 9003,
+    });
+
+  if (!launched) {
+    void vscode.window.showWarningMessage(
+      'Could not start a PHP debug listener. Install a PHP debug extension or set phpunitRunner.debuggerConfig to a launch.json name.',
+    );
+  }
+}
+
+async function applyCloverCoverage(run: vscode.TestRun, cloverPath: string): Promise<void> {
+  try {
+    const xml = await fs.readFile(cloverPath, 'utf8');
+    for (const file of parseCloverXml(xml)) {
+      const uri = vscode.Uri.file(file.path);
+      const details = file.lines
+        .filter((line) => line.type === 'stmt')
+        .map((line) => new vscode.StatementCoverage(
+          line.count,
+          new vscode.Position(Math.max(line.line - 1, 0), 0),
+        ));
+      const coverage = details.length > 0
+        ? vscode.FileCoverage.fromDetails(uri, details)
+        : new vscode.FileCoverage(
+          uri,
+          new vscode.TestCoverageCount(file.coveredStatements, file.statements),
+        );
+      coverageDetails.set(coverage, details);
+      run.addCoverage(coverage);
+    }
+  } catch (error) {
+    outputChannel.appendLine(`[phpunit-runner] Coverage report was not produced: ${String(error)}`);
+  }
+}
+
+async function rerunLast(): Promise<void> {
+  if (lastIncludeIds === undefined) {
+    await runTests(new vscode.TestRunRequest(undefined, undefined, runProfile), new vscode.CancellationTokenSource().token);
+    return;
+  }
+
+  const items = lastIncludeIds.map((id) => findItemById(id)).filter((item): item is vscode.TestItem => Boolean(item));
+  await runTests(new vscode.TestRunRequest(items, undefined, runProfile), new vscode.CancellationTokenSource().token);
+}
+
+async function runFailedTests(): Promise<void> {
+  const items = lastFailedIds.map((id) => findItemById(id)).filter((item): item is vscode.TestItem => Boolean(item));
+  if (items.length === 0) {
+    void vscode.window.showInformationMessage('No failed PHPUnit tests to re-run.');
+    return;
+  }
+
+  await runTests(new vscode.TestRunRequest(items, undefined, runProfile), new vscode.CancellationTokenSource().token);
+}
+
+async function runByGroup(): Promise<void> {
+  const groups = [...new Set(
+    collectAllMethodItems().flatMap((item) => itemData.get(item)?.groups ?? []),
+  )].sort();
+  if (groups.length === 0) {
+    void vscode.window.showInformationMessage('No PHPUnit @group or #[Group] attributes were found.');
+    return;
+  }
+
+  const selected = await vscode.window.showQuickPick(groups, { placeHolder: 'PHPUnit group' });
+  if (!selected) {
+    return;
+  }
+
+  const matching = collectAllMethodItems().filter((item) => itemData.get(item)?.groups?.includes(selected));
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) {
+    return;
+  }
+
+  const request = new vscode.TestRunRequest(matching, undefined, runProfile);
+  const run = controller.createTestRun(request);
+  lastIncludeIds = matching.map((item) => item.id);
+  lastFailedIds = [];
+  debugListenStarted = false;
+  for (const item of matching) {
+    run.enqueued(item);
+    run.started(item);
+  }
+
+  try {
+    const result = await executePhpUnit(
+      { kind: 'file', uri: folder.uri, group: selected },
+      new vscode.CancellationTokenSource().token,
+      vscode.TestRunProfileKind.Run,
+      run,
+    );
+    run.appendOutput(result.output);
+    for (const item of matching) {
+      applyExecutionResult(run, item, result);
+    }
+  } finally {
+    run.end();
+  }
+}
+
+function collectAllMethodItems(): vscode.TestItem[] {
+  return collectTestItems(controller.items).flatMap((item) => collectMethodItems(item));
+}
+
+function findItemById(id: string): vscode.TestItem | undefined {
+  const stack = collectTestItems(controller.items);
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (!item) {
+      continue;
+    }
+    if (item.id === id) {
+      return item;
+    }
+    stack.push(...collectTestItems(item.children));
+  }
+  return undefined;
 }
 
 async function readJUnitCases(junitLogPath: string): Promise<JUnitTestCase[]> {
@@ -487,6 +708,8 @@ function readRunnerConfig(scope?: vscode.ConfigurationScope): RunnerConfig {
     dockerContainer: config.get<string>('docker.container', ''),
     dockerWorkspacePath: config.get<string>('docker.workspacePath', ''),
     dockerExecArgs: config.get<string[]>('docker.execArgs', []),
+    debuggerConfig: config.get<string>('debuggerConfig', ''),
+    xdebugPort: config.get<number>('xdebugPort', 9003),
   };
 }
 

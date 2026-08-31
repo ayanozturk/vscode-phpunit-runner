@@ -2,7 +2,7 @@
   "name": "aos-phpunit",
   "displayName": "PHPUnit Runner",
   "description": "Parse PHPUnit tests in PHP files and run them from VS Code.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "AOSSoftware",
   "license": "MIT",
   "repository": {
@@ -109,7 +109,17 @@
             "**/*Test.php",
             "**/tests/**/*.php"
           ],
-          "description": "Glob patterns used when refreshing PHPUnit tests across the workspace."
+          "description": "Glob patterns used when refreshing PHPUnit tests across the workspace. Ignored when phpunit.xml defines testsuites."
+        },
+        "phpunitRunner.debuggerConfig": {
+          "type": "string",
+          "default": "",
+          "description": "launch.json configuration name used when debugging tests. Leave empty to start a generic PHP Xdebug listener."
+        },
+        "phpunitRunner.xdebugPort": {
+          "type": "number",
+          "default": 9003,
+          "description": "Xdebug client port used when phpunitRunner.debuggerConfig is empty."
         }
       }
     },
@@ -129,6 +139,22 @@
       {
         "command": "phpunitRunner.showOutput",
         "title": "PHPUnit Runner: Show Output"
+      },
+      {
+        "command": "phpunitRunner.runAll",
+        "title": "PHPUnit Runner: Run All Tests"
+      },
+      {
+        "command": "phpunitRunner.rerun",
+        "title": "PHPUnit Runner: Rerun Last Run"
+      },
+      {
+        "command": "phpunitRunner.runFailed",
+        "title": "PHPUnit Runner: Run Failed Tests"
+      },
+      {
+        "command": "phpunitRunner.runByGroup",
+        "title": "PHPUnit Runner: Run By Group"
       }
     ],
     "menus": {
@@ -144,6 +170,18 @@
         },
         {
           "command": "phpunitRunner.showOutput"
+        },
+        {
+          "command": "phpunitRunner.runAll"
+        },
+        {
+          "command": "phpunitRunner.rerun"
+        },
+        {
+          "command": "phpunitRunner.runFailed"
+        },
+        {
+          "command": "phpunitRunner.runByGroup"
         }
       ],
       "editor/title": [
@@ -165,7 +203,36 @@
           "group": "phpunitRunner@2"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "phpunitRunner.runTestAtCursor",
+        "key": "ctrl+; ctrl+t",
+        "mac": "cmd+; cmd+t",
+        "when": "editorLangId == php"
+      },
+      {
+        "command": "phpunitRunner.runCurrentFile",
+        "key": "ctrl+; ctrl+f",
+        "mac": "cmd+; cmd+f",
+        "when": "editorLangId == php"
+      },
+      {
+        "command": "phpunitRunner.rerun",
+        "key": "ctrl+; ctrl+l",
+        "mac": "cmd+; cmd+l"
+      },
+      {
+        "command": "phpunitRunner.runAll",
+        "key": "ctrl+; ctrl+a",
+        "mac": "cmd+; cmd+a"
+      },
+      {
+        "command": "phpunitRunner.runFailed",
+        "key": "ctrl+; ctrl+e",
+        "mac": "cmd+; cmd+e"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

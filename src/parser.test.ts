@@ -73,6 +73,35 @@ class QuoteTest {
     const parsed = parseTestSource('/tmp/QuoteTest.php', source);
     assert.equal(parsed.classes[0].methods.length, 1);
   });
+
+  it('reads stacked attributes and groups, and skips abstract classes', () => {
+    const source = `<?php
+abstract class BaseTest {
+    public function testInherited(): void {}
+}
+
+final class GroupedTest {
+    #[Test]
+    #[Group('unit')]
+    public function fromAttributes(): void {}
+
+    /**
+     * @test
+     * @group integration
+     */
+    public function fromDocblock(): void {}
+}
+`;
+    const parsed = parseTestSource('/tmp/GroupedTest.php', source);
+    assert.equal(parsed.classes.length, 1);
+    assert.deepEqual(
+      parsed.classes[0].methods.map((method) => ({ name: method.name, groups: method.groups })),
+      [
+        { name: 'fromAttributes', groups: ['unit'] },
+        { name: 'fromDocblock', groups: ['integration'] },
+      ],
+    );
+  });
 });
 
 describe('classNamesMatch', () => {
