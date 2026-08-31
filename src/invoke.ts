@@ -1,5 +1,14 @@
 import * as fs from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
+import {
+  expandPathMappings,
+  joinQuoted,
+  mapWithMappings,
+  quoteShellArg,
+  substituteVariables,
+  type PathMapping,
+} from './commandTemplate';
 import type { Invocation, RunnerConfig, TestTarget } from './types';
 import {
   escapeRegex,
@@ -50,6 +59,7 @@ export async function resolveInvocation(options: {
   debug?: boolean;
   phpunitExecutable?: string;
   detectedConfigurationFile?: string;
+  userHome?: string;
 }): Promise<Invocation> {
   const { workspacePath, target, config } = options;
   const configuredWorkingDirectory = config.workingDirectory.trim();
@@ -60,59 +70,84 @@ export async function resolveInvocation(options: {
   const phpunitExecutable = options.phpunitExecutable
     ?? (config.phpunitCommand.trim() || await autoDetectPhpUnit(workspacePath));
   const phpExecutable = config.phpExecutable.trim() || 'php';
-  const args: string[] = [];
-
-  const needsPhp = isPhpScript(phpunitExecutable);
-  const command = needsPhp ? phpExecutable : phpunitExecutable;
-  if (needsPhp) {
-    if (options.debug && !config.dockerEnable) {
-      args.push(
-        `-dxdebug.mode=debug`,
-        `-dxdebug.start_with_request=yes`,
-        `-dxdebug.client_port=${config.xdebugPort || 9003}`,
-      );
-    }
-    args.push(phpunitExecutable);
+  const phpArgs = [...config.phpArgs];
+  if (options.debug) {
+    phpArgs.push(
+      `-dxdebug.mode=debug`,
+      `-dxdebug.start_with_request=yes`,
+      `-dxdebug.client_port=${config.xdebugPort || 9003}`,
+    );
   }
 
+  const phpunitArgs: string[] = [];
   const configurationFile = config.configurationFile.trim()
     || options.detectedConfigurationFile
     || await autoDetectConfigurationFile(cwd);
   if (configurationFile) {
-    args.push('--configuration', resolvePath(workspacePath, configurationFile));
+    phpunitArgs.push('--configuration', resolvePath(workspacePath, configurationFile));
   }
 
-  args.push('--colors=always');
-  args.push(...config.additionalArgs);
+  phpunitArgs.push('--colors=always');
+  phpunitArgs.push(...config.additionalArgs);
 
   if (options.junitLogPath) {
-    args.push('--log-junit', options.junitLogPath);
+    phpunitArgs.push('--log-junit', options.junitLogPath);
   }
 
   if (options.coverageCloverPath) {
-    args.push('--coverage-clover', options.coverageCloverPath);
+    phpunitArgs.push('--coverage-clover', options.coverageCloverPath);
   }
 
   if (target.group) {
-    args.push('--group', target.group);
+    phpunitArgs.push('--group', target.group);
   }
 
   if (target.className && target.methodName) {
-    args.push('--filter', `^${escapeRegex(target.className)}::${escapeRegex(target.methodName)}$`);
+    phpunitArgs.push('--filter', `^${escapeRegex(target.className)}::${escapeRegex(target.methodName)}$`);
   } else if (target.className) {
-    args.push('--filter', `^${escapeRegex(target.className)}(?:::.*)?$`);
+    phpunitArgs.push('--filter', `^${escapeRegex(target.className)}(?:::.*)?$`);
   }
 
   if (target.filePath) {
-    args.push(target.filePath);
+    phpunitArgs.push(target.filePath);
   }
 
-  const invocation = { command, args, cwd };
+  const vars = templateVars(workspacePath, cwd, options.userHome ?? os.homedir());
+  const mappings = resolveMappings(workspacePath, config, vars);
+  const env = {
+    ...config.environment,
+    ...(options.debug ? { XDEBUG_TRIGGER: '1', XDEBUG_SESSION: '1' } : {}),
+  };
+
+  const template = config.command.trim();
+  if (template) {
+    return renderRemoteInvocation({
+      template,
+      phpExecutable,
+      phpArgs,
+      phpunitExecutable,
+      phpunitArgs,
+      cwd,
+      vars,
+      mappings,
+      env,
+    });
+  }
+
+  const needsPhp = isPhpScript(phpunitExecutable);
+  const command = needsPhp ? phpExecutable : phpunitExecutable;
+  const args = needsPhp ? [...phpArgs, phpunitExecutable, ...phpunitArgs] : [...phpunitArgs];
+  const local: Invocation = { command, args, cwd, env, mappings };
+
   if (!config.dockerEnable) {
-    return invocation;
+    return local;
   }
 
-  return resolveDockerInvocation(workspacePath, config, invocation, options.debug === true);
+  return {
+    ...resolveDockerInvocation(workspacePath, config, local, options.debug === true),
+    env,
+    mappings: mappings.length > 0 ? mappings : dockerMappings(workspacePath, config),
+  };
 }
 
 export function resolveDockerInvocation(
@@ -142,4 +177,80 @@ export function resolveDockerInvocation(
     args: ['exec', '-i', ...debugEnv, ...config.dockerExecArgs, '-w', containerCwd, container, containerCommand, ...containerArgs],
     cwd: workspacePath,
   };
+}
+
+function renderRemoteInvocation(options: {
+  template: string;
+  phpExecutable: string;
+  phpArgs: string[];
+  phpunitExecutable: string;
+  phpunitArgs: string[];
+  cwd: string;
+  vars: Record<string, string>;
+  mappings: PathMapping[];
+  env: Record<string, string>;
+}): Invocation {
+  const php = mapWithMappings(options.phpExecutable, options.mappings);
+  const phpunit = mapWithMappings(options.phpunitExecutable, options.mappings);
+  const cwd = mapWithMappings(options.cwd, options.mappings);
+  const mappedPhpunitArgs = options.phpunitArgs.map((arg) => mapWithMappings(arg, options.mappings));
+  const phpunitxmlIndex = mappedPhpunitArgs.indexOf('--configuration');
+  const phpunitxml = phpunitxmlIndex >= 0 ? mappedPhpunitArgs[phpunitxmlIndex + 1] ?? '' : '';
+
+  const rendered = substituteVariables(options.template, {
+    ...options.vars,
+    php,
+    phpargs: joinQuoted(options.phpArgs),
+    phpunit,
+    phpunitargs: joinQuoted(mappedPhpunitArgs),
+    phpunitxml,
+    cwd,
+  });
+
+  return {
+    command: rendered,
+    args: [],
+    cwd: options.vars.workspaceFolder,
+    env: options.env,
+    shell: true,
+    mappings: options.mappings,
+  };
+}
+
+function templateVars(workspacePath: string, cwd: string, userHome: string): Record<string, string> {
+  return {
+    workspaceFolder: workspacePath,
+    workspaceFolderBasename: path.basename(workspacePath),
+    userHome,
+    pathSeparator: path.sep,
+    cwd,
+  };
+}
+
+function resolveMappings(
+  workspacePath: string,
+  config: RunnerConfig,
+  vars: Record<string, string>,
+): PathMapping[] {
+  const record = { ...config.paths };
+  const dockerRoot = config.dockerWorkspacePath.trim();
+  if (dockerRoot && !Object.prototype.hasOwnProperty.call(record, '${workspaceFolder}')) {
+    const hasExplicitMaps = Object.keys(record).length > 0;
+    if (config.dockerEnable || (config.command.trim() && !hasExplicitMaps)) {
+      record['${workspaceFolder}'] = dockerRoot;
+    }
+  }
+  const expanded = expandPathMappings(record, vars);
+  if (expanded.length === 0 && config.dockerEnable && dockerRoot) {
+    return dockerMappings(workspacePath, config);
+  }
+  return expanded;
+}
+
+function dockerMappings(workspacePath: string, config: RunnerConfig): PathMapping[] {
+  const remote = config.dockerWorkspacePath.trim();
+  if (!remote) {
+    return [];
+  }
+  return [{ from: workspacePath.replace(/\\/g, '/'), to: remote.replace(/\\/g, '/') }];
 }

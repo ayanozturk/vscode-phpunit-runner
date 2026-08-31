@@ -1,3 +1,5 @@
+import type { PathMapping } from './commandTemplate';
+
 export type SourcePosition = {
   line: number;
   character: number;
@@ -42,6 +44,11 @@ export type RunnerConfig = {
   configurationFile: string;
   workingDirectory: string;
   additionalArgs: string[];
+  phpArgs: string[];
+  command: string;
+  paths: Record<string, string>;
+  environment: Record<string, string>;
+  saveBeforeTest: boolean;
   dockerEnable: boolean;
   dockerCommand: string;
   dockerContainer: string;
@@ -55,6 +62,9 @@ export type Invocation = {
   command: string;
   args: string[];
   cwd: string;
+  env?: Record<string, string>;
+  shell?: boolean;
+  mappings?: PathMapping[];
 };
 
 export type JUnitStatus = 'passed' | 'failed' | 'errored' | 'skipped';

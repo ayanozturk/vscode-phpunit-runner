@@ -2,7 +2,7 @@
   "name": "aos-phpunit",
   "displayName": "PHPUnit Runner",
   "description": "Parse PHPUnit tests in PHP files and run them from VS Code.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "AOSSoftware",
   "license": "MIT",
   "repository": {
@@ -87,6 +87,40 @@
           },
           "default": [],
           "description": "Additional arguments appended to every PHPUnit invocation."
+        },
+        "phpunitRunner.command": {
+          "type": "string",
+          "default": "",
+          "description": "Optional remote command template. Variables: ${php}, ${phpargs}, ${phpunit}, ${phpunitargs}, ${phpunitxml}, ${cwd}, ${workspaceFolder}, ${workspaceFolderBasename}, ${userHome}, ${pathSeparator}. When set, this takes precedence over docker.enable wrapping."
+        },
+        "phpunitRunner.paths": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Host-to-remote path mappings used with phpunitRunner.command (for example {\"${workspaceFolder}\": \"/var/www/html\"})."
+        },
+        "phpunitRunner.environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Extra environment variables set when launching PHPUnit."
+        },
+        "phpunitRunner.phpArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra arguments passed to the PHP binary (the ${phpargs} template variable)."
+        },
+        "phpunitRunner.saveBeforeTest": {
+          "type": "boolean",
+          "default": false,
+          "description": "Save all dirty editors before running tests."
         },
         "phpunitRunner.excludeGlobs": {
           "type": "array",

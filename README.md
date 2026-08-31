@@ -15,6 +15,8 @@ It parses PHPUnit test files, organizes them by folder structure, and lets you r
 - Organizes tests in the Testing panel by workspace, folders, files, classes, and methods
 - Maps PHPUnit JUnit output onto individual Test Explorer items (pass / fail / skip)
 - Debug and coverage run profiles (Xdebug listener + Clover overlay)
+- Remote execution via a command template (Docker Compose, Laravel Sail, DDEV, SSH)
+- Host-to-remote path mappings so failures and coverage open the local file
 - Run all, rerun last, run failed, and run by `#[Group]` / `@group`
 - Discovers tests from `phpunit.xml` testsuites when present
 - Shows assertion failures with file locations in the Test Results panel
@@ -36,6 +38,11 @@ Core settings:
 - `phpunitRunner.configurationFile`
 - `phpunitRunner.workingDirectory`
 - `phpunitRunner.additionalArgs`
+- `phpunitRunner.phpArgs`
+- `phpunitRunner.command`
+- `phpunitRunner.paths`
+- `phpunitRunner.environment`
+- `phpunitRunner.saveBeforeTest`
 - `phpunitRunner.testFileGlobs`
 - `phpunitRunner.excludeGlobs`
 - `phpunitRunner.debuggerConfig`
@@ -66,6 +73,36 @@ Docker settings:
   "phpunitRunner.docker.container": "app",
   "phpunitRunner.docker.workspacePath": "/var/www/html",
   "phpunitRunner.phpunitCommand": "vendor/bin/phpunit"
+}
+```
+
+### Laravel Sail / Docker Compose
+
+```json
+{
+  "phpunitRunner.command": "docker compose exec -u sail laravel.test ${php} ${phpargs} ${phpunit} ${phpunitargs}",
+  "phpunitRunner.paths": {
+    "${workspaceFolder}": "/var/www/html"
+  }
+}
+```
+
+### DDEV
+
+```json
+{
+  "phpunitRunner.command": "ddev exec ${php} ${phpargs} ${phpunit} ${phpunitargs}"
+}
+```
+
+### SSH
+
+```json
+{
+  "phpunitRunner.command": "ssh user@host \"cd ${cwd} && ${php} ${phpargs} ${phpunit} ${phpunitargs}\"",
+  "phpunitRunner.paths": {
+    "${workspaceFolder}": "/app"
+  }
 }
 ```
 

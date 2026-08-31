@@ -3,6 +3,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import * as vscode from 'vscode';
 import { parseCloverXml } from './clover';
+import { unmapWithMappings, type PathMapping } from './commandTemplate';
 import { autoDetectConfigurationFile, resolveInvocation } from './invoke';
 import {
   aggregateMethodStatus,
@@ -300,6 +301,7 @@ function findNarrowestTestItem(item: vscode.TestItem, position: vscode.Position)
 }
 
 async function runTests(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
+  await maybeSaveBeforeTest();
   const run = controller.createTestRun(request);
   const queue = request.include?.length ? [...request.include] : collectTestItems(controller.items);
   lastIncludeIds = request.include?.map((item) => item.id);
@@ -496,17 +498,19 @@ async function executePhpUnit(
   });
   const start = Date.now();
 
-  outputChannel.appendLine(`[phpunit-runner] ${[invocation.command, ...invocation.args].join(' ')}`);
+  outputChannel.appendLine(`[phpunit-runner] ${invocation.shell
+    ? invocation.command
+    : [invocation.command, ...invocation.args].join(' ')}`);
 
   try {
     const result = await new Promise<{ output: string; exitCode: number }>((resolve, reject) => {
-      const child = spawn(invocation.command, invocation.args, {
-        cwd: invocation.cwd,
-        env: {
-          ...process.env,
-          ...(debug ? { XDEBUG_TRIGGER: '1', XDEBUG_SESSION: '1' } : {}),
-        },
-      });
+      const env = {
+        ...process.env,
+        ...invocation.env,
+      };
+      const child = invocation.shell
+        ? spawn(invocation.command, { cwd: invocation.cwd, env, shell: true })
+        : spawn(invocation.command, invocation.args, { cwd: invocation.cwd, env });
 
       let output = '';
       const append = (chunk: string | Buffer) => {
@@ -536,9 +540,9 @@ async function executePhpUnit(
       });
     });
 
-    const cases = await readJUnitCases(junitLogPath);
+    const cases = remapCases(await readJUnitCases(junitLogPath), invocation.mappings ?? []);
     if (coverageCloverPath) {
-      await applyCloverCoverage(run, coverageCloverPath);
+      await applyCloverCoverage(run, coverageCloverPath, invocation.mappings ?? []);
     }
     return {
       ...result,
@@ -576,11 +580,15 @@ async function ensureDebugListen(folder: vscode.WorkspaceFolder, config: RunnerC
   }
 }
 
-async function applyCloverCoverage(run: vscode.TestRun, cloverPath: string): Promise<void> {
+async function applyCloverCoverage(
+  run: vscode.TestRun,
+  cloverPath: string,
+  mappings: PathMapping[],
+): Promise<void> {
   try {
     const xml = await fs.readFile(cloverPath, 'utf8');
     for (const file of parseCloverXml(xml)) {
-      const uri = vscode.Uri.file(file.path);
+      const uri = vscode.Uri.file(unmapWithMappings(file.path, mappings));
       const details = file.lines
         .filter((line) => line.type === 'stmt')
         .map((line) => new vscode.StatementCoverage(
@@ -642,6 +650,7 @@ async function runByGroup(): Promise<void> {
   }
 
   const request = new vscode.TestRunRequest(matching, undefined, runProfile);
+  await maybeSaveBeforeTest();
   const run = controller.createTestRun(request);
   lastIncludeIds = matching.map((item) => item.id);
   lastFailedIds = [];
@@ -703,6 +712,11 @@ function readRunnerConfig(scope?: vscode.ConfigurationScope): RunnerConfig {
     configurationFile: config.get<string>('configurationFile', ''),
     workingDirectory: config.get<string>('workingDirectory', ''),
     additionalArgs: config.get<string[]>('additionalArgs', []),
+    phpArgs: config.get<string[]>('phpArgs', []),
+    command: config.get<string>('command', ''),
+    paths: config.get<Record<string, string>>('paths', {}),
+    environment: config.get<Record<string, string>>('environment', {}),
+    saveBeforeTest: config.get<boolean>('saveBeforeTest', false),
     dockerEnable: config.get<boolean>('docker.enable', false),
     dockerCommand: config.get<string>('docker.command', 'docker'),
     dockerContainer: config.get<string>('docker.container', ''),
@@ -715,6 +729,33 @@ function readRunnerConfig(scope?: vscode.ConfigurationScope): RunnerConfig {
 
 function getConfig(scope?: vscode.ConfigurationScope): vscode.WorkspaceConfiguration {
   return vscode.workspace.getConfiguration('phpunitRunner', scope);
+}
+
+async function maybeSaveBeforeTest(): Promise<void> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (readRunnerConfig(folder).saveBeforeTest) {
+    await vscode.workspace.saveAll(false);
+  }
+}
+
+function remapCases(cases: JUnitTestCase[], mappings: PathMapping[]): JUnitTestCase[] {
+  if (mappings.length === 0) {
+    return cases;
+  }
+
+  return cases.map((item) => ({
+    ...item,
+    file: item.file ? unmapWithMappings(item.file, mappings) : item.file,
+    message: remapText(item.message, mappings),
+  }));
+}
+
+function remapText(value: string, mappings: PathMapping[]): string {
+  let result = value;
+  for (const mapping of mappings) {
+    result = result.split(mapping.to).join(mapping.from);
+  }
+  return result;
 }
 
 function addFileItemToHierarchy(fileItem: vscode.TestItem, workspaceFolder?: vscode.WorkspaceFolder): void {

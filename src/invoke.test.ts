@@ -10,6 +10,11 @@ const config: RunnerConfig = {
   configurationFile: '',
   workingDirectory: '',
   additionalArgs: ['--testdox'],
+  phpArgs: [],
+  command: '',
+  paths: {},
+  environment: {},
+  saveBeforeTest: false,
   dockerEnable: false,
   dockerCommand: 'docker',
   dockerContainer: 'app',
@@ -90,6 +95,49 @@ describe('resolveInvocation', () => {
     assert.ok(invocation.args.includes('unit'));
     assert.ok(!invocation.args.includes(undefined as unknown as string));
     assert.equal(invocation.args.at(-1), 'unit');
+  });
+
+  it('renders a Sail-style command template with path mappings', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: fileTarget,
+      config: {
+        ...config,
+        command: 'docker compose exec -u sail laravel.test ${php} ${phpargs} ${phpunit} ${phpunitargs}',
+        paths: { '${workspaceFolder}': '/var/www/html' },
+        environment: { APP_ENV: 'testing' },
+      },
+      phpunitExecutable: '/proj/vendor/bin/phpunit',
+      detectedConfigurationFile: '/proj/phpunit.xml',
+      junitLogPath: '/proj/.phpunit-runner/junit.xml',
+      userHome: '/home/dev',
+    });
+
+    assert.equal(invocation.shell, true);
+    assert.equal(invocation.env?.APP_ENV, 'testing');
+    assert.match(invocation.command, /docker compose exec -u sail laravel.test php/);
+    assert.match(invocation.command, /\/var\/www\/html\/vendor\/bin\/phpunit/);
+    assert.match(invocation.command, /\/var\/www\/html\/tests\/ExampleTest.php/);
+    assert.ok(!invocation.command.includes('/proj/vendor/bin/phpunit'));
+  });
+
+  it('prefers a command template over docker.enable wrapping', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: fileTarget,
+      config: {
+        ...config,
+        dockerEnable: true,
+        dockerContainer: 'app',
+        command: 'ddev exec ${php} ${phpunit} ${phpunitargs}',
+      },
+      phpunitExecutable: '/proj/vendor/bin/phpunit',
+      detectedConfigurationFile: '/proj/phpunit.xml',
+    });
+
+    assert.equal(invocation.shell, true);
+    assert.match(invocation.command, /^ddev exec /);
+    assert.ok(!invocation.args.includes('exec'));
   });
 
   it('throws when docker is enabled without a container', () => {
