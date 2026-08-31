@@ -1,6 +1,8 @@
-.PHONY: all build install package publish clean dev test
+.PHONY: all build install package vsix publish clean dev test
 
-VSIX := $(shell node -p "require('./package.json').name + '-' + require('./package.json').version + '.vsix'" 2>/dev/null || echo "phpunit-runner-0.1.0.vsix")
+NAME := $(shell node -p "require('./package.json').name")
+VERSION := $(shell node -p "require('./package.json').version")
+VSIX := $(NAME)-$(VERSION).vsix
 
 all: build
 
@@ -26,11 +28,15 @@ install: package
 	  "$$CODE" --install-extension $(VSIX)
 	@echo "==> Done. Reload VS Code to activate the new version."
 
-## package: build + produce VSIX only
-package: build
-	@echo "==> Packaging extension..."
+## vsix: build a versioned VSIX (e.g. aos-phpunit-0.2.0.vsix)
+vsix: build
+	@echo "==> Packaging $(VSIX)..."
 	npx vsce package --no-dependencies -o $(VSIX)
-	@echo "    Package: $(VSIX)"
+	@test -f $(VSIX)
+	@echo "    Wrote $(CURDIR)/$(VSIX)"
+
+## package: alias for vsix
+package: vsix
 
 ## publish: build, package, and publish the VSIX to the VS Code Marketplace
 publish: package
