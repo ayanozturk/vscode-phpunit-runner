@@ -281,7 +281,7 @@
     "@types/node": "^20.12.12",
     "@types/vscode": "^1.89.0",
     "@vscode/test-electron": "^2.3.9",
-    "@vscode/vsce": "^3.9.1",
+    "@vscode/vsce": "^4.0.0",
     "ts-loader": "^9.5.1",
     "tsx": "^4.19.2",
     "typescript": "^5.4.5",
