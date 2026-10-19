@@ -349,6 +349,9 @@ async function runItem(
   try {
     const result = await executePhpUnit(data, token, kind, run);
     run.appendOutput(result.output);
+    if (result.reportWarning) {
+      run.appendOutput(`${result.reportWarning}\r\n`, undefined, item);
+    }
     applyExecutionResult(run, item, result);
   } catch (error) {
     const message = new vscode.TestMessage(String(error));
@@ -360,12 +363,15 @@ async function runItem(
 function applyExecutionResult(
   run: vscode.TestRun,
   item: vscode.TestItem,
-  result: { output: string; exitCode: number; duration: number; cases: JUnitTestCase[] },
+  result: { output: string; exitCode: number; duration: number; cases: JUnitTestCase[]; reportWarning?: string },
 ): void {
   const methods = collectMethodItems(item);
   if (result.cases.length === 0 && result.exitCode === 0) {
-    const message = 'PHPUnit exited without readable JUnit test cases; test results are unverified.';
-    run.appendOutput(`${message}\r\n`, undefined, item);
+    const message = result.reportWarning
+      ?? 'PHPUnit exited without readable JUnit test cases; test results are unverified.';
+    if (!result.reportWarning) {
+      run.appendOutput(`${message}\r\n`, undefined, item);
+    }
     run.skipped(item);
     markDescendants(run, item, 'skipped');
     return;
@@ -473,7 +479,13 @@ async function executePhpUnit(
   token: vscode.CancellationToken,
   kind: vscode.TestRunProfileKind,
   run: vscode.TestRun,
-): Promise<{ output: string; exitCode: number; duration: number; cases: JUnitTestCase[] }> {
+): Promise<{
+  output: string;
+  exitCode: number;
+  duration: number;
+  cases: JUnitTestCase[];
+  reportWarning?: string;
+}> {
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(data.uri)
     ?? vscode.workspace.workspaceFolders?.[0];
   if (!workspaceFolder) {
@@ -548,14 +560,20 @@ async function executePhpUnit(
       });
     });
 
-    const cases = remapCases(await readJUnitCases(junitLogPath), invocation.mappings ?? []);
+    const junitReport = await readJUnitReport(junitLogPath);
+    const remoteExecution = invocation.shell === true || config.dockerEnable;
+    const reportWarning = remoteExecution && !junitReport.available
+      ? 'Remote PHPUnit execution completed, but its JUnit report is unavailable on the host. Detailed test results require a shared or mounted report path, or retrieval by the remote command.'
+      : undefined;
+    const cases = remapCases(junitReport.cases, invocation.mappings ?? []);
     if (coverageCloverPath) {
-      await applyCloverCoverage(run, coverageCloverPath, invocation.mappings ?? []);
+      await applyCloverCoverage(run, coverageCloverPath, invocation.mappings ?? [], remoteExecution);
     }
     return {
       ...result,
       duration: Date.now() - start,
       cases,
+      reportWarning,
     };
   } finally {
     await fs.rm(junitLogPath, { force: true }).catch(() => undefined);
@@ -592,6 +610,7 @@ async function applyCloverCoverage(
   run: vscode.TestRun,
   cloverPath: string,
   mappings: PathMapping[],
+  remoteExecution: boolean,
 ): Promise<void> {
   try {
     const xml = await fs.readFile(cloverPath, 'utf8');
@@ -613,7 +632,11 @@ async function applyCloverCoverage(
       run.addCoverage(coverage);
     }
   } catch (error) {
-    outputChannel.appendLine(`[phpunit-runner] Coverage report was not produced: ${String(error)}`);
+    const message = remoteExecution
+      ? `Remote coverage report is unavailable on the host. Coverage requires a shared or mounted report path, or retrieval by the remote command: ${String(error)}`
+      : `Coverage report was not produced: ${String(error)}`;
+    outputChannel.appendLine(`[phpunit-runner] ${message}`);
+    run.appendOutput(`${message}\r\n`);
   }
 }
 
@@ -676,6 +699,9 @@ async function runByGroup(): Promise<void> {
       run,
     );
     run.appendOutput(result.output);
+    if (result.reportWarning) {
+      run.appendOutput(`${result.reportWarning}\r\n`);
+    }
     for (const item of matching) {
       applyExecutionResult(run, item, result);
     }
@@ -703,12 +729,12 @@ function findItemById(id: string): vscode.TestItem | undefined {
   return undefined;
 }
 
-async function readJUnitCases(junitLogPath: string): Promise<JUnitTestCase[]> {
+async function readJUnitReport(junitLogPath: string): Promise<{ cases: JUnitTestCase[]; available: boolean }> {
   try {
     const xml = await fs.readFile(junitLogPath, 'utf8');
-    return parseJUnitXml(xml);
+    return { cases: parseJUnitXml(xml), available: true };
   } catch {
-    return [];
+    return { cases: [], available: false };
   }
 }
 

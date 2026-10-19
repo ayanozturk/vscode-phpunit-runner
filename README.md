@@ -106,6 +106,10 @@ Docker settings:
 }
 ```
 
+### Remote reports
+
+JUnit and Clover reports are written under `.phpunit-runner` and read from the workspace on the VS Code host. Remote command and Docker setups must expose that directory through a shared or mounted workspace, or retrieve the generated reports before the command finishes. Without a readable JUnit report, tests are marked skipped as unverified; without a readable Clover report, coverage is unavailable. The output channel reports these cases.
+
 ## Commands
 
 - `PHPUnit Runner: Refresh Tests`
