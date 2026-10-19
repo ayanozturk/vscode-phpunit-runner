@@ -121,6 +121,26 @@ describe('resolveInvocation', () => {
     assert.ok(!invocation.command.includes('/proj/vendor/bin/phpunit'));
   });
 
+  it('quotes mapped report and test paths in SSH templates', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/workspace folder/$HOME',
+      target: { kind: 'file', filePath: '/workspace folder/$HOME/tests/Spec Test.php' },
+      config: {
+        ...config,
+        phpunitCommand: '/workspace folder/$HOME/vendor/bin/phpunit',
+        command: 'ssh user@host "cd ${cwd} && ${php} ${phpunit} ${phpunitargs}"',
+        paths: { '${workspaceFolder}': '/srv/app' },
+      },
+      phpunitExecutable: '/workspace folder/$HOME/vendor/bin/phpunit',
+      junitLogPath: '/workspace folder/$HOME/.phpunit-runner/junit report.xml',
+    });
+
+    assert.match(invocation.command, /cd \/srv\/app/);
+    assert.ok(invocation.command.includes("'/srv/app/tests/Spec Test.php'"));
+    assert.ok(invocation.command.includes("'/srv/app/.phpunit-runner/junit report.xml'"));
+    assert.ok(!invocation.command.includes('$HOME'));
+  });
+
   it('prefers a command template over docker.enable wrapping', async () => {
     const invocation = await resolveInvocation({
       workspacePath: '/proj',

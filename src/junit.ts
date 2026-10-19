@@ -1,3 +1,4 @@
+import * as fs from 'fs/promises';
 import type { JUnitStatus, JUnitTestCase } from './types';
 import { methodNameFromTestCase, normalizeClassName } from './parser';
 
@@ -19,6 +20,15 @@ export function parseJUnitXml(xml: string): JUnitTestCase[] {
   }
 
   return cases;
+}
+
+export async function readJUnitReport(reportPath: string): Promise<{ cases: JUnitTestCase[]; available: boolean }> {
+  try {
+    const xml = await fs.readFile(reportPath, 'utf8');
+    return { cases: parseJUnitXml(xml), available: true };
+  } catch {
+    return { cases: [], available: false };
+  }
 }
 
 export function aggregateMethodStatus(cases: JUnitTestCase[]): JUnitStatus {

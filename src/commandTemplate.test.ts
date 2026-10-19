@@ -3,8 +3,10 @@ import { describe, it } from 'node:test';
 import {
   expandPathMappings,
   joinQuoted,
+  joinTemplateShellArgs,
   mapWithMappings,
   quoteShellArg,
+  quoteTemplateShellArg,
   substituteVariables,
   unmapWithMappings,
 } from './commandTemplate';
@@ -32,5 +34,11 @@ describe('command templates', () => {
     assert.equal(quoteShellArg('php'), 'php');
     assert.equal(quoteShellArg('^App\\Tests::testA$'), '"^App\\\\Tests::testA$"');
     assert.equal(joinQuoted(['--filter', '^A::b$']), '--filter "^A::b$"');
+  });
+
+  it('quotes template substitutions against shell expansion and embedded apostrophes', () => {
+    assert.equal(quoteTemplateShellArg('$(touch /tmp/phpunit-runner) $HOME'), "'$(touch /tmp/phpunit-runner) $HOME'");
+    assert.equal(quoteTemplateShellArg("can't"), "'can'\\''t'");
+    assert.equal(joinTemplateShellArgs(['php', '/tmp/a path/$cash.php']), "php '/tmp/a path/$cash.php'");
   });
 });

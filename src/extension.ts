@@ -5,15 +5,18 @@ import * as vscode from 'vscode';
 import { parseCloverXml } from './clover';
 import { unmapWithMappings, type PathMapping } from './commandTemplate';
 import { autoDetectConfigurationFile, resolveInvocation } from './invoke';
+import { groupItemsBy } from './grouping';
+import { terminateProcessTree } from './processTree';
 import {
   aggregateMethodStatus,
   firstFailureLocation,
   firstFailureMessage,
-  parseJUnitXml,
+  readJUnitReport,
 } from './junit';
 import { classNamesMatch, methodNameFromTestCase, parseTestSource } from './parser';
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
 import { resolveDiscoveryGlobs } from './phpunitXml';
+import { unverifiedJUnitMessage } from './testResults';
 import type { JUnitTestCase, RunnerConfig, SourceRange, TestTarget } from './types';
 
 type TestItemData = TestTarget & { uri: vscode.Uri; groups?: string[] };
@@ -375,11 +378,12 @@ function applyExecutionResult(
   result: { output: string; exitCode: number; duration: number; cases: JUnitTestCase[]; reportWarning?: string },
 ): void {
   const methods = collectMethodItems(item);
-  if (result.cases.length === 0 && result.exitCode === 0) {
-    const message = result.reportWarning
-      ?? 'PHPUnit exited without readable JUnit test cases; test results are unverified.';
+  const unverifiedMessage = result.cases.length === 0
+    ? unverifiedJUnitMessage(result.exitCode, result.reportWarning)
+    : undefined;
+  if (unverifiedMessage) {
     if (!result.reportWarning) {
-      run.appendOutput(`${message}\r\n`, undefined, item);
+      run.appendOutput(`${unverifiedMessage}\r\n`, undefined, item);
     }
     run.skipped(item);
     markDescendants(run, item, 'skipped');
@@ -552,54 +556,18 @@ async function executePhpUnit(
       child.stdout.on('data', append);
       child.stderr.on('data', append);
 
-      let forceKillTimer: NodeJS.Timeout | undefined;
       let terminationRequested = false;
-      const terminateProcessTree = () => {
+      const terminateChildProcessTree = () => {
         if (terminationRequested) {
           return;
         }
         terminationRequested = true;
-
-        if (process.platform === 'win32') {
-          if (!child.pid) {
-            child.kill();
-            return;
-          }
-          const taskkill = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
-            stdio: 'ignore',
-            windowsHide: true,
-          });
-          taskkill.on('error', () => child.kill());
-          taskkill.on('close', (code) => {
-            if (code !== 0) {
-              child.kill();
-            }
-          });
-          return;
-        }
-
-        if (!child.pid) {
-          child.kill();
-          return;
-        }
-        try {
-          process.kill(-child.pid, 'SIGTERM');
-        } catch {
-          child.kill('SIGTERM');
-        }
-        forceKillTimer = setTimeout(() => {
-          try {
-            process.kill(-child.pid!, 'SIGKILL');
-          } catch {
-            child.kill('SIGKILL');
-          }
-        }, 1500);
-        forceKillTimer.unref();
+        terminateProcessTree(child);
       };
 
-      const subscription = token.onCancellationRequested(terminateProcessTree);
+      const subscription = token.onCancellationRequested(terminateChildProcessTree);
       if (token.isCancellationRequested) {
-        terminateProcessTree();
+        terminateChildProcessTree();
       }
 
       child.on('error', (error) => {
@@ -731,18 +699,10 @@ async function runByGroup(): Promise<void> {
   }
 
   const matching = collectAllMethodItems().filter((item) => itemData.get(item)?.groups?.includes(selected));
-  const matchingByFolder = new Map<vscode.WorkspaceFolder, vscode.TestItem[]>();
-  const unscoped: vscode.TestItem[] = [];
-  for (const item of matching) {
-    const folder = item.uri ? vscode.workspace.getWorkspaceFolder(item.uri) : undefined;
-    if (!folder) {
-      unscoped.push(item);
-      continue;
-    }
-    const items = matchingByFolder.get(folder) ?? [];
-    items.push(item);
-    matchingByFolder.set(folder, items);
-  }
+  const { groups: matchingByFolder, ungrouped: unscoped } = groupItemsBy(
+    matching,
+    (item) => item.uri ? vscode.workspace.getWorkspaceFolder(item.uri) : undefined,
+  );
   if (matchingByFolder.size === 0 && unscoped.length === 0) {
     return;
   }
@@ -809,15 +769,6 @@ function findItemById(id: string): vscode.TestItem | undefined {
     stack.push(...collectTestItems(item.children));
   }
   return undefined;
-}
-
-async function readJUnitReport(junitLogPath: string): Promise<{ cases: JUnitTestCase[]; available: boolean }> {
-  try {
-    const xml = await fs.readFile(junitLogPath, 'utf8');
-    return { cases: parseJUnitXml(xml), available: true };
-  } catch {
-    return { cases: [], available: false };
-  }
 }
 
 function readRunnerConfig(scope?: vscode.ConfigurationScope): RunnerConfig {

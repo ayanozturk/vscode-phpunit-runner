@@ -102,6 +102,48 @@ final class GroupedTest {
       ],
     );
   });
+
+  it('ignores declarations inside comments, strings, and heredoc bodies', () => {
+    const source = `<?php
+// class CommentPhantomTest { public function testGhost() {} }
+$single = 'class SingleStringPhantomTest { public function testGhost() {} }';
+$double = "class DoubleStringPhantomTest { public function testGhost() {} }";
+$document = <<<'PHP'
+class HeredocPhantomTest { public function testGhost() {} }
+PHP;
+
+class RealTest {
+    public function testReal(): void {
+        /* @test public function testPhantom() {} */
+        $value = 'public function testAlsoPhantom() {}';
+    }
+
+    public function helperAfterComment(): void {}
+}
+`;
+
+    const parsed = parseTestSource('/tmp/RealTest.php', source);
+    assert.deepEqual(parsed.classes.map((testClass) => testClass.name), ['RealTest']);
+    assert.deepEqual(parsed.classes[0].methods.map((method) => method.name), ['testReal']);
+  });
+
+  it('assigns fully qualified names in multiple bracketed namespaces', () => {
+    const source = `<?php
+namespace First\\Tests {
+    class FirstTest { public function testFirst(): void {} }
+}
+
+namespace Second\\Tests {
+    class SecondTest { public function testSecond(): void {} }
+}
+`;
+
+    const parsed = parseTestSource('/tmp/NamespacedTests.php', source);
+    assert.deepEqual(
+      parsed.classes.map((testClass) => testClass.fullyQualifiedName),
+      ['First\\Tests\\FirstTest', 'Second\\Tests\\SecondTest'],
+    );
+  });
 });
 
 describe('classNamesMatch', () => {

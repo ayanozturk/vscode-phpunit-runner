@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { describe, it } from 'node:test';
 import {
   aggregateMethodStatus,
@@ -6,6 +9,7 @@ import {
   groupCasesByMethod,
   parseJUnitXml,
   parseLocationFromMessage,
+  readJUnitReport,
 } from './junit';
 
 const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -63,5 +67,22 @@ describe('parseJUnitXml', () => {
   it('decodes xml entities in failure bodies', () => {
     const cases = parseJUnitXml(`<testcase name="t" classname="C"><failure>a &lt; b &amp; c</failure></testcase>`);
     assert.equal(cases[0].message, 'a < b & c');
+  });
+});
+
+describe('readJUnitReport', () => {
+  it('distinguishes an unavailable report from a readable report with no cases', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit-runner-junit-'));
+    try {
+      const missing = await readJUnitReport(path.join(directory, 'missing.xml'));
+      assert.deepEqual(missing, { cases: [], available: false });
+
+      const emptyReportPath = path.join(directory, 'empty.xml');
+      await fs.writeFile(emptyReportPath, '<testsuites/>', 'utf8');
+      const empty = await readJUnitReport(emptyReportPath);
+      assert.deepEqual(empty, { cases: [], available: true });
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
   });
 });
