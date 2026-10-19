@@ -68,11 +68,30 @@ export function quoteShellArg(value: string): string {
   if (!/[^\w@%+=:,./-]/i.test(value)) {
     return value;
   }
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/`/g, '\\`')
+    .replace(/\$(?=[A-Za-z0-9_{(!#?$*@-])/g, '\\$');
+  return `"${escaped}"`;
 }
 
 export function joinQuoted(parts: string[]): string {
   return parts.map(quoteShellArg).join(' ');
+}
+
+export function quoteTemplateShellArg(value: string): string {
+  if (value.length === 0) {
+    return "''";
+  }
+  if (/^[\w@%+=:,./-]+$/i.test(value)) {
+    return value;
+  }
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+export function joinTemplateShellArgs(parts: string[]): string {
+  return parts.map(quoteTemplateShellArg).join(' ');
 }
 
 function looksLikePath(value: string): boolean {

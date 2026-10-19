@@ -303,6 +303,9 @@ function findNarrowestTestItem(item: vscode.TestItem, position: vscode.Position)
 async function runTests(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
   await maybeSaveBeforeTest();
   const run = controller.createTestRun(request);
+  const cancellation = new vscode.CancellationTokenSource();
+  const tokenSubscription = token.onCancellationRequested(() => cancellation.cancel());
+  const runSubscription = run.token.onCancellationRequested(() => cancellation.cancel());
   const queue = request.include?.length ? [...request.include] : collectTestItems(controller.items);
   lastIncludeIds = request.include?.map((item) => item.id);
   lastFailedIds = [];
@@ -310,14 +313,20 @@ async function runTests(request: vscode.TestRunRequest, token: vscode.Cancellati
   const kind = request.profile?.kind ?? vscode.TestRunProfileKind.Run;
 
   try {
+    if (token.isCancellationRequested || run.token.isCancellationRequested) {
+      cancellation.cancel();
+    }
     for (const item of queue) {
-      if (token.isCancellationRequested) {
+      if (cancellation.token.isCancellationRequested) {
         break;
       }
 
-      await runItem(item, run, token, kind);
+      await runItem(item, run, cancellation.token, kind);
     }
   } finally {
+    tokenSubscription.dispose();
+    runSubscription.dispose();
+    cancellation.dispose();
     run.end();
   }
 }
@@ -528,9 +537,10 @@ async function executePhpUnit(
         ...process.env,
         ...invocation.env,
       };
+      const detached = process.platform !== 'win32';
       const child = invocation.shell
-        ? spawn(invocation.command, { cwd: invocation.cwd, env, shell: true })
-        : spawn(invocation.command, invocation.args, { cwd: invocation.cwd, env });
+        ? spawn(invocation.command, { cwd: invocation.cwd, env, shell: true, detached })
+        : spawn(invocation.command, invocation.args, { cwd: invocation.cwd, env, detached });
 
       let output = '';
       const append = (chunk: string | Buffer) => {
@@ -542,9 +552,55 @@ async function executePhpUnit(
       child.stdout.on('data', append);
       child.stderr.on('data', append);
 
-      const subscription = token.onCancellationRequested(() => {
-        child.kill();
-      });
+      let forceKillTimer: NodeJS.Timeout | undefined;
+      let terminationRequested = false;
+      const terminateProcessTree = () => {
+        if (terminationRequested) {
+          return;
+        }
+        terminationRequested = true;
+
+        if (process.platform === 'win32') {
+          if (!child.pid) {
+            child.kill();
+            return;
+          }
+          const taskkill = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+            stdio: 'ignore',
+            windowsHide: true,
+          });
+          taskkill.on('error', () => child.kill());
+          taskkill.on('close', (code) => {
+            if (code !== 0) {
+              child.kill();
+            }
+          });
+          return;
+        }
+
+        if (!child.pid) {
+          child.kill();
+          return;
+        }
+        try {
+          process.kill(-child.pid, 'SIGTERM');
+        } catch {
+          child.kill('SIGTERM');
+        }
+        forceKillTimer = setTimeout(() => {
+          try {
+            process.kill(-child.pid!, 'SIGKILL');
+          } catch {
+            child.kill('SIGKILL');
+          }
+        }, 1500);
+        forceKillTimer.unref();
+      };
+
+      const subscription = token.onCancellationRequested(terminateProcessTree);
+      if (token.isCancellationRequested) {
+        terminateProcessTree();
+      }
 
       child.on('error', (error) => {
         subscription.dispose();
@@ -675,13 +731,24 @@ async function runByGroup(): Promise<void> {
   }
 
   const matching = collectAllMethodItems().filter((item) => itemData.get(item)?.groups?.includes(selected));
-  const folder = vscode.workspace.workspaceFolders?.[0];
-  if (!folder) {
+  const matchingByFolder = new Map<vscode.WorkspaceFolder, vscode.TestItem[]>();
+  const unscoped: vscode.TestItem[] = [];
+  for (const item of matching) {
+    const folder = item.uri ? vscode.workspace.getWorkspaceFolder(item.uri) : undefined;
+    if (!folder) {
+      unscoped.push(item);
+      continue;
+    }
+    const items = matchingByFolder.get(folder) ?? [];
+    items.push(item);
+    matchingByFolder.set(folder, items);
+  }
+  if (matchingByFolder.size === 0 && unscoped.length === 0) {
     return;
   }
 
   const request = new vscode.TestRunRequest(matching, undefined, runProfile);
-  await maybeSaveBeforeTest();
+  await maybeSaveBeforeTest([...matchingByFolder.keys()]);
   const run = controller.createTestRun(request);
   lastIncludeIds = matching.map((item) => item.id);
   lastFailedIds = [];
@@ -690,20 +757,35 @@ async function runByGroup(): Promise<void> {
     run.enqueued(item);
     run.started(item);
   }
+  for (const item of unscoped) {
+    run.errored(item, new vscode.TestMessage('The test is not inside a workspace folder.'));
+  }
 
   try {
-    const result = await executePhpUnit(
-      { kind: 'file', uri: folder.uri, group: selected },
-      new vscode.CancellationTokenSource().token,
-      vscode.TestRunProfileKind.Run,
-      run,
-    );
-    run.appendOutput(result.output);
-    if (result.reportWarning) {
-      run.appendOutput(`${result.reportWarning}\r\n`);
-    }
-    for (const item of matching) {
-      applyExecutionResult(run, item, result);
+    for (const [folder, items] of matchingByFolder) {
+      if (run.token.isCancellationRequested) {
+        break;
+      }
+      try {
+        const result = await executePhpUnit(
+          { kind: 'file', uri: folder.uri, group: selected },
+          run.token,
+          vscode.TestRunProfileKind.Run,
+          run,
+        );
+        run.appendOutput(result.output);
+        if (result.reportWarning) {
+          run.appendOutput(`${result.reportWarning}\r\n`);
+        }
+        for (const item of items) {
+          applyExecutionResult(run, item, result);
+        }
+      } catch (error) {
+        const message = new vscode.TestMessage(String(error));
+        for (const item of items) {
+          run.errored(item, message);
+        }
+      }
     }
   } finally {
     run.end();
@@ -765,9 +847,8 @@ function getConfig(scope?: vscode.ConfigurationScope): vscode.WorkspaceConfigura
   return vscode.workspace.getConfiguration('phpunitRunner', scope);
 }
 
-async function maybeSaveBeforeTest(): Promise<void> {
-  const folder = vscode.workspace.workspaceFolders?.[0];
-  if (readRunnerConfig(folder).saveBeforeTest) {
+async function maybeSaveBeforeTest(folders = vscode.workspace.workspaceFolders ?? []): Promise<void> {
+  if (folders.some((folder) => readRunnerConfig(folder).saveBeforeTest)) {
     await vscode.workspace.saveAll(false);
   }
 }

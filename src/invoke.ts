@@ -3,9 +3,9 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   expandPathMappings,
-  joinQuoted,
+  joinTemplateShellArgs,
   mapWithMappings,
-  quoteShellArg,
+  quoteTemplateShellArg,
   substituteVariables,
   type PathMapping,
 } from './commandTemplate';
@@ -196,15 +196,18 @@ function renderRemoteInvocation(options: {
   const mappedPhpunitArgs = options.phpunitArgs.map((arg) => mapWithMappings(arg, options.mappings));
   const phpunitxmlIndex = mappedPhpunitArgs.indexOf('--configuration');
   const phpunitxml = phpunitxmlIndex >= 0 ? mappedPhpunitArgs[phpunitxmlIndex + 1] ?? '' : '';
+  const quotedVars = Object.fromEntries(
+    Object.entries(options.vars).map(([name, value]) => [name, quoteTemplateShellArg(value)]),
+  );
 
   const rendered = substituteVariables(options.template, {
-    ...options.vars,
-    php,
-    phpargs: joinQuoted(options.phpArgs),
-    phpunit,
-    phpunitargs: joinQuoted(mappedPhpunitArgs),
-    phpunitxml,
-    cwd,
+    ...quotedVars,
+    php: quoteTemplateShellArg(php),
+    phpargs: joinTemplateShellArgs(options.phpArgs),
+    phpunit: quoteTemplateShellArg(phpunit),
+    phpunitargs: joinTemplateShellArgs(mappedPhpunitArgs),
+    phpunitxml: quoteTemplateShellArg(phpunitxml),
+    cwd: quoteTemplateShellArg(cwd),
   });
 
   return {
