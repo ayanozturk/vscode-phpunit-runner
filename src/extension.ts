@@ -363,6 +363,14 @@ function applyExecutionResult(
   result: { output: string; exitCode: number; duration: number; cases: JUnitTestCase[] },
 ): void {
   const methods = collectMethodItems(item);
+  if (result.cases.length === 0 && result.exitCode === 0) {
+    const message = 'PHPUnit exited without readable JUnit test cases; test results are unverified.';
+    run.appendOutput(`${message}\r\n`, undefined, item);
+    run.skipped(item);
+    markDescendants(run, item, 'skipped');
+    return;
+  }
+
   if (result.cases.length === 0 || methods.length === 0) {
     const message = new vscode.TestMessage(result.output || 'PHPUnit completed without output.');
     if (result.exitCode === 0) {
