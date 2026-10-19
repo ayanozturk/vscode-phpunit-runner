@@ -2,6 +2,8 @@
 .cursor/**
 .gitignore
 src/**
+test/**
+.vscode-test/**
 node_modules/**
 out/**
 **/*.map

@@ -21,3 +21,16 @@ export function groupItemsBy<T, K>(items: T[], getKey: (item: T) => K | undefine
 
   return { groups, ungrouped };
 }
+
+export async function runGroupsSequentially<K, T>(
+  groups: Map<K, T[]>,
+  shouldStop: () => boolean,
+  runGroup: (key: K, items: T[]) => Promise<void>,
+): Promise<void> {
+  for (const [key, items] of groups) {
+    if (shouldStop()) {
+      return;
+    }
+    await runGroup(key, items);
+  }
+}

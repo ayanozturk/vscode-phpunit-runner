@@ -68,6 +68,32 @@ describe('parseJUnitXml', () => {
     const cases = parseJUnitXml(`<testcase name="t" classname="C"><failure>a &lt; b &amp; c</failure></testcase>`);
     assert.equal(cases[0].message, 'a < b & c');
   });
+
+  it('parses quoted greater-than signs, single quotes, and numeric XML entities in attributes', () => {
+    const cases = parseJUnitXml(`<testsuites><testcase time='0.25' name='test &#x3E; value' classname='C&amp;D' file='/tmp/a&gt;b.php'/></testsuites>`);
+    assert.deepEqual(cases[0], {
+      name: 'test > value',
+      className: 'C&D',
+      timeSeconds: 0.25,
+      status: 'passed',
+      message: '',
+      file: '/tmp/a>b.php',
+      line: undefined,
+    });
+  });
+
+  it('uses failure message attributes and preserves CDATA content', () => {
+    const cases = parseJUnitXml(`<testsuite>
+      <testcase name="attribute" classname="C"><failure message="assertion &gt; expectation"/></testcase>
+      <testcase name="cdata" classname="C"><error><![CDATA[<broken> & raw]]></error></testcase>
+    </testsuite>`);
+    assert.equal(cases[0].message, 'assertion > expectation');
+    assert.equal(cases[1].message, '<broken> & raw');
+  });
+
+  it('rejects malformed XML instead of silently treating it as an empty report', () => {
+    assert.throws(() => parseJUnitXml('<testsuite><testcase name="unfinished"></testsuite>'));
+  });
 });
 
 describe('readJUnitReport', () => {
@@ -81,6 +107,13 @@ describe('readJUnitReport', () => {
       await fs.writeFile(emptyReportPath, '<testsuites/>', 'utf8');
       const empty = await readJUnitReport(emptyReportPath);
       assert.deepEqual(empty, { cases: [], available: true });
+
+      const malformedPath = path.join(directory, 'malformed.xml');
+      await fs.writeFile(malformedPath, '<testsuites><testcase></testsuites>', 'utf8');
+      const malformed = await readJUnitReport(malformedPath);
+      assert.equal(malformed.available, false);
+      assert.deepEqual(malformed.cases, []);
+      assert.match(malformed.warning ?? '', /malformed/);
     } finally {
       await fs.rm(directory, { recursive: true, force: true });
     }

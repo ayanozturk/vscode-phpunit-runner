@@ -2,10 +2,10 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import * as vscode from 'vscode';
-import { parseCloverXml } from './clover';
 import { unmapWithMappings, type PathMapping } from './commandTemplate';
+import { readCloverReport } from './coverage';
 import { autoDetectConfigurationFile, resolveInvocation } from './invoke';
-import { groupItemsBy } from './grouping';
+import { groupItemsBy, runGroupsSequentially } from './grouping';
 import { terminateProcessTree } from './processTree';
 import {
   aggregateMethodStatus,
@@ -16,10 +16,17 @@ import {
 import { classNamesMatch, methodNameFromTestCase, parseTestSource } from './parser';
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
 import { resolveDiscoveryGlobs } from './phpunitXml';
-import { unverifiedJUnitMessage } from './testResults';
+import { executionDisposition, unverifiedJUnitMessage } from './testResults';
 import type { JUnitTestCase, RunnerConfig, SourceRange, TestTarget } from './types';
 
 type TestItemData = TestTarget & { uri: vscode.Uri; groups?: string[] };
+
+type ExtensionTestApi = {
+  controller: vscode.TestController;
+  profiles: vscode.TestRunProfile[];
+  refresh: () => Promise<void>;
+  runGroup: (group: string) => Promise<void>;
+};
 
 const itemData = new WeakMap<vscode.TestItem, TestItemData>();
 const coverageDetails = new WeakMap<vscode.FileCoverage, vscode.FileCoverageDetail[]>();
@@ -31,7 +38,7 @@ let lastIncludeIds: string[] | undefined;
 let lastFailedIds: string[] = [];
 let debugListenStarted = false;
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export async function activate(context: vscode.ExtensionContext): Promise<ExtensionTestApi | undefined> {
   outputChannel = vscode.window.createOutputChannel('PHPUnit Runner');
   controller = vscode.tests.createTestController('phpunitRunner', 'PHPUnit Runner');
 
@@ -119,6 +126,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   await discoverWorkspaceTests();
+  if (context.extensionMode === vscode.ExtensionMode.Test) {
+    return {
+      controller,
+      profiles: [runProfile, debugProfile, coverageProfile],
+      refresh: discoverWorkspaceTests,
+      runGroup: (group) => runByGroup(group),
+    };
+  }
 }
 
 export function deactivate(): void {
@@ -367,18 +382,33 @@ async function runItem(
     applyExecutionResult(run, item, result);
   } catch (error) {
     const message = new vscode.TestMessage(String(error));
-    run.failed(item, message);
-    markDescendants(run, item, 'skipped');
+    if (token.isCancellationRequested) {
+      run.skipped(item);
+      markDescendants(run, item, 'skipped');
+    } else {
+      run.failed(item, message);
+      markDescendants(run, item, 'skipped');
+    }
   }
 }
 
 function applyExecutionResult(
   run: vscode.TestRun,
   item: vscode.TestItem,
-  result: { output: string; exitCode: number; duration: number; cases: JUnitTestCase[]; reportWarning?: string },
+  result: { output: string; exitCode: number; duration: number; cases: JUnitTestCase[]; reportWarning?: string; cancelled?: boolean },
 ): void {
   const methods = collectMethodItems(item);
-  const unverifiedMessage = result.cases.length === 0
+  const disposition = executionDisposition({
+    cancelled: result.cancelled,
+    exitCode: result.exitCode,
+    caseCount: result.cases.length,
+  });
+  if (disposition === 'cancelled') {
+    run.skipped(item);
+    markDescendants(run, item, 'skipped');
+    return;
+  }
+  const unverifiedMessage = disposition === 'unverified'
     ? unverifiedJUnitMessage(result.exitCode, result.reportWarning)
     : undefined;
   if (unverifiedMessage) {
@@ -498,6 +528,7 @@ async function executePhpUnit(
   duration: number;
   cases: JUnitTestCase[];
   reportWarning?: string;
+  cancelled?: boolean;
 }> {
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(data.uri)
     ?? vscode.workspace.workspaceFolders?.[0];
@@ -586,9 +617,9 @@ async function executePhpUnit(
 
     const junitReport = await readJUnitReport(junitLogPath);
     const remoteExecution = invocation.shell === true || config.dockerEnable;
-    const reportWarning = remoteExecution && !junitReport.available
+    const reportWarning = junitReport.warning ?? (remoteExecution && !junitReport.available
       ? 'Remote PHPUnit execution completed, but its JUnit report is unavailable on the host. Detailed test results require a shared or mounted report path, or retrieval by the remote command.'
-      : undefined;
+      : undefined);
     const cases = remapCases(junitReport.cases, invocation.mappings ?? []);
     if (coverageCloverPath) {
       await applyCloverCoverage(run, coverageCloverPath, invocation.mappings ?? [], remoteExecution);
@@ -598,6 +629,7 @@ async function executePhpUnit(
       duration: Date.now() - start,
       cases,
       reportWarning,
+      cancelled: token.isCancellationRequested,
     };
   } finally {
     await fs.rm(junitLogPath, { force: true }).catch(() => undefined);
@@ -636,31 +668,30 @@ async function applyCloverCoverage(
   mappings: PathMapping[],
   remoteExecution: boolean,
 ): Promise<void> {
-  try {
-    const xml = await fs.readFile(cloverPath, 'utf8');
-    for (const file of parseCloverXml(xml)) {
-      const uri = vscode.Uri.file(unmapWithMappings(file.path, mappings));
-      const details = file.lines
-        .filter((line) => line.type === 'stmt')
-        .map((line) => new vscode.StatementCoverage(
-          line.count,
-          new vscode.Position(Math.max(line.line - 1, 0), 0),
-        ));
-      const coverage = details.length > 0
-        ? vscode.FileCoverage.fromDetails(uri, details)
-        : new vscode.FileCoverage(
-          uri,
-          new vscode.TestCoverageCount(file.coveredStatements, file.statements),
-        );
-      coverageDetails.set(coverage, details);
-      run.addCoverage(coverage);
-    }
-  } catch (error) {
+  const report = await readCloverReport(cloverPath, mappings);
+  if (!report.available) {
     const message = remoteExecution
-      ? `Remote coverage report is unavailable on the host. Coverage requires a shared or mounted report path, or retrieval by the remote command: ${String(error)}`
-      : `Coverage report was not produced: ${String(error)}`;
+      ? `Remote coverage report is unavailable on the host. Coverage requires a shared or mounted report path, or retrieval by the remote command: ${report.warning}`
+      : `Coverage report was not produced: ${report.warning}`;
     outputChannel.appendLine(`[phpunit-runner] ${message}`);
     run.appendOutput(`${message}\r\n`);
+    return;
+  }
+
+  for (const file of report.files) {
+    const uri = vscode.Uri.file(file.path);
+    const details = file.details.map((line) => new vscode.StatementCoverage(
+      line.count,
+      new vscode.Position(Math.max(line.line - 1, 0), 0),
+    ));
+    const coverage = details.length > 0
+      ? vscode.FileCoverage.fromDetails(uri, details)
+      : new vscode.FileCoverage(
+        uri,
+        new vscode.TestCoverageCount(file.coveredStatements, file.statements),
+      );
+    coverageDetails.set(coverage, details);
+    run.addCoverage(coverage);
   }
 }
 
@@ -684,7 +715,7 @@ async function runFailedTests(): Promise<void> {
   await runTests(new vscode.TestRunRequest(items, undefined, runProfile), new vscode.CancellationTokenSource().token);
 }
 
-async function runByGroup(): Promise<void> {
+async function runByGroup(groupOverride?: string): Promise<void> {
   const groups = [...new Set(
     collectAllMethodItems().flatMap((item) => itemData.get(item)?.groups ?? []),
   )].sort();
@@ -693,7 +724,7 @@ async function runByGroup(): Promise<void> {
     return;
   }
 
-  const selected = await vscode.window.showQuickPick(groups, { placeHolder: 'PHPUnit group' });
+  const selected = groupOverride ?? await vscode.window.showQuickPick(groups, { placeHolder: 'PHPUnit group' });
   if (!selected) {
     return;
   }
@@ -721,11 +752,9 @@ async function runByGroup(): Promise<void> {
     run.errored(item, new vscode.TestMessage('The test is not inside a workspace folder.'));
   }
 
+  const completedGroups = new Set<vscode.WorkspaceFolder>();
   try {
-    for (const [folder, items] of matchingByFolder) {
-      if (run.token.isCancellationRequested) {
-        break;
-      }
+    await runGroupsSequentially(matchingByFolder, () => run.token.isCancellationRequested, async (folder, items) => {
       try {
         const result = await executePhpUnit(
           { kind: 'file', uri: folder.uri, group: selected },
@@ -743,7 +772,22 @@ async function runByGroup(): Promise<void> {
       } catch (error) {
         const message = new vscode.TestMessage(String(error));
         for (const item of items) {
-          run.errored(item, message);
+          if (run.token.isCancellationRequested) {
+            run.skipped(item);
+          } else {
+            run.errored(item, message);
+          }
+        }
+      } finally {
+        completedGroups.add(folder);
+      }
+    });
+    if (run.token.isCancellationRequested) {
+      for (const [folder, items] of matchingByFolder) {
+        if (!completedGroups.has(folder)) {
+          for (const item of items) {
+            run.skipped(item);
+          }
         }
       }
     }
