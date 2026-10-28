@@ -75,7 +75,7 @@ export async function resolveInvocation(options: {
     phpArgs.push(
       `-dxdebug.mode=debug`,
       `-dxdebug.start_with_request=yes`,
-      `-dxdebug.client_port=${config.xdebugPort || 9003}`,
+      `-dxdebug.client_port=${config.xdebugPort > 0 ? config.xdebugPort : 9003}`,
     );
   }
 

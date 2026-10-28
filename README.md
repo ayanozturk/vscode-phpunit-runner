@@ -47,7 +47,7 @@ Core settings:
 - `phpunitRunner.testFileGlobs`
 - `phpunitRunner.excludeGlobs`
 - `phpunitRunner.debuggerConfig`
-- `phpunitRunner.xdebugPort`
+- `phpunitRunner.xdebugPort` (set to `0` to choose an available port automatically)
 
 Docker settings:
 

@@ -1,4 +1,5 @@
 import * as fs from 'fs/promises';
+import { createServer } from 'net';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import * as vscode from 'vscode';
@@ -37,6 +38,7 @@ let runProfile: vscode.TestRunProfile;
 let lastIncludeIds: string[] | undefined;
 let lastFailedIds: string[] = [];
 let debugListenStarted = false;
+let debugListenPort: number | undefined;
 const continuousRuns = new Map<string, vscode.CancellationTokenSource>();
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionTestApi | undefined> {
@@ -352,6 +354,7 @@ async function runTests(request: vscode.TestRunRequest, token: vscode.Cancellati
   lastIncludeIds = request.include?.map((item) => item.id);
   lastFailedIds = [];
   debugListenStarted = false;
+  debugListenPort = undefined;
   const kind = request.profile?.kind ?? vscode.TestRunProfileKind.Run;
 
   try {
@@ -665,8 +668,16 @@ async function executePhpUnit(
 
 async function ensureDebugListen(folder: vscode.WorkspaceFolder, config: RunnerConfig): Promise<void> {
   if (debugListenStarted) {
+    if (debugListenPort !== undefined) {
+      config.xdebugPort = debugListenPort;
+    }
     return;
   }
+
+  if (config.xdebugPort === 0) {
+    config.xdebugPort = config.debuggerConfig.trim() ? 9003 : await findAvailablePort();
+  }
+  debugListenPort = config.xdebugPort;
   debugListenStarted = true;
 
   const named = config.debuggerConfig.trim();
@@ -684,6 +695,24 @@ async function ensureDebugListen(folder: vscode.WorkspaceFolder, config: RunnerC
       'Could not start a PHP debug listener. Install a PHP debug extension or set phpunitRunner.debuggerConfig to a launch.json name.',
     );
   }
+}
+
+async function findAvailablePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+
+  const address = server.address();
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
+
+  if (!address || typeof address === 'string') {
+    throw new Error('Could not determine an available Xdebug port.');
+  }
+  return address.port;
 }
 
 async function applyCloverCoverage(

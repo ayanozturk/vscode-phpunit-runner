@@ -160,7 +160,7 @@
         "phpunitRunner.xdebugPort": {
           "type": "number",
           "default": 9003,
-          "description": "Xdebug client port used when phpunitRunner.debuggerConfig is empty."
+          "description": "Xdebug client port used when phpunitRunner.debuggerConfig is empty. Set to 0 to choose an available port automatically."
         }
       }
     },
