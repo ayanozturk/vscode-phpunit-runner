@@ -19,6 +19,21 @@ import {
 } from './paths';
 
 export async function autoDetectPhpUnit(workspacePath: string, platform = process.platform): Promise<string> {
+  if (await declaresPest(workspacePath)) {
+    const pestCandidates = platform === 'win32'
+      ? ['vendor\\bin\\pest.bat', 'vendor\\bin\\pest']
+      : ['vendor/bin/pest'];
+    for (const candidate of pestCandidates) {
+      const resolved = path.join(workspacePath, candidate);
+      try {
+        await fs.access(resolved);
+        return resolved;
+      } catch {
+        // Fall back to PHPUnit when Pest is declared but its binary is not installed.
+      }
+    }
+  }
+
   const candidates = platform === 'win32'
     ? ['vendor\\bin\\phpunit.bat', 'vendor\\bin\\phpunit']
     : ['vendor/bin/phpunit'];
@@ -34,6 +49,18 @@ export async function autoDetectPhpUnit(workspacePath: string, platform = proces
   }
 
   return 'phpunit';
+}
+
+async function declaresPest(workspacePath: string): Promise<boolean> {
+  try {
+    const composer = JSON.parse(await fs.readFile(path.join(workspacePath, 'composer.json'), 'utf8')) as {
+      require?: Record<string, unknown>;
+      'require-dev'?: Record<string, unknown>;
+    };
+    return Boolean(composer.require?.['pestphp/pest'] || composer['require-dev']?.['pestphp/pest']);
+  } catch {
+    return false;
+  }
 }
 
 export async function autoDetectConfigurationFile(workspacePath: string): Promise<string | undefined> {

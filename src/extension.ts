@@ -230,7 +230,9 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
       kind: 'class',
       uri,
       filePath: uri.fsPath,
-      className: cls.fullyQualifiedName,
+      ...(cls.methods.some((method) => method.pestTestName)
+        ? {}
+        : { className: cls.fullyQualifiedName }),
     });
 
     for (const method of cls.methods) {
@@ -243,6 +245,7 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
         filePath: uri.fsPath,
         className: cls.fullyQualifiedName,
         methodName: method.name,
+        pestTestName: method.pestTestName,
         groups: method.groups,
       });
       methodItem.tags = method.groups.map((group) => new vscode.TestTag(`group:${group}`));
@@ -469,7 +472,9 @@ function applyExecutionResult(
       continue;
     }
 
-    const cases = findCasesForMethod(result.cases, data.className, data.methodName);
+    const cases = data.pestTestName
+      ? findCasesForPestTest(result.cases, data.pestTestName, data.uri.fsPath)
+      : findCasesForMethod(result.cases, data.className, data.methodName);
     if (!cases || cases.length === 0) {
       run.skipped(methodItem);
       continue;
@@ -510,6 +515,15 @@ function findCasesForMethod(cases: JUnitTestCase[], className: string, methodNam
     classNamesMatch(item.className, className)
     && methodNameFromTestCase(item.name) === methodName
   ));
+}
+
+function findCasesForPestTest(cases: JUnitTestCase[], testName: string, filePath: string): JUnitTestCase[] {
+  const expectedPath = path.resolve(filePath);
+  return cases.filter((item) => {
+    const nameMatches = item.name.includes(testName);
+    const fileMatches = !item.file || path.resolve(item.file) === expectedPath;
+    return nameMatches && fileMatches;
+  });
 }
 
 function createFailureMessage(item: vscode.TestItem, cases: JUnitTestCase[]): vscode.TestMessage {

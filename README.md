@@ -1,33 +1,35 @@
 # PHPUnit Runner
 
-PHPUnit Runner is a VS Code extension for discovering and running PHPUnit tests directly from the editor and the Testing view.
+Run PHPUnit and Pest tests from your PHP editor, see failures in VS Code’s Testing view, and debug with Xdebug—all without leaving your workspace.
 
-It parses PHPUnit test files, organizes them by folder structure, and lets you run the current file, the test at the cursor, or discovered tests from the VS Code test explorer.
+PHPUnit Runner discovers tests as you work and gives you fast access to the test under your cursor, the current file, failed tests, groups, or the full suite. Use a local project, Docker, or a remote command such as Laravel Sail, DDEV, or SSH.
+
+## Why PHPUnit Runner
+
+- **Find tests where you work.** Browse discovered PHPUnit classes and methods, plus Pest `test()` and `it()` cases, in the native Testing view.
+- **Run the right amount.** Run a test at the cursor, the open file, failed tests, a group, or the whole suite. Rerun the last selection when you need another pass.
+- **Understand failures quickly.** See pass, fail, and skipped results with assertion messages and source locations in VS Code’s Test Results panel.
+- **Debug and measure coverage.** Start an Xdebug session for a selected test and inspect Clover coverage in the editor.
+- **Fit your environment.** Run locally, through Docker, or with a command template for Laravel Sail, DDEV, SSH, and other remote setups. Host-to-remote path mappings keep results connected to local files.
+- **Keep results current.** Refresh discovery as files or PHPUnit configuration change, or enable continuous testing to rerun a saved file.
+
+## Get started
+
+1. Install **PHPUnit Runner** from the VS Code Marketplace.
+2. Open a PHP project with PHPUnit installed through Composer. If Pest is declared in `composer.json`, `vendor/bin/pest` is selected automatically; otherwise the runner looks for `vendor/bin/phpunit` or `phpunit` on `PATH`.
+3. Open the **Testing** view to browse tests, or use the editor’s Run Test and Run File commands.
+
+The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can also set an explicit executable and configuration file in your workspace settings.
 
 ## Features
 
-- Discovers PHPUnit test files across the workspace (vendor and `node_modules` excluded by default)
-- Auto-detects `phpunit.xml` / `phpunit.xml.dist` and reloads when they change
-- Detects test methods by:
-  - `test*` method names
-  - `@test` docblocks
-  - `#[Test]` and `#[PHPUnit\Framework\Attributes\Test]` attributes
-- Organizes tests in the Testing panel by workspace, folders, files, classes, and methods
-- Maps PHPUnit JUnit output onto individual Test Explorer items (pass / fail / skip)
-- Debug and coverage run profiles (Xdebug listener + Clover overlay)
-- Remote execution via a command template (Docker Compose, Laravel Sail, DDEV, SSH)
-- Host-to-remote path mappings so failures and coverage open the local file
-- Run all, rerun last, run failed, and run by `#[Group]` / `@group`
-- Discovers tests from `phpunit.xml` testsuites when present
-- Shows assertion failures with file locations in the Test Results panel
-- Run the current file from the editor title or context menu
-- Run the test at the current cursor position
-- Shows PHPUnit output in a dedicated output channel
-- Supports local execution and Docker container execution
-
-## Installation
-
-Install from the VS Code Marketplace.
+- Discovers PHPUnit methods marked with a `test*` name, `@test` docblock, or `#[Test]` attribute.
+- Discovers function-style Pest `test()` and `it()` cases with literal string names.
+- Builds a test tree from workspace folders, files, classes, and methods, or from suites in `phpunit.xml`.
+- Maps JUnit results to individual tests and reports assertion failure locations.
+- Supports run, debug, and coverage profiles, plus commands to run all, rerun the last selection, run failed tests, or choose a group.
+- Supports local and Docker execution, custom remote command templates, environment variables, and host-to-remote path mappings.
+- Can save dirty editors before a run and automatically rerun a saved PHP file.
 
 ## Configuration
 
@@ -43,7 +45,7 @@ Core settings:
 - `phpunitRunner.paths`
 - `phpunitRunner.environment`
 - `phpunitRunner.saveBeforeTest`
-- `phpunitRunner.continuousTesting` to rerun tests in a PHP file when it is saved
+- `phpunitRunner.continuousTesting`
 - `phpunitRunner.testFileGlobs`
 - `phpunitRunner.excludeGlobs`
 - `phpunitRunner.debuggerConfig`
@@ -57,7 +59,7 @@ Docker settings:
 - `phpunitRunner.docker.workspacePath`
 - `phpunitRunner.docker.execArgs`
 
-### Local example
+### Local project
 
 ```json
 {
@@ -66,7 +68,7 @@ Docker settings:
 }
 ```
 
-### Docker example
+### Docker
 
 ```json
 {
@@ -77,7 +79,7 @@ Docker settings:
 }
 ```
 
-### Laravel Sail / Docker Compose
+### Laravel Sail or Docker Compose
 
 ```json
 {

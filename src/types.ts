@@ -14,6 +14,7 @@ export type TestMethod = {
   name: string;
   range: SourceRange;
   groups: string[];
+  pestTestName?: string;
 };
 
 export type TestClass = {
@@ -35,6 +36,7 @@ export type TestTarget = {
   filePath?: string;
   className?: string;
   methodName?: string;
+  pestTestName?: string;
   group?: string;
 };
 

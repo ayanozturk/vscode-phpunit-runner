@@ -38,7 +38,73 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
     });
   }
 
+  const pestMethods = parsePestTests(source, code, lineStarts);
+  if (pestMethods.length > 0) {
+    const first = pestMethods[0].range.start;
+    const last = pestMethods[pestMethods.length - 1].range.end;
+    classes.push({
+      name: 'Pest tests',
+      fullyQualifiedName: 'Pest tests',
+      range: { start: first, end: last },
+      methods: pestMethods,
+    });
+  }
+
   return { filePath, classes };
+}
+
+function parsePestTests(source: string, code: string, lineStarts: number[]): TestMethod[] {
+  const methods: TestMethod[] = [];
+  const occurrences = new Map<string, number>();
+  const callPattern = /\b(?:test|it)\s*\(/g;
+  for (const match of code.matchAll(callPattern)) {
+    const start = match.index ?? 0;
+    if (/\bfunction\s*$/.test(code.slice(Math.max(0, start - 32), start))) {
+      continue;
+    }
+
+    const openParen = start + match[0].lastIndexOf('(');
+    const closeParen = findMatchingParenthesis(code, openParen);
+    if (closeParen < 0) {
+      continue;
+    }
+    const name = readPestTestName(source.slice(openParen + 1, closeParen));
+    if (!name) {
+      continue;
+    }
+    const occurrence = (occurrences.get(name) ?? 0) + 1;
+    occurrences.set(name, occurrence);
+    methods.push({
+      name: occurrence === 1 ? name : `${name} (${occurrence})`,
+      pestTestName: name,
+      range: rangeFromOffsets(lineStarts, start, closeParen + 1),
+      groups: [],
+    });
+  }
+  return methods;
+}
+
+function findMatchingParenthesis(code: string, open: number): number {
+  let depth = 0;
+  for (let index = open; index < code.length; index += 1) {
+    if (code[index] === '(') {
+      depth += 1;
+    } else if (code[index] === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return -1;
+}
+
+function readPestTestName(argumentsSource: string): string | undefined {
+  const literal = argumentsSource.match(/^\s*(['"])((?:\\.|[^\\])*?)\1/);
+  if (!literal) {
+    return undefined;
+  }
+  return literal[2].replace(/\\(['"\\])/g, '$1').trim() || undefined;
 }
 
 export function parseTestMethods(body: string, bodyOffset: number, lineStarts: number[]): TestMethod[] {
