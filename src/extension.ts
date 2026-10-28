@@ -294,14 +294,16 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
     const classId = `${uri.toString()}::${cls.fullyQualifiedName}`;
     const classItem = controller.createTestItem(classId, cls.name, uri);
     classItem.range = toVscodeRange(cls.range);
-    itemData.set(classItem, {
-      kind: 'class',
-      uri,
-      filePath: uri.fsPath,
-      ...(cls.methods.some((method) => method.pestTestName)
-        ? {}
-        : { className: cls.fullyQualifiedName }),
-    });
+    if (!cls.container) {
+      itemData.set(classItem, {
+        kind: 'class',
+        uri,
+        filePath: uri.fsPath,
+        ...(cls.methods.some((method) => method.pestTestName)
+          ? {}
+          : { className: cls.fullyQualifiedName }),
+      });
+    }
 
     for (const method of cls.methods) {
       const methodId = `${classId}::${method.name}`;

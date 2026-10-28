@@ -40,14 +40,28 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
 
   const pestMethods = parsePestTests(source, code, lineStarts);
   if (pestMethods.length > 0) {
-    const first = pestMethods[0].range.start;
-    const last = pestMethods[pestMethods.length - 1].range.end;
-    classes.push({
-      name: 'Pest tests',
-      fullyQualifiedName: 'Pest tests',
-      range: { start: first, end: last },
-      methods: pestMethods,
-    });
+    const grouped = new Map<string, TestMethod[]>();
+    for (const method of pestMethods) {
+      const groupPath = method.pestDescribePath ?? [];
+      const groupKey = JSON.stringify(groupPath);
+      const group = grouped.get(groupKey) ?? [];
+      group.push(method);
+      grouped.set(groupKey, group);
+    }
+
+    for (const [groupKey, methods] of grouped) {
+      const groupPath = JSON.parse(groupKey) as string[];
+      const groupName = groupPath.length > 0 ? groupPath.join(' › ') : 'Pest tests';
+      const first = methods[0].range.start;
+      const last = methods[methods.length - 1].range.end;
+      classes.push({
+        name: groupName,
+        fullyQualifiedName: `Pest tests\\${groupPath.join('\\') || 'root'}`,
+        range: { start: first, end: last },
+        methods,
+        container: true,
+      });
+    }
   }
 
   return { filePath, classes };
@@ -56,6 +70,7 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
 function parsePestTests(source: string, code: string, lineStarts: number[]): TestMethod[] {
   const methods: TestMethod[] = [];
   const occurrences = new Map<string, number>();
+  const describeBlocks = parsePestDescribeBlocks(source, code);
   const callPattern = /\b(?:test|it)\s*\(/g;
   for (const match of code.matchAll(callPattern)) {
     const start = match.index ?? 0;
@@ -72,16 +87,55 @@ function parsePestTests(source: string, code: string, lineStarts: number[]): Tes
     if (!name) {
       continue;
     }
-    const occurrence = (occurrences.get(name) ?? 0) + 1;
-    occurrences.set(name, occurrence);
+    const describePath = describeBlocks
+      .filter((block) => start > block.bodyStart && start < block.bodyEnd)
+      .sort((left, right) => left.bodyStart - right.bodyStart)
+      .map((block) => block.name);
+    const occurrenceKey = `${JSON.stringify(describePath)}:${name}`;
+    const occurrence = (occurrences.get(occurrenceKey) ?? 0) + 1;
+    occurrences.set(occurrenceKey, occurrence);
     methods.push({
       name: occurrence === 1 ? name : `${name} (${occurrence})`,
       pestTestName: name,
+      pestDescribePath: describePath,
       range: rangeFromOffsets(lineStarts, start, closeParen + 1),
       groups: [],
     });
   }
   return methods;
+}
+
+function parsePestDescribeBlocks(source: string, code: string): { name: string; bodyStart: number; bodyEnd: number }[] {
+  const blocks: { name: string; bodyStart: number; bodyEnd: number }[] = [];
+  const callPattern = /\bdescribe\s*\(/g;
+  for (const match of code.matchAll(callPattern)) {
+    const start = match.index ?? 0;
+    if (/\bfunction\s*$/.test(code.slice(Math.max(0, start - 32), start))) {
+      continue;
+    }
+
+    const openParen = start + match[0].lastIndexOf('(');
+    const closeParen = findMatchingParenthesis(code, openParen);
+    if (closeParen < 0) {
+      continue;
+    }
+    const name = readPestTestName(source.slice(openParen + 1, closeParen));
+    if (!name) {
+      continue;
+    }
+
+    const callbackBody = code.slice(openParen + 1, closeParen);
+    const relativeBrace = callbackBody.indexOf('{');
+    if (relativeBrace < 0) {
+      continue;
+    }
+    const openBrace = openParen + 1 + relativeBrace;
+    const closeBrace = findMatchingBrace(code, openBrace);
+    if (closeBrace >= 0) {
+      blocks.push({ name, bodyStart: openBrace, bodyEnd: closeBrace });
+    }
+  }
+  return blocks;
 }
 
 function findMatchingParenthesis(code: string, open: number): number {

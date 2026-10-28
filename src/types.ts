@@ -15,6 +15,7 @@ export type TestMethod = {
   range: SourceRange;
   groups: string[];
   pestTestName?: string;
+  pestDescribePath?: string[];
 };
 
 export type TestClass = {
@@ -22,6 +23,7 @@ export type TestClass = {
   fullyQualifiedName: string;
   range: SourceRange;
   methods: TestMethod[];
+  container?: boolean;
 };
 
 export type ParsedTestFile = {
