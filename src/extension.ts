@@ -37,6 +37,7 @@ let runProfile: vscode.TestRunProfile;
 let lastIncludeIds: string[] | undefined;
 let lastFailedIds: string[] = [];
 let debugListenStarted = false;
+const continuousRuns = new Map<string, vscode.CancellationTokenSource>();
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionTestApi | undefined> {
   outputChannel = vscode.window.createOutputChannel('PHPUnit Runner');
@@ -92,6 +93,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       }
 
       await refreshUri(document.uri, document.getText());
+      if (getConfig(vscode.workspace.getWorkspaceFolder(document.uri)).get<boolean>('continuousTesting', false)) {
+        await rerunSavedFile(document.uri);
+      }
     }),
     vscode.workspace.onDidDeleteFiles(async (event) => {
       for (const uri of event.files) {
@@ -282,6 +286,26 @@ async function runCurrentFile(): Promise<void> {
   }
 
   await runTests(new vscode.TestRunRequest([item]), new vscode.CancellationTokenSource().token);
+}
+
+async function rerunSavedFile(uri: vscode.Uri): Promise<void> {
+  const item = findFileItem(uri);
+  if (!item) {
+    return;
+  }
+
+  const key = uri.toString();
+  continuousRuns.get(key)?.cancel();
+  const cancellation = new vscode.CancellationTokenSource();
+  continuousRuns.set(key, cancellation);
+  try {
+    await runTests(new vscode.TestRunRequest([item]), cancellation.token);
+  } finally {
+    if (continuousRuns.get(key) === cancellation) {
+      continuousRuns.delete(key);
+    }
+    cancellation.dispose();
+  }
 }
 
 async function runTestAtCursor(): Promise<void> {

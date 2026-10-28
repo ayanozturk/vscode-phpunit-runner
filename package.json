@@ -124,6 +124,11 @@
           "default": false,
           "description": "Save all dirty editors before running tests."
         },
+        "phpunitRunner.continuousTesting": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically rerun tests in a PHP file whenever it is saved."
+        },
         "phpunitRunner.excludeGlobs": {
           "type": "array",
           "items": {

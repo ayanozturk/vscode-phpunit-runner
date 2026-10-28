@@ -43,6 +43,7 @@ Core settings:
 - `phpunitRunner.paths`
 - `phpunitRunner.environment`
 - `phpunitRunner.saveBeforeTest`
+- `phpunitRunner.continuousTesting` to rerun tests in a PHP file when it is saved
 - `phpunitRunner.testFileGlobs`
 - `phpunitRunner.excludeGlobs`
 - `phpunitRunner.debuggerConfig`
