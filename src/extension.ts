@@ -4,6 +4,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import * as vscode from 'vscode';
 import { unmapWithMappings, type PathMapping } from './commandTemplate';
+import { testCodeLensTargets } from './codeLens';
 import { readCloverReport } from './coverage';
 import { autoDetectConfigurationFile, resolveInvocation } from './invoke';
 import { groupItemsBy, runGroupsSequentially } from './grouping';
@@ -77,6 +78,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     vscode.commands.registerCommand('phpunitRunner.runTestAtCursor', async () => {
       await runTestAtCursor();
     }),
+    vscode.commands.registerCommand('phpunitRunner.runDiscoveredTest', async (uriString: string, itemId: string, debug: boolean) => {
+      const uri = vscode.Uri.parse(uriString);
+      const openDocument = vscode.workspace.textDocuments.find((document) => document.uri.toString() === uriString);
+      await refreshUri(uri, openDocument?.getText());
+      const item = findItemById(itemId);
+      if (!item) {
+        return;
+      }
+      const profile = debug ? debugProfile : runProfile;
+      await runTests(new vscode.TestRunRequest([item], undefined, profile), new vscode.CancellationTokenSource().token);
+    }),
     vscode.commands.registerCommand('phpunitRunner.runAll', async () => {
       await runTests(new vscode.TestRunRequest(undefined, undefined, runProfile), new vscode.CancellationTokenSource().token);
     }),
@@ -111,7 +123,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
 
   const watcher = vscode.workspace.createFileSystemWatcher('**/*.php');
   const configWatcher = vscode.workspace.createFileSystemWatcher('**/phpunit.xml*');
+  const codeLensProvider: vscode.CodeLensProvider = {
+    provideCodeLenses(document) {
+      const parsed = parseTestSource(document.uri.fsPath, document.getText());
+      return testCodeLensTargets(document.uri.toString(), parsed).flatMap(({ line, itemId }) => {
+        const range = new vscode.Range(line, 0, line, 0);
+        return [
+          new vscode.CodeLens(range, {
+            title: 'Run Test',
+            command: 'phpunitRunner.runDiscoveredTest',
+            arguments: [document.uri.toString(), itemId, false],
+          }),
+          new vscode.CodeLens(range, {
+            title: 'Debug Test',
+            command: 'phpunitRunner.runDiscoveredTest',
+            arguments: [document.uri.toString(), itemId, true],
+          }),
+        ];
+      });
+    },
+  };
   context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider({ language: 'php' }, codeLensProvider),
     watcher,
     watcher.onDidCreate(async (uri) => {
       await refreshUri(uri);
