@@ -7,6 +7,7 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 ## Why PHPUnit Runner
 
 - **Find tests where you work.** Browse discovered PHPUnit classes and methods, plus Pest `test()` and `it()` cases, in the native Testing view.
+- **Keep suites organized.** Named suites from `phpunit.xml` appear as groups in the Testing view, with unmatched files kept in their folder structure.
 - **Run the right amount.** Run a test at the cursor, the open file, failed tests, a group, or the whole suite. Rerun the last selection when you need another pass.
 - **Understand failures quickly.** See pass, fail, and skipped results with assertion messages and source locations in VS Code’s Test Results panel.
 - **Debug and measure coverage.** Start an Xdebug session for a selected test and inspect Clover coverage in the editor.
@@ -25,7 +26,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 
 - Discovers PHPUnit methods marked with a `test*` name, `@test` docblock, or `#[Test]` attribute.
 - Discovers function-style Pest `test()` and `it()` cases with literal string names.
-- Builds a test tree from workspace folders, files, classes, and methods, or from suites in `phpunit.xml`.
+- Groups discovered tests by named suites in `phpunit.xml`, with folder grouping for files that are not assigned to a suite.
 - Maps JUnit results to individual tests and reports assertion failure locations.
 - Supports run, debug, and coverage profiles, plus commands to run all, rerun the last selection, run failed tests, or choose a group.
 - Supports local and Docker execution, custom remote command templates, environment variables, and host-to-remote path mappings.

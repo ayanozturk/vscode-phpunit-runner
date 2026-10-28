@@ -16,11 +16,12 @@ import {
 } from './junit';
 import { classNamesMatch, methodNameFromTestCase, parseTestSource } from './parser';
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
-import { resolveDiscoveryGlobs } from './phpunitXml';
+import { parsePhpUnitXml, resolveDiscoveryGlobs, type PhpUnitSuite } from './phpunitXml';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
 import type { JUnitTestCase, RunnerConfig, SourceRange, TestTarget } from './types';
 
 type TestItemData = TestTarget & { uri: vscode.Uri; groups?: string[] };
+type SuiteConfigCache = { xmlPath: string; modifiedAt: number; suites: PhpUnitSuite[] };
 
 type ExtensionTestApi = {
   controller: vscode.TestController;
@@ -30,7 +31,9 @@ type ExtensionTestApi = {
 };
 
 const itemData = new WeakMap<vscode.TestItem, TestItemData>();
+const fileItemPaths = new Map<string, vscode.TestItem[]>();
 const coverageDetails = new WeakMap<vscode.FileCoverage, vscode.FileCoverageDetail[]>();
+const suiteConfigCache = new Map<string, SuiteConfigCache>();
 
 let outputChannel: vscode.OutputChannel;
 let controller: vscode.TestController;
@@ -120,14 +123,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       removeFileItem(uri);
     }),
     configWatcher,
-    configWatcher.onDidCreate(async () => {
-      await discoverWorkspaceTests();
+    configWatcher.onDidCreate(async (uri) => {
+      await refreshForConfiguration(uri);
     }),
-    configWatcher.onDidChange(async () => {
-      await discoverWorkspaceTests();
+    configWatcher.onDidChange(async (uri) => {
+      await refreshForConfiguration(uri);
     }),
-    configWatcher.onDidDelete(async () => {
-      await discoverWorkspaceTests();
+    configWatcher.onDidDelete(async (uri) => {
+      await refreshForConfiguration(uri);
     }),
   );
 
@@ -149,7 +152,16 @@ export function deactivate(): void {
 async function discoverWorkspaceTests(): Promise<void> {
   const uris = await findCandidateTestFiles();
   controller.items.replace([]);
+  fileItemPaths.clear();
   await Promise.all(uris.map((uri) => refreshUri(uri)));
+}
+
+async function refreshForConfiguration(uri: vscode.Uri): Promise<void> {
+  const folder = vscode.workspace.getWorkspaceFolder(uri);
+  if (folder) {
+    suiteConfigCache.delete(folder.uri.fsPath);
+  }
+  await discoverWorkspaceTests();
 }
 
 async function findCandidateTestFiles(): Promise<vscode.Uri[]> {
@@ -196,6 +208,61 @@ async function findWithGlobs(
   return [...unique.values()];
 }
 
+async function findSuiteForFile(uri: vscode.Uri, folder: vscode.WorkspaceFolder): Promise<string | undefined> {
+  const xmlPath = await autoDetectConfigurationFile(folder.uri.fsPath);
+  if (!xmlPath) {
+    suiteConfigCache.delete(folder.uri.fsPath);
+    return undefined;
+  }
+
+  let modifiedAt: number;
+  try {
+    modifiedAt = (await fs.stat(xmlPath)).mtimeMs;
+  } catch {
+    return undefined;
+  }
+
+  let cached = suiteConfigCache.get(folder.uri.fsPath);
+  if (!cached || cached.xmlPath !== xmlPath || cached.modifiedAt !== modifiedAt) {
+    const xmlText = await fs.readFile(xmlPath, 'utf8').catch(() => undefined);
+    if (xmlText === undefined) {
+      return undefined;
+    }
+    cached = { xmlPath, modifiedAt, suites: parsePhpUnitXml(xmlText).suites };
+    suiteConfigCache.set(folder.uri.fsPath, cached);
+  }
+
+  const xmlDirectory = path.dirname(xmlPath);
+  const filePath = path.resolve(uri.fsPath);
+  for (const suite of cached.suites) {
+    const excluded = suite.excludes.some((exclude) => isPathInside(
+      filePath,
+      path.resolve(xmlDirectory, exclude),
+    ));
+    if (excluded) {
+      continue;
+    }
+
+    const includesFile = suite.files.some((file) => path.resolve(xmlDirectory, file) === filePath);
+    const includesDirectory = suite.directories.some((directory) => {
+      const basePath = path.resolve(xmlDirectory, directory.path);
+      const suffix = directory.suffix?.replace(/^\*/, '') || '.php';
+      return isPathInside(filePath, basePath)
+        && path.basename(filePath).endsWith(suffix);
+    });
+    if (includesFile || includesDirectory) {
+      return suite.name;
+    }
+  }
+
+  return undefined;
+}
+
+function isPathInside(filePath: string, directoryPath: string): boolean {
+  const relative = path.relative(directoryPath, filePath);
+  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
 async function refreshTestItem(item: vscode.TestItem): Promise<void> {
   const data = itemData.get(item);
   if (!data) {
@@ -217,6 +284,7 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
   }
 
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+  const suiteName = workspaceFolder ? await findSuiteForFile(uri, workspaceFolder) : undefined;
   const label = path.basename(uri.fsPath);
 
   const fileItem = controller.createTestItem(uri.toString(), label, uri);
@@ -255,7 +323,7 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
     fileItem.children.add(classItem);
   }
 
-  addFileItemToHierarchy(fileItem, workspaceFolder);
+  addFileItemToHierarchy(fileItem, workspaceFolder, suiteName);
 }
 
 async function parseTestFile(uri: vscode.Uri, text?: string) {
@@ -935,104 +1003,84 @@ function remapText(value: string, mappings: PathMapping[]): string {
   return result;
 }
 
-function addFileItemToHierarchy(fileItem: vscode.TestItem, workspaceFolder?: vscode.WorkspaceFolder): void {
+function addFileItemToHierarchy(
+  fileItem: vscode.TestItem,
+  workspaceFolder?: vscode.WorkspaceFolder,
+  suiteName?: string,
+): void {
   removeFileItem(fileItem.uri!);
 
   if (!workspaceFolder) {
     controller.items.add(fileItem);
+    fileItemPaths.set(fileItem.id, [fileItem]);
     return;
   }
 
   const root = getOrCreateWorkspaceItem(workspaceFolder);
+  const itemPath = [root];
   const relativePath = path.relative(workspaceFolder.uri.fsPath, fileItem.uri!.fsPath);
   const segments = path.dirname(relativePath).split(path.sep).filter((segment) => segment && segment !== '.');
 
   let parent = root;
+  if (suiteName) {
+    const suiteId = makeSuiteItemId(workspaceFolder, suiteName);
+    let suiteItem = root.children.get(suiteId);
+    if (!suiteItem) {
+      suiteItem = controller.createTestItem(suiteId, suiteName, workspaceFolder.uri);
+      root.children.add(suiteItem);
+    }
+    parent = suiteItem;
+    itemPath.push(suiteItem);
+  }
+
   const folderSegments: string[] = [];
   for (const segment of segments) {
     folderSegments.push(segment);
-    const folderId = makeFolderItemId(workspaceFolder, folderSegments);
+    const folderId = makeFolderItemId(workspaceFolder, folderSegments, suiteName);
     let folderItem = parent.children.get(folderId);
     if (!folderItem) {
       folderItem = controller.createTestItem(folderId, segment);
       parent.children.add(folderItem);
     }
     parent = folderItem;
+    itemPath.push(folderItem);
   }
 
   parent.children.add(fileItem);
+  itemPath.push(fileItem);
+  fileItemPaths.set(fileItem.id, itemPath);
 }
 
 function findFileItem(uri: vscode.Uri): vscode.TestItem | undefined {
-  const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-  if (!workspaceFolder) {
-    return controller.items.get(uri.toString());
-  }
-
-  const root = controller.items.get(makeWorkspaceItemId(workspaceFolder));
-  if (!root) {
-    return undefined;
-  }
-
-  const relativePath = path.relative(workspaceFolder.uri.fsPath, uri.fsPath);
-  const segments = path.dirname(relativePath).split(path.sep).filter((segment) => segment && segment !== '.');
-
-  let parent = root;
-  const folderSegments: string[] = [];
-  for (const segment of segments) {
-    folderSegments.push(segment);
-    const folderItem = parent.children.get(makeFolderItemId(workspaceFolder, folderSegments));
-    if (!folderItem) {
-      return undefined;
-    }
-    parent = folderItem;
-  }
-
-  return parent.children.get(uri.toString());
+  const itemPath = fileItemPaths.get(uri.toString());
+  return itemPath?.[itemPath.length - 1];
 }
 
 function removeFileItem(uri: vscode.Uri): void {
-  const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-  if (!workspaceFolder) {
+  const itemPath = fileItemPaths.get(uri.toString());
+  if (!itemPath || itemPath.length === 0) {
+    return;
+  }
+  fileItemPaths.delete(uri.toString());
+
+  if (itemPath.length === 1) {
     controller.items.delete(uri.toString());
     return;
   }
 
-  const rootId = makeWorkspaceItemId(workspaceFolder);
-  const root = controller.items.get(rootId);
-  if (!root) {
-    return;
-  }
-
-  const relativePath = path.relative(workspaceFolder.uri.fsPath, uri.fsPath);
-  const segments = path.dirname(relativePath).split(path.sep).filter((segment) => segment && segment !== '.');
-  const ancestors: vscode.TestItem[] = [root];
-
-  let parent = root;
-  const folderSegments: string[] = [];
-  for (const segment of segments) {
-    folderSegments.push(segment);
-    const folderItem = parent.children.get(makeFolderItemId(workspaceFolder, folderSegments));
-    if (!folderItem) {
-      return;
-    }
-    ancestors.push(folderItem);
-    parent = folderItem;
-  }
-
+  const parent = itemPath[itemPath.length - 2];
   parent.children.delete(uri.toString());
 
-  for (let index = ancestors.length - 1; index > 0; index -= 1) {
-    const folder = ancestors[index];
-    if (folder.children.size > 0) {
+  for (let index = itemPath.length - 2; index > 0; index -= 1) {
+    const ancestor = itemPath[index];
+    if (ancestor.children.size > 0) {
       break;
     }
-    ancestors[index - 1].children.delete(folder.id);
+    itemPath[index - 1].children.delete(ancestor.id);
   }
 
-  const refreshedRoot = controller.items.get(rootId);
-  if (refreshedRoot && refreshedRoot.children.size === 0) {
-    controller.items.delete(rootId);
+  if (itemPath[0].children.size === 0) {
+    controller.items.delete(itemPath[0].id);
   }
 }
 
@@ -1050,8 +1098,13 @@ function makeWorkspaceItemId(workspaceFolder: vscode.WorkspaceFolder): string {
   return `workspace:${workspaceFolder.uri.toString()}`;
 }
 
-function makeFolderItemId(workspaceFolder: vscode.WorkspaceFolder, segments: string[]): string {
-  return `folder:${workspaceFolder.uri.toString()}:${segments.join('/')}`;
+function makeSuiteItemId(workspaceFolder: vscode.WorkspaceFolder, suiteName: string): string {
+  return `suite:${workspaceFolder.uri.toString()}:${suiteName}`;
+}
+
+function makeFolderItemId(workspaceFolder: vscode.WorkspaceFolder, segments: string[], suiteName?: string): string {
+  const prefix = suiteName ? `${makeSuiteItemId(workspaceFolder, suiteName)}:` : `folder:${workspaceFolder.uri.toString()}:`;
+  return `${prefix}${segments.join('/')}`;
 }
 
 function collectTestItems(collection: vscode.TestItemCollection): vscode.TestItem[] {
