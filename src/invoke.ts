@@ -132,8 +132,12 @@ export async function resolveInvocation(options: {
     phpunitArgs.push('--testsuite', target.suiteName);
   }
 
-  if (target.className && target.methodName) {
-    phpunitArgs.push('--filter', `^${escapeRegex(target.className)}::${escapeRegex(target.methodName)}$`);
+  if (target.datasetName && target.className) {
+    phpunitArgs.push('--filter', `^${escapeRegex(`${target.className}::${target.datasetName}`)}$`);
+  } else if (target.pestTestName) {
+    phpunitArgs.push('--filter', escapeRegex(target.pestTestName));
+  } else if (target.className && target.methodName) {
+    phpunitArgs.push('--filter', `^${escapeRegex(target.className)}::${escapeRegex(target.methodName)}(?: with data set .*|#.*|@.*)?$`);
   } else if (target.className) {
     phpunitArgs.push('--filter', `^${escapeRegex(target.className)}(?:::.*)?$`);
   }

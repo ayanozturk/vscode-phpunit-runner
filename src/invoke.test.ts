@@ -74,8 +74,26 @@ describe('resolveInvocation', () => {
     assert.ok(invocation.args.includes('-u'));
     assert.ok(invocation.args.includes('--filter'));
     assert.ok(invocation.args.some((arg) => arg.includes('ExampleTest::testItWorks')));
+    assert.ok(invocation.args.some((arg) => arg.includes('with data set .*|#.*|@.*')));
     assert.ok(invocation.args.includes('/var/www/html/vendor/bin/phpunit'));
     assert.ok(invocation.args.includes('/var/www/html/tests/ExampleTest.php'));
+  });
+
+  it('filters a selected data set using its complete PHPUnit case name', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: {
+        kind: 'dataset',
+        className: 'App\\Tests\\ExampleTest',
+        methodName: 'testAdd',
+        datasetName: 'testAdd with data set "zeros"',
+      },
+      config,
+    });
+
+    const filterIndex = invocation.args.indexOf('--filter');
+    assert.ok(filterIndex >= 0);
+    assert.match(invocation.args[filterIndex + 1], /ExampleTest::testAdd with data set "zeros"/);
   });
 
   it('adds debug, coverage, and group flags and omits a file when running a group', async () => {

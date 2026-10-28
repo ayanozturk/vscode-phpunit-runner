@@ -15,7 +15,7 @@ import {
   firstFailureMessage,
   readJUnitReport,
 } from './junit';
-import { classNamesMatch, methodNameFromTestCase, parseTestSource } from './parser';
+import { classNamesMatch, datasetSuffixFromTestCase, methodNameFromTestCase, parseTestSource } from './parser';
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
 import { parsePhpUnitXml, resolveDiscoveryGlobs, type PhpUnitSuite } from './phpunitXml';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
@@ -530,7 +530,14 @@ function applyExecutionResult(
   item: vscode.TestItem,
   result: { output: string; exitCode: number; duration: number; cases: JUnitTestCase[]; reportWarning?: string; cancelled?: boolean },
 ): void {
-  const methods = collectMethodItems(item);
+  let methods = collectMethodItems(item);
+  for (const methodItem of methods) {
+    const data = itemData.get(methodItem);
+    if (data?.kind === 'method' && data.className && data.methodName && !data.pestTestName) {
+      syncDatasetItems(run, methodItem, data, findCasesForMethod(result.cases, data.className, data.methodName));
+    }
+  }
+  methods = collectMethodItems(item);
   const disposition = executionDisposition({
     cancelled: result.cancelled,
     exitCode: result.exitCode,
@@ -571,13 +578,20 @@ function applyExecutionResult(
 
   for (const methodItem of methods) {
     const data = itemData.get(methodItem);
-    if (!data?.className || !data.methodName) {
+    const className = data?.className;
+    const methodName = data?.methodName;
+    const datasetName = data?.datasetName;
+    if (!data || !className || !methodName) {
       continue;
     }
 
-    const cases = data.pestTestName
-      ? findCasesForPestTest(result.cases, data.pestTestName, data.uri.fsPath)
-      : findCasesForMethod(result.cases, data.className, data.methodName);
+    const cases = data.kind === 'dataset' && datasetName
+      ? result.cases.filter((testCase) => (
+        testCase.name === datasetName && classNamesMatch(testCase.className, className)
+      ))
+      : data.pestTestName
+        ? findCasesForPestTest(result.cases, data.pestTestName, data.uri.fsPath)
+        : findCasesForMethod(result.cases, className, methodName);
     if (!cases || cases.length === 0) {
       run.skipped(methodItem);
       continue;
@@ -601,7 +615,7 @@ function applyExecutionResult(
   }
 
   const data = itemData.get(item);
-  if (data?.kind === 'method') {
+  if (data?.kind === 'method' || data?.kind === 'dataset') {
     return;
   }
 
@@ -611,6 +625,58 @@ function applyExecutionResult(
   }
 
   run.passed(item, result.duration);
+}
+
+function syncDatasetItems(
+  run: vscode.TestRun,
+  methodItem: vscode.TestItem,
+  methodData: TestItemData,
+  cases: JUnitTestCase[],
+): void {
+  const datasets = cases.flatMap((testCase) => {
+    const suffix = methodData.methodName
+      ? datasetSuffixFromTestCase(testCase.name, methodData.methodName)
+      : undefined;
+    return suffix ? [{ testCase, suffix }] : [];
+  });
+  const datasetIds = new Set<string>();
+
+  for (const { testCase, suffix } of datasets) {
+    const id = `${methodItem.id}::dataset:${suffix}`;
+    datasetIds.add(id);
+    let datasetItem = methodItem.children.get(id);
+    if (!datasetItem) {
+      const label = suffix.replace(/^with data set\s*/, '');
+      datasetItem = controller.createTestItem(id, label, methodData.uri);
+      datasetItem.range = methodItem.range;
+      methodItem.children.add(datasetItem);
+      run.enqueued(datasetItem);
+      run.started(datasetItem);
+    }
+    itemData.set(datasetItem, {
+      kind: 'dataset',
+      uri: methodData.uri,
+      filePath: methodData.filePath,
+      className: methodData.className,
+      methodName: methodData.methodName,
+      datasetName: testCase.name,
+      groups: methodData.groups,
+    });
+  }
+
+  const staleItems: string[] = [];
+  methodItem.children.forEach((child) => {
+    if (itemData.get(child)?.kind === 'dataset' && !datasetIds.has(child.id)) {
+      staleItems.push(child.id);
+    }
+  });
+  for (const id of staleItems) {
+    const staleItem = methodItem.children.get(id);
+    if (staleItem) {
+      run.skipped(staleItem);
+      methodItem.children.delete(id);
+    }
+  }
 }
 
 function findCasesForMethod(cases: JUnitTestCase[], className: string, methodName: string): JUnitTestCase[] {
@@ -1161,8 +1227,11 @@ function collectExecutableItems(item: vscode.TestItem): vscode.TestItem[] {
 
 function collectMethodItems(item: vscode.TestItem): vscode.TestItem[] {
   const data = itemData.get(item);
-  if (data?.kind === 'method') {
+  if (data?.kind === 'dataset') {
     return [item];
+  }
+  if (data?.kind === 'method') {
+    return [item, ...collectTestItems(item.children).flatMap((child) => collectMethodItems(child))];
   }
 
   const methods: vscode.TestItem[] = [];

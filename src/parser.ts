@@ -498,3 +498,11 @@ export function methodNameFromTestCase(caseName: string): string {
   const dataSet = caseName.match(/^(.*?)(?:\s+with data set\b.*|#\d+$|#".*"$|@.+)$/);
   return (dataSet?.[1] ?? caseName).trim();
 }
+
+export function datasetSuffixFromTestCase(caseName: string, methodName: string): string | undefined {
+  if (!caseName.startsWith(methodName)) {
+    return undefined;
+  }
+  const suffix = caseName.slice(methodName.length).trim();
+  return /^(?:with data set\b|#\d+\b|#".*"$|@.+)/.test(suffix) ? suffix : undefined;
+}

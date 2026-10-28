@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { classNamesMatch, methodNameFromTestCase, parseTestSource } from './parser';
+import { classNamesMatch, datasetSuffixFromTestCase, methodNameFromTestCase, parseTestSource } from './parser';
 
 const fixture = `<?php
 namespace App\\Tests;
@@ -160,5 +160,17 @@ describe('methodNameFromTestCase', () => {
     assert.equal(methodNameFromTestCase('testAdd with data set "zeros"'), 'testAdd');
     assert.equal(methodNameFromTestCase('testAdd#0'), 'testAdd');
     assert.equal(methodNameFromTestCase('testAdd'), 'testAdd');
+  });
+});
+
+describe('datasetSuffixFromTestCase', () => {
+  it('returns positional and named data-set suffixes', () => {
+    assert.equal(datasetSuffixFromTestCase('testAdd with data set #0', 'testAdd'), 'with data set #0');
+    assert.equal(datasetSuffixFromTestCase('testAdd with data set "zeros"', 'testAdd'), 'with data set "zeros"');
+  });
+
+  it('ignores case names that are not data sets of the requested method', () => {
+    assert.equal(datasetSuffixFromTestCase('testAdd', 'testAdd'), undefined);
+    assert.equal(datasetSuffixFromTestCase('testOther with data set #0', 'testAdd'), undefined);
   });
 });

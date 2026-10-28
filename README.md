@@ -10,6 +10,7 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Run configured suites directly.** Named suites from `phpunit.xml` appear as groups in the Testing view and run with PHPUnit’s suite selection, with individual results mapped back to discovered tests.
 - **Run the right amount.** Run a test at the cursor, the open file, failed tests, a group, or the whole suite. Rerun the last selection when you need another pass.
 - **Run or debug inline.** Use the Run Test and Debug Test actions shown above discovered PHPUnit methods and Pest cases.
+- **Work with data providers.** After a test run, PHPUnit data sets appear beneath their test and can be run individually.
 - **Understand failures quickly.** See pass, fail, and skipped results with assertion messages and source locations in VS Code’s Test Results panel.
 - **Debug and measure coverage.** Start an Xdebug session for a selected test and inspect Clover coverage in the editor.
 - **Fit your environment.** Run locally, through Docker, or with a command template for Laravel Sail, DDEV, SSH, and other remote setups. Host-to-remote path mappings keep results connected to local files.
@@ -31,6 +32,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 - Groups discovered tests by named suites in `phpunit.xml`; files not assigned to a suite stay grouped by folder.
 - Adds inline Run Test and Debug Test actions above each discovered test.
 - Maps JUnit results to individual tests and reports assertion failure locations.
+- Adds PHPUnit data sets to their method after the first run so each data set can be run separately.
 - Supports run, debug, and coverage profiles, plus commands to run all, rerun the last selection, run failed tests, or choose a group.
 - Supports local and Docker execution, custom remote command templates, environment variables, and host-to-remote path mappings.
 - Can save dirty editors before a run and automatically rerun a saved PHP file.
