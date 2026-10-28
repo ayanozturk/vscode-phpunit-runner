@@ -128,6 +128,9 @@ export async function resolveInvocation(options: {
   if (target.group) {
     phpunitArgs.push('--group', target.group);
   }
+  if (target.suiteName) {
+    phpunitArgs.push('--testsuite', target.suiteName);
+  }
 
   if (target.className && target.methodName) {
     phpunitArgs.push('--filter', `^${escapeRegex(target.className)}::${escapeRegex(target.methodName)}$`);

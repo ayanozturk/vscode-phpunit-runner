@@ -31,7 +31,7 @@ export type ParsedTestFile = {
   classes: TestClass[];
 };
 
-export type TestItemKind = 'file' | 'class' | 'method';
+export type TestItemKind = 'file' | 'suite' | 'class' | 'method';
 
 export type TestTarget = {
   kind: TestItemKind;
@@ -40,6 +40,7 @@ export type TestTarget = {
   methodName?: string;
   pestTestName?: string;
   group?: string;
+  suiteName?: string;
 };
 
 export type RunnerConfig = {

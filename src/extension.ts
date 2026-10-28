@@ -1029,6 +1029,11 @@ function addFileItemToHierarchy(
     let suiteItem = root.children.get(suiteId);
     if (!suiteItem) {
       suiteItem = controller.createTestItem(suiteId, suiteName, workspaceFolder.uri);
+      itemData.set(suiteItem, {
+        kind: 'suite',
+        uri: workspaceFolder.uri,
+        suiteName,
+      });
       root.children.add(suiteItem);
     }
     parent = suiteItem;
