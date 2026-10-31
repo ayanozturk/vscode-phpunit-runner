@@ -1,4 +1,5 @@
 import * as sax from 'sax';
+import { readSaxAttribute } from './xmlAttributes';
 
 export type PhpUnitSuite = {
   name: string;
@@ -175,15 +176,4 @@ function excludeGlob(target: string): string {
 
 function toPosixRelative(target: string): string {
   return target.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '');
-}
-
-function readSaxAttribute(attributes: Record<string, unknown>, name: string): string {
-  const value = Object.entries(attributes).find(([attributeName]) => attributeName.toLowerCase() === name.toLowerCase())?.[1];
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (value && typeof value === 'object' && 'value' in value && typeof value.value === 'string') {
-    return value.value;
-  }
-  return '';
 }

@@ -7,6 +7,7 @@ import { unmapWithMappings, type PathMapping } from './commandTemplate';
 import { testCodeLensTargets } from './codeLens';
 import { readCloverReport } from './coverage';
 import { createDebouncedTaskScheduler } from './continuousTesting';
+import { buildGroupPickerOptions } from './groupPicker';
 import { autoDetectConfigurationFile, resolveInvocation } from './invoke';
 import { groupItemsBy, runGroupsSequentially } from './grouping';
 import { terminateProcessTree } from './processTree';
@@ -1172,20 +1173,28 @@ async function runFailedTests(): Promise<void> {
 }
 
 async function runByGroup(groupOverride?: string): Promise<void> {
-  const groups = [...new Set(
-    collectAllMethodItems().flatMap((item) => itemData.get(item)?.groups ?? []),
-  )].sort();
-  if (groups.length === 0) {
+  const groupOccurrences = collectAllMethodItems().flatMap((item) => {
+    const data = itemData.get(item);
+    if (data?.kind !== 'method') {
+      return [];
+    }
+
+    const workspaceId = item.uri ? vscode.workspace.getWorkspaceFolder(item.uri)?.uri.toString() : undefined;
+    return (data.groups ?? []).map((group) => ({ group, methodId: item.id, workspaceId }));
+  });
+  const options = buildGroupPickerOptions(groupOccurrences);
+  if (options.length === 0) {
     void vscode.window.showInformationMessage('No PHPUnit @group or #[Group] attributes were found.');
     return;
   }
 
-  const selected = groupOverride ?? await vscode.window.showQuickPick(groups, { placeHolder: 'PHPUnit group' });
+  const selected = groupOverride ?? await vscode.window.showQuickPick(options, { placeHolder: 'PHPUnit group' });
   if (!selected) {
     return;
   }
+  const selectedGroup = typeof selected === 'string' ? selected : selected.groupName;
 
-  const matching = collectAllMethodItems().filter((item) => itemData.get(item)?.groups?.includes(selected));
+  const matching = collectAllMethodItems().filter((item) => itemData.get(item)?.groups?.includes(selectedGroup));
   const { groups: matchingByFolder, ungrouped: unscoped } = groupItemsBy(
     matching,
     (item) => item.uri ? vscode.workspace.getWorkspaceFolder(item.uri) : undefined,
@@ -1214,7 +1223,7 @@ async function runByGroup(groupOverride?: string): Promise<void> {
     await runGroupsSequentially(matchingByFolder, () => run.token.isCancellationRequested, async (folder, items) => {
       try {
         const result = await executePhpUnit(
-          { kind: 'file', uri: folder.uri, group: selected },
+          { kind: 'file', uri: folder.uri, group: selectedGroup },
           run.token,
           vscode.TestRunProfileKind.Run,
           run,

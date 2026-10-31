@@ -30,6 +30,34 @@ describe('JUnit result index', () => {
     assert.deepEqual(findIndexedDatasetCases(index, 'Tests.ExampleTest', datasetCase.name), [datasetCase]);
   });
 
+  it('prefers a normalized fully qualified class over an ambiguous short-name suffix', () => {
+    const firstNamespace = testCase({ name: 'testSame', className: 'App\\One\\ExampleTest' });
+    const secondNamespace = testCase({ name: 'testSame', className: 'App\\Two\\ExampleTest' });
+    const index = indexTestCases([firstNamespace, secondNamespace]);
+
+    assert.deepEqual(
+      findIndexedMethodCases(index, '\\App.One.ExampleTest', 'testSame'),
+      [firstNamespace],
+      'a normalized exact class alias should not also match another class with the same suffix',
+    );
+    assert.deepEqual(
+      findIndexedMethodCases(index, 'ExampleTest', 'testSame'),
+      [firstNamespace, secondNamespace],
+      'a short class name maps every candidate when the suffix is ambiguous',
+    );
+  });
+
+  it('finds a dataset by its full case name when other methods use the same dataset label', () => {
+    const firstMethodDataset = testCase({ name: 'testFirst with data set "shared"' });
+    const secondMethodDataset = testCase({ name: 'testSecond with data set "shared"' });
+    const index = indexTestCases([firstMethodDataset, secondMethodDataset]);
+
+    assert.deepEqual(
+      findIndexedDatasetCases(index, 'App\\Tests\\ExampleTest', secondMethodDataset.name),
+      [secondMethodDataset],
+    );
+  });
+
   it('groups relative testcase files under their workspace and uses classname for missing file attributes', () => {
     const explicit = testCase({ file: 'tests/ExampleTest.php' });
     const withoutFile = testCase({ name: 'testAlsoWorks', className: 'Tests.ExampleTest' });
@@ -38,6 +66,21 @@ describe('JUnit result index', () => {
 
     assert.deepEqual(
       findIndexedFileCases(index, '/workspace/tests/ExampleTest.php', ['App\\Tests\\ExampleTest']),
+      [explicit, withoutFile],
+    );
+  });
+
+  it('deduplicates file results found through repeated class aliases', () => {
+    const explicit = testCase({ file: 'tests/ExampleTest.php' });
+    const withoutFile = testCase({ name: 'testWithoutFile' });
+    const index = indexTestCases([explicit, withoutFile], '/workspace');
+
+    assert.deepEqual(
+      findIndexedFileCases(index, '/workspace/tests/ExampleTest.php', [
+        'App\\Tests\\ExampleTest',
+        'Tests.ExampleTest',
+        'ExampleTest',
+      ]),
       [explicit, withoutFile],
     );
   });
@@ -51,6 +94,19 @@ describe('JUnit result index', () => {
     assert.deepEqual(
       findIndexedPestCases(index, 'adds values', '/workspace/tests/ValuesTest.php'),
       [local, noFile],
+    );
+  });
+
+  it('returns duplicate Pest names in the requested file and without file metadata only', () => {
+    const firstLocal = testCase({ name: 'adds values with data set #0', file: 'tests/ValuesTest.php' });
+    const secondLocal = testCase({ name: 'adds values with data set #0', file: 'tests/ValuesTest.php', className: 'Pest tests\\other' });
+    const noFile = testCase({ name: 'adds values with data set #0', className: 'Pest tests\\missing' });
+    const otherFile = testCase({ name: 'adds values with data set #0', file: 'tests/OtherTest.php' });
+    const index = indexTestCases([firstLocal, secondLocal, noFile, otherFile], '/workspace');
+
+    assert.deepEqual(
+      findIndexedPestCases(index, 'adds values with data set #0', '/workspace/tests/ValuesTest.php'),
+      [firstLocal, secondLocal, noFile],
     );
   });
 

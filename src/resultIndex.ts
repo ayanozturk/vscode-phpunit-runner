@@ -7,7 +7,8 @@ export type TestCaseIndex = {
   byClassWithoutFile: Map<string, Map<string, JUnitTestCase[]>>;
   byFile: Map<string, JUnitTestCase[]>;
   withoutFile: JUnitTestCase[];
-  classNames: string[];
+  classNameSuffixes: Map<string, string[]>;
+  classNameOrder: Map<string, number>;
 };
 
 export function indexTestCases(cases: JUnitTestCase[], workspaceRoot?: string): TestCaseIndex {
@@ -31,7 +32,25 @@ export function indexTestCases(cases: JUnitTestCase[], workspaceRoot?: string): 
     }
   }
 
-  return { byClass, byClassWithoutFile, byFile, withoutFile, classNames: [...byClass.keys()] };
+  const classNames = [...byClass.keys()];
+  const classNameOrder = new Map(classNames.map((className, order) => [className, order]));
+  const classNameSuffixes = new Map<string, string[]>();
+  for (const className of classNames) {
+    for (const suffix of classNameSuffixesFor(className)) {
+      const aliases = classNameSuffixes.get(suffix) ?? [];
+      aliases.push(className);
+      classNameSuffixes.set(suffix, aliases);
+    }
+  }
+
+  return {
+    byClass,
+    byClassWithoutFile,
+    byFile,
+    withoutFile,
+    classNameSuffixes,
+    classNameOrder,
+  };
 }
 
 export function findIndexedMethodCases(index: TestCaseIndex, className: string, methodName: string): JUnitTestCase[] {
@@ -94,10 +113,17 @@ function findByClass(
   }
 
   const result: JUnitTestCase[][] = [];
-  for (const className of index.classNames) {
-    if (!classNamesMatch(className, normalized)) {
-      continue;
+  const candidates = new Set(index.classNameSuffixes.get(normalized) ?? []);
+  for (const suffix of classNameSuffixesFor(normalized)) {
+    if (source.has(suffix)) {
+      candidates.add(suffix);
     }
+  }
+  const matchingClasses = [...candidates]
+    .filter((className) => source.has(className) && classNamesMatch(className, normalized))
+    .sort((left, right) => (index.classNameOrder.get(left) ?? 0) - (index.classNameOrder.get(right) ?? 0));
+
+  for (const className of matchingClasses) {
     const methods = source.get(className);
     if (!methods) {
       continue;
@@ -106,6 +132,16 @@ function findByClass(
     result.push(...cases.filter((items) => items.length > 0));
   }
   return result;
+}
+
+function classNameSuffixesFor(className: string): string[] {
+  const suffixes: string[] = [];
+  for (let index = 0; index < className.length; index += 1) {
+    if (className[index] === '\\') {
+      suffixes.push(className.slice(index + 1));
+    }
+  }
+  return suffixes;
 }
 
 function addToNestedIndex(

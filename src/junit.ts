@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as sax from 'sax';
 import type { JUnitStatus, JUnitTestCase } from './types';
 import { methodNameFromTestCase, normalizeClassName } from './parser';
+import { normalizeSaxAttributes, readSaxAttribute } from './xmlAttributes';
 
 export function parseJUnitXml(xml: string): JUnitTestCase[] {
   if (!xml.trim()) {
@@ -47,7 +48,7 @@ export function parseJUnitXml(xml: string): JUnitTestCase[] {
       current.resultPriority = priority[name];
       current.status = name === 'failure' ? 'failed' : name === 'error' ? 'errored' : 'skipped';
       current.resultMessage = '';
-      current.resultAttributeMessage = readSaxAttribute(normalizeSaxAttributes(tag.attributes), 'message');
+      current.resultAttributeMessage = readSaxAttribute(tag.attributes, 'message');
     }
   };
 
@@ -190,20 +191,4 @@ function parseTestCase(
     file,
     line,
   };
-}
-
-function normalizeSaxAttributes(attributes: Record<string, unknown>): Record<string, string> {
-  return Object.fromEntries(Object.entries(attributes).map(([name, value]) => [
-    name,
-    typeof value === 'string'
-      ? value
-      : value && typeof value === 'object' && 'value' in value && typeof value.value === 'string'
-        ? value.value
-        : '',
-  ]));
-}
-
-function readSaxAttribute(attributes: Record<string, string>, name: string): string {
-  const attribute = attributes[name];
-  return attribute ?? '';
 }
