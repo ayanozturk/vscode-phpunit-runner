@@ -333,7 +333,9 @@ export function resolveDockerInvocation(
   invocation: Invocation,
   debug = false,
 ): Invocation {
-  const dockerCommand = config.dockerCommand.trim() || 'docker';
+  const dockerCommandParts = splitCommandLine(config.dockerCommand.trim() || 'docker');
+  const dockerCommand = dockerCommandParts[0] || 'docker';
+  const dockerCommandArgs = dockerCommandParts.slice(1);
   const container = config.dockerContainer.trim();
   if (!container) {
     throw new Error('phpunitRunner.docker.container must be set when docker execution is enabled.');
@@ -349,7 +351,7 @@ export function resolveDockerInvocation(
 
   return {
     command: dockerCommand,
-    args: ['exec', '-i', ...debugEnv, ...config.dockerExecArgs, '-w', containerCwd, container, containerCommand, ...containerArgs],
+    args: [...dockerCommandArgs, 'exec', '-i', ...debugEnv, ...config.dockerExecArgs, '-w', containerCwd, container, containerCommand, ...containerArgs],
     cwd: workspacePath,
   };
 }

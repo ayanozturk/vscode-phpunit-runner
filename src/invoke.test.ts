@@ -329,6 +329,35 @@ describe('resolveInvocation', () => {
     assert.ok(invocation.args.includes('/var/www/html/tests/ExampleTest.php'));
   });
 
+  it('supports Docker Compose as a multi-word Docker command', () => {
+    const invocation = resolveDockerInvocation('/proj', {
+      ...config,
+      dockerCommand: 'docker compose',
+    }, {
+      command: 'php',
+      args: ['vendor/bin/phpunit'],
+      cwd: '/proj',
+    });
+
+    assert.equal(invocation.command, 'docker');
+    assert.deepEqual(invocation.args.slice(0, 3), ['compose', 'exec', '-i']);
+    assert.ok(invocation.args.includes('app'));
+  });
+
+  it('preserves a quoted Docker executable path containing spaces', () => {
+    const invocation = resolveDockerInvocation('/proj', {
+      ...config,
+      dockerCommand: '"/opt/Docker Tools/docker"',
+    }, {
+      command: 'php',
+      args: ['vendor/bin/phpunit'],
+      cwd: '/proj',
+    });
+
+    assert.equal(invocation.command, '/opt/Docker Tools/docker');
+    assert.equal(invocation.args[0], 'exec');
+  });
+
   it('maps distinct workspace roots into one shared Docker container with per-root commands', async () => {
     const workspaceMappings = {
       '/work/api': '/srv/apps/api',

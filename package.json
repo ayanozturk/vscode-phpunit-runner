@@ -61,7 +61,7 @@
         "phpunitRunner.docker.command": {
           "type": "string",
           "default": "docker",
-          "description": "Docker CLI command used to execute PHPUnit inside a container."
+          "description": "Docker CLI command used to execute PHPUnit inside a container, such as 'docker' or 'docker compose'."
         },
         "phpunitRunner.docker.container": {
           "type": "string",
