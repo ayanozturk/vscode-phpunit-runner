@@ -27,6 +27,25 @@ describe('parsePhpUnitXml', () => {
     assert.deepEqual(parsed.suites[1].files, ['tests/Smoke.php']);
   });
 
+  it('ignores markup-looking text in comments and reads CDATA directory paths', () => {
+    const parsed = parsePhpUnitXml(`<phpunit>
+  <!-- <testsuite name="Commented"><directory>tests/Hidden</directory></testsuite> -->
+  <testsuites>
+    <!-- <exclude>tests/Actual</exclude> -->
+    <testsuite name="Actual">
+      <!-- <directory>tests/Hidden</directory> -->
+      <directory><![CDATA[tests/Actual]]></directory>
+    </testsuite>
+  </testsuites>
+</phpunit>`);
+
+    assert.equal(parsed.suites.length, 1);
+    assert.equal(parsed.suites[0].name, 'Actual');
+    assert.deepEqual(parsed.suites[0].directories, [{ path: 'tests/Actual' }]);
+    assert.deepEqual(parsed.suites[0].excludes, []);
+    assert.deepEqual(parsed.excludes, []);
+  });
+
   it('prefers xml directories over configured globs', () => {
     const globs = resolveDiscoveryGlobs({
       configuredIncludes: ['**/*Test.php'],

@@ -12,7 +12,7 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Run or debug inline.** Use the Run Test and Debug Test actions shown above discovered PHPUnit methods and Pest cases.
 - **Work with data providers.** After a test run, PHPUnit data sets appear beneath their test and can be run individually.
 - **Run Pest data sets individually.** Literal arrays and inline generators with literal `yield` values passed to Pest’s `->with()` appear under their test, including chained data sets.
-- **Understand failures quickly.** See pass, fail, and skipped results with assertion messages and source locations in VS Code’s Test Results panel.
+- **Understand failures quickly.** See colored outcomes, assertion messages, source locations, and a short PHP code frame for readable local failure files in VS Code’s Test Results panel.
 - **Choose your test output.** Switch between detailed per-test results, a compact progress summary, or plain per-test lines.
 - **Debug and measure coverage.** Start an Xdebug session for a selected test and inspect Clover coverage in the editor.
 - **Fit your environment.** Run locally, through Docker, or with a command template for Laravel Sail, DDEV, SSH, and other remote setups. Host-to-remote path mappings keep results connected to local files.
@@ -72,7 +72,7 @@ Docker settings:
 
 ### Test output
 
-Set `phpunitRunner.output.preset` to choose how structured PHPUnit results appear in VS Code’s Test Results output:
+Set `phpunitRunner.output.preset` to choose how structured PHPUnit results appear in VS Code’s Test Results output. Outcome markers and labels use ANSI colors. The detailed preset includes a short source snippet around a failure location when the referenced file is readable on the host.
 
 - `collision` (default): a detailed line for each test, with duration and failure details.
 - `progress`: one compact status marker per test followed by a result count.
@@ -90,6 +90,22 @@ The PHPUnit Runner output channel is cleared once at the start of a run by defau
   "phpunitRunner.configurationFile": "phpunit.xml"
 }
 ```
+
+`phpunitRunner.phpunitCommand` can also include runner arguments. For example, use Laravel's local Artisan runner or run ParaTest with worker options:
+
+```json
+{
+  "phpunitRunner.phpunitCommand": "artisan test"
+}
+```
+
+```json
+{
+  "phpunitRunner.phpunitCommand": "vendor/bin/paratest --processes=4 --testsuite \"Integration Suite\""
+}
+```
+
+Quote arguments that contain spaces so they remain one argument.
 
 ### Docker
 

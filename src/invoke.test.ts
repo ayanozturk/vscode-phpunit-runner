@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 import { describe, it } from 'node:test';
-import { resolveDockerInvocation, resolveInvocation } from './invoke';
+import { autoDetectPhpUnit, resolveDockerInvocation, resolveInvocation } from './invoke';
 import { mapHostPathToContainer } from './paths';
 import type { RunnerConfig, TestTarget } from './types';
 
@@ -76,6 +79,201 @@ describe('resolveInvocation', () => {
     assert.ok(invocation.args.some((arg) => arg.includes('ExampleTest::testItWorks')));
     assert.ok(invocation.args.some((arg) => arg.includes('with data set .*|#.*|@.*')));
     assert.ok(invocation.args.includes('/var/www/html/vendor/bin/phpunit'));
+    assert.ok(invocation.args.includes('/var/www/html/tests/ExampleTest.php'));
+  });
+
+  it('runs an Artisan-style multi-word command through PHP and preserves runner options', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: methodTarget,
+      config: {
+        ...config,
+        phpunitCommand: 'artisan test --parallel --processes=4',
+        phpArgs: ['-d', 'memory_limit=2G'],
+      },
+    });
+
+    assert.equal(invocation.command, 'php');
+    assert.deepEqual(invocation.args.slice(0, 5), [
+      '-d', 'memory_limit=2G', 'artisan', 'test', '--parallel',
+    ]);
+    assert.ok(invocation.args.includes('--processes=4'));
+    assert.ok(invocation.args.includes('--filter'));
+    assert.ok(invocation.args.includes('/proj/tests/ExampleTest.php'));
+  });
+
+  it('accepts an explicit PHP command before an application runner', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: fileTarget,
+      config: { ...config, phpunitCommand: 'php artisan test' },
+    });
+
+    assert.equal(invocation.command, 'php');
+    assert.deepEqual(invocation.args.slice(0, 3), ['artisan', 'test', '--colors=always']);
+  });
+
+  it('recognizes a Windows PHP executable path followed by an application runner', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: fileTarget,
+      config: { ...config, phpunitCommand: 'C:\\Tools\\PHP Folder\\php.exe artisan test' },
+    });
+
+    assert.equal(invocation.command, 'C:\\Tools\\PHP Folder\\php.exe');
+    assert.deepEqual(invocation.args.slice(0, 3), ['artisan', 'test', '--colors=always']);
+  });
+
+  it('preserves standalone Windows batch commands and their options', async () => {
+    for (const runner of ['phpunit', 'pest']) {
+      const invocation = await resolveInvocation({
+        workspacePath: '/proj',
+        target: fileTarget,
+        config: { ...config, phpunitCommand: '' },
+        phpunitExecutable: `C:\\project\\vendor\\bin\\${runner}.bat --no-coverage`,
+      });
+
+      assert.equal(invocation.command, `C:\\project\\vendor\\bin\\${runner}.bat`);
+      assert.equal(invocation.args[0], '--no-coverage');
+    }
+  });
+
+  it('prefers the extensionless Windows Composer proxy and launches it through PHP', async () => {
+    for (const runner of ['phpunit', 'pest']) {
+      const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit windows proxy '));
+      try {
+        if (runner === 'pest') {
+          await fs.writeFile(path.join(workspace, 'composer.json'), JSON.stringify({
+            'require-dev': { 'pestphp/pest': '^3.0' },
+          }));
+        }
+        const proxyPath = path.join(workspace, `vendor\\bin\\${runner}`);
+        await fs.writeFile(proxyPath, '');
+        await fs.writeFile(`${proxyPath}.bat`, '');
+
+        const detected = await autoDetectPhpUnit(workspace, 'win32');
+        assert.equal(detected, proxyPath);
+
+        const invocation = await resolveInvocation({
+          workspacePath: workspace,
+          target: fileTarget,
+          config,
+          phpunitExecutable: detected,
+        });
+        assert.equal(invocation.command, 'php');
+        assert.equal(invocation.args[0], proxyPath);
+      } finally {
+        await fs.rm(workspace, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('launches the extensionless ParaTest Composer proxy through PHP when its batch sibling exists', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit paratest proxy '));
+    try {
+      const proxyPath = path.join(workspace, 'vendor\\bin\\paratest');
+      await fs.writeFile(proxyPath, '');
+      await fs.writeFile(`${proxyPath}.bat`, '');
+
+      const invocation = await resolveInvocation({
+        workspacePath: workspace,
+        target: fileTarget,
+        config: { ...config, phpunitCommand: '' },
+        phpunitExecutable: proxyPath,
+      });
+
+      assert.equal(invocation.command, 'php');
+      assert.equal(invocation.args[0], proxyPath);
+      assert.ok(invocation.args.includes('--colors=always'));
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps command arguments separate and honors quotes around an argument with spaces', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: fileTarget,
+      config: {
+        ...config,
+        phpunitCommand: 'vendor/bin/paratest --testsuite "Integration Suite" --processes=3',
+      },
+    });
+
+    assert.equal(invocation.command, 'php');
+    assert.deepEqual(invocation.args.slice(0, 4), [
+      'vendor/bin/paratest', '--testsuite', 'Integration Suite', '--processes=3',
+    ]);
+  });
+
+  it('keeps shell metacharacters inside a quoted runner argument', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: fileTarget,
+      config: {
+        ...config,
+        phpunitCommand: 'vendor/bin/paratest --testsuite "Integration & Legacy"',
+      },
+    });
+
+    assert.equal(invocation.command, 'php');
+    assert.deepEqual(invocation.args.slice(0, 3), [
+      'vendor/bin/paratest', '--testsuite', 'Integration & Legacy',
+    ]);
+  });
+
+  it('preserves an unquoted executable path with spaces when options follow it', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/workspace folder',
+      target: fileTarget,
+      config: {
+        ...config,
+        phpunitCommand: '/workspace folder/vendor/bin/phpunit --no-coverage',
+      },
+    });
+
+    assert.equal(invocation.command, 'php');
+    assert.equal(invocation.args[0], '/workspace folder/vendor/bin/phpunit');
+    assert.equal(invocation.args[1], '--no-coverage');
+  });
+
+  it('finds an existing POSIX executable path with spaces before parsing its arguments', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit runner '));
+    try {
+      const executable = path.join(workspace, 'custom runner');
+      await fs.writeFile(executable, '');
+      const invocation = await resolveInvocation({
+        workspacePath: workspace,
+        target: fileTarget,
+        config: {
+          ...config,
+          phpunitCommand: `${executable} --label "Integration Suite"`,
+        },
+      });
+
+      assert.equal(invocation.command, executable);
+      assert.deepEqual(invocation.args.slice(0, 2), ['--label', 'Integration Suite']);
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('maps an Artisan-style command through Docker and keeps command options', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: methodTarget,
+      config: {
+        ...config,
+        phpunitCommand: 'artisan test --parallel',
+        dockerEnable: true,
+      },
+    });
+
+    assert.equal(invocation.command, 'docker');
+    assert.ok(invocation.args.includes('php'));
+    assert.ok(invocation.args.includes('artisan'));
+    assert.ok(invocation.args.includes('test'));
+    assert.ok(invocation.args.includes('--parallel'));
     assert.ok(invocation.args.includes('/var/www/html/tests/ExampleTest.php'));
   });
 

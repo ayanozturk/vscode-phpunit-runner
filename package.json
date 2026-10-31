@@ -2,7 +2,7 @@
   "name": "aos-phpunit",
   "displayName": "PHPUnit Runner",
   "description": "Parse PHPUnit tests in PHP files and run them from VS Code.",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "publisher": "AOSSoftware",
   "license": "MIT",
   "repository": {
@@ -41,7 +41,7 @@
           "type": "string",
           "scope": "resource",
           "default": "",
-          "description": "Explicit PHPUnit executable or script path. Leave empty to auto-detect vendor/bin/phpunit or fallback to phpunit on PATH."
+          "description": "Runner command or script path, optionally followed by arguments (for example, 'artisan test'). Quote arguments containing spaces. Leave empty to auto-detect Pest or PHPUnit."
         },
         "phpunitRunner.configurationFile": {
           "type": "string",

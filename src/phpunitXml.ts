@@ -1,3 +1,5 @@
+import * as sax from 'sax';
+
 export type PhpUnitSuite = {
   name: string;
   directories: { path: string; suffix?: string }[];
@@ -12,25 +14,90 @@ export type PhpUnitXmlConfig = {
 
 export function parsePhpUnitXml(xml: string): PhpUnitXmlConfig {
   const suites: PhpUnitSuite[] = [];
-  const suitePattern = /<testsuite\b([^>]*)>([\s\S]*?)<\/testsuite>/gi;
+  const excludes: string[] = [];
+  const suiteStack: PhpUnitSuite[] = [];
+  let testsuitesDepth = 0;
+  let pathElement: {
+    name: 'directory' | 'file' | 'exclude';
+    value: string;
+    suffix?: string;
+    suite?: PhpUnitSuite;
+    isTopLevelExclude: boolean;
+  } | undefined;
 
-  for (const match of xml.matchAll(suitePattern)) {
-    const name = readAttribute(match[1], 'name') || 'default';
-    const body = match[2];
-    suites.push({
-      name,
-      directories: collectDirectories(body),
-      files: collectTaggedPaths(body, 'file'),
-      excludes: collectTaggedPaths(body, 'exclude'),
-    });
-  }
+  const parser = sax.parser(true, { trim: false, normalize: false });
+  parser.onopentag = (tag) => {
+    const name = tag.name.toLowerCase();
+    if (name === 'testsuites') {
+      testsuitesDepth += 1;
+      return;
+    }
 
-  const testsuitesBody = xml.match(/<testsuites\b[^>]*>([\s\S]*?)<\/testsuites>/i)?.[1] ?? '';
-  const topLevelExcludes = collectTaggedPaths(testsuitesBody, 'exclude');
+    if (name === 'testsuite') {
+      const suite: PhpUnitSuite = {
+        name: readSaxAttribute(tag.attributes, 'name') || 'default',
+        directories: [],
+        files: [],
+        excludes: [],
+      };
+      suites.push(suite);
+      suiteStack.push(suite);
+      return;
+    }
+
+    if (name === 'directory' || name === 'file' || name === 'exclude') {
+      pathElement = {
+        name,
+        value: '',
+        suffix: name === 'directory' ? readSaxAttribute(tag.attributes, 'suffix') || undefined : undefined,
+        suite: suiteStack.at(-1),
+        isTopLevelExclude: name === 'exclude' && suiteStack.length === 0 && testsuitesDepth > 0,
+      };
+    }
+  };
+
+  const appendText = (value: string) => {
+    if (pathElement) {
+      pathElement.value += value;
+    }
+  };
+  parser.ontext = appendText;
+  parser.oncdata = appendText;
+  parser.onclosetag = (rawName) => {
+    const name = rawName.toLowerCase();
+    if (pathElement?.name === name) {
+      const value = pathElement.value.trim();
+      if (value && pathElement.suite) {
+        if (pathElement.name === 'directory') {
+          pathElement.suite.directories.push({
+            path: value,
+            ...(pathElement.suffix ? { suffix: pathElement.suffix } : {}),
+          });
+        } else if (pathElement.name === 'file') {
+          pathElement.suite.files.push(value);
+        } else {
+          pathElement.suite.excludes.push(value);
+        }
+      } else if (value && pathElement.isTopLevelExclude) {
+        excludes.push(value);
+      }
+      pathElement = undefined;
+    }
+
+    if (name === 'testsuite') {
+      suiteStack.pop();
+    } else if (name === 'testsuites') {
+      testsuitesDepth = Math.max(0, testsuitesDepth - 1);
+    }
+  };
+  parser.onerror = (error) => {
+    throw error;
+  };
+  parser.write(xml).close();
 
   return {
     suites,
-    excludes: [...new Set(topLevelExcludes)],
+    excludes: [...new Set(excludes)],
   };
 }
 
@@ -98,34 +165,6 @@ export function listSuiteNames(config: PhpUnitXmlConfig): string[] {
   return config.suites.map((suite) => suite.name).filter(Boolean);
 }
 
-function collectDirectories(body: string): { path: string; suffix?: string }[] {
-  const directories: { path: string; suffix?: string }[] = [];
-  const pattern = /<directory\b([^>]*)>([\s\S]*?)<\/directory>/gi;
-  for (const match of body.matchAll(pattern)) {
-    const pathValue = decodeXml(match[2]).trim();
-    if (!pathValue) {
-      continue;
-    }
-    directories.push({
-      path: pathValue,
-      suffix: readAttribute(match[1], 'suffix') || undefined,
-    });
-  }
-  return directories;
-}
-
-function collectTaggedPaths(body: string, tag: string): string[] {
-  const values: string[] = [];
-  const pattern = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, 'gi');
-  for (const match of body.matchAll(pattern)) {
-    const value = decodeXml(match[1]).trim();
-    if (value) {
-      values.push(value);
-    }
-  }
-  return values;
-}
-
 function excludeGlob(target: string): string {
   const relative = toPosixRelative(target);
   return relative.endsWith('.php') ? relative : `${relative}/**`;
@@ -135,17 +174,13 @@ function toPosixRelative(target: string): string {
   return target.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '');
 }
 
-function readAttribute(source: string, name: string): string {
-  const match = source.match(new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, 'i'))
-    ?? source.match(new RegExp(`\\b${name}\\s*=\\s*'([^']*)'`, 'i'));
-  return decodeXml(match?.[1] ?? '');
-}
-
-function decodeXml(value: string): string {
-  return value
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&');
+function readSaxAttribute(attributes: Record<string, unknown>, name: string): string {
+  const value = Object.entries(attributes).find(([attributeName]) => attributeName.toLowerCase() === name.toLowerCase())?.[1];
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value && typeof value === 'object' && 'value' in value && typeof value.value === 'string') {
+    return value.value;
+  }
+  return '';
 }

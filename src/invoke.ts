@@ -21,7 +21,7 @@ import {
 export async function autoDetectPhpUnit(workspacePath: string, platform = process.platform): Promise<string> {
   if (await declaresPest(workspacePath)) {
     const pestCandidates = platform === 'win32'
-      ? ['vendor\\bin\\pest.bat', 'vendor\\bin\\pest']
+      ? ['vendor\\bin\\pest', 'vendor\\bin\\pest.bat']
       : ['vendor/bin/pest'];
     for (const candidate of pestCandidates) {
       const resolved = path.join(workspacePath, candidate);
@@ -35,7 +35,7 @@ export async function autoDetectPhpUnit(workspacePath: string, platform = proces
   }
 
   const candidates = platform === 'win32'
-    ? ['vendor\\bin\\phpunit.bat', 'vendor\\bin\\phpunit']
+    ? ['vendor\\bin\\phpunit', 'vendor\\bin\\phpunit.bat']
     : ['vendor/bin/phpunit'];
 
   for (const candidate of candidates) {
@@ -168,9 +168,15 @@ export async function resolveInvocation(options: {
     });
   }
 
-  const needsPhp = isPhpScript(phpunitExecutable);
-  const command = needsPhp ? phpExecutable : phpunitExecutable;
-  const args = needsPhp ? [...phpArgs, phpunitExecutable, ...phpunitArgs] : [...phpunitArgs];
+  const runnerCommand = await parseRunnerCommand(phpunitExecutable, cwd);
+  const commandIsPhp = isPhpBinary(runnerCommand.command);
+  const needsPhp = !commandIsPhp && isPhpRunnerScript(runnerCommand.command);
+  const command = needsPhp ? phpExecutable : runnerCommand.command;
+  const args = commandIsPhp
+    ? [...phpArgs, ...runnerCommand.args, ...phpunitArgs]
+    : needsPhp
+      ? [...phpArgs, runnerCommand.command, ...runnerCommand.args, ...phpunitArgs]
+      : [...runnerCommand.args, ...phpunitArgs];
   const local: Invocation = { command, args, cwd, env, mappings };
 
   if (!config.dockerEnable) {
@@ -182,6 +188,145 @@ export async function resolveInvocation(options: {
     env,
     mappings: mappings.length > 0 ? mappings : dockerMappings(workspacePath, config),
   };
+}
+
+type ParsedRunnerCommand = { command: string; args: string[] };
+
+async function parseRunnerCommand(value: string, cwd: string): Promise<ParsedRunnerCommand> {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { command: trimmed, args: [] };
+  }
+
+  // Keep an existing path as one executable even when it contains spaces and is unquoted.
+  if (await commandPathExists(trimmed, cwd) || isRecognizedRunnerCommand(trimmed)) {
+    return { command: trimmed, args: [] };
+  }
+
+  const words = splitCommandLine(trimmed);
+  if (words.length <= 1) {
+    return { command: words[0] ?? '', args: [] };
+  }
+
+  // Recover unquoted executable paths with spaces when followed by arguments.
+  for (let wordCount = words.length - 1; wordCount > 0; wordCount -= 1) {
+    const candidate = words.slice(0, wordCount).join(' ');
+    if (await commandPathExists(candidate, cwd) || isRecognizedRunnerCommand(candidate)) {
+      return { command: candidate, args: words.slice(wordCount) };
+    }
+  }
+
+  return { command: words[0], args: words.slice(1) };
+}
+
+async function commandPathExists(candidate: string, cwd: string): Promise<boolean> {
+  if (process.platform !== 'win32' && isWindowsAbsoluteCommandPath(candidate)) {
+    return false;
+  }
+  if (!candidate || (!path.isAbsolute(candidate) && !candidate.includes('/') && !candidate.includes('\\'))) {
+    return false;
+  }
+
+  try {
+    await fs.access(resolvePath(cwd, candidate));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isWindowsAbsoluteCommandPath(candidate: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(candidate) || /^\\\\[^\\]+\\[^\\]+/.test(candidate);
+}
+
+function splitCommandLine(value: string): string[] {
+  const words: string[] = [];
+  let word = '';
+  let quote: '"' | "'" | undefined;
+  let escaped = false;
+  let wordStarted = false;
+
+  const finishWord = () => {
+    if (wordStarted) {
+      words.push(word);
+      word = '';
+      wordStarted = false;
+    }
+  };
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    const next = value[index + 1];
+
+    if (escaped) {
+      word += character;
+      wordStarted = true;
+      escaped = false;
+      continue;
+    }
+
+    if (quote === "'") {
+      if (character === "'") {
+        quote = undefined;
+      } else {
+        word += character;
+      }
+      wordStarted = true;
+      continue;
+    }
+
+    if (quote === '"') {
+      if (character === '"') {
+        quote = undefined;
+      } else if (character === '\\' && next === '"') {
+        escaped = true;
+      } else {
+        word += character;
+      }
+      wordStarted = true;
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character;
+      wordStarted = true;
+    } else if (character === '\\' && next && (/[\s'"]/.test(next))) {
+      escaped = true;
+      wordStarted = true;
+    } else if (/\s/.test(character)) {
+      finishWord();
+    } else {
+      word += character;
+      wordStarted = true;
+    }
+  }
+
+  if (quote) {
+    throw new Error('phpunitRunner.phpunitCommand contains an unterminated quote.');
+  }
+  if (escaped) {
+    word += '\\';
+  }
+  finishWord();
+  return words;
+}
+
+function isPhpBinary(command: string): boolean {
+  return /^php(?:\d+(?:\.\d+)*)?(?:\.exe)?$/i.test(runnerBasename(command));
+}
+
+function isRecognizedRunnerCommand(command: string): boolean {
+  return isPhpBinary(command)
+    || isPhpRunnerScript(command)
+    || /^(?:phpunit|pest|paratest)(?:\.(?:bat|cmd|exe))?$/i.test(runnerBasename(command));
+}
+
+function isPhpRunnerScript(command: string): boolean {
+  return isPhpScript(command) || /^(?:artisan(?:\.php)?|phpunit|pest|paratest)$/i.test(runnerBasename(command));
+}
+
+function runnerBasename(command: string): string {
+  return command.includes('\\') ? path.win32.basename(command) : path.basename(command);
 }
 
 export function resolveDockerInvocation(

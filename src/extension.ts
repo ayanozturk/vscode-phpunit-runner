@@ -16,7 +16,12 @@ import {
   readJUnitReport,
 } from './junit';
 import { classNamesMatch, datasetSuffixFromTestCase, methodNameFromTestCase, parseTestSource } from './parser';
-import { formatTestOutput, type OutputPreset } from './outputFormatter';
+import {
+  formatTestOutput,
+  sourceSnippetAtLine,
+  sourceSnippetKey,
+  type OutputPreset,
+} from './outputFormatter';
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
 import { parsePhpUnitXml, resolveDiscoveryGlobs, type PhpUnitSuite } from './phpunitXml';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
@@ -539,10 +544,15 @@ async function runItem(
 
   try {
     const result = await executePhpUnit(data, token, kind, run);
+    const sourceSnippets = await readFailureSourceSnippets(
+      result.cases,
+      vscode.workspace.getWorkspaceFolder(data.uri),
+    );
     run.appendOutput(formatTestOutput(
       result.cases,
       getOutputPreset(vscode.workspace.getWorkspaceFolder(data.uri)),
       result.output,
+      sourceSnippets,
     ));
     if (result.reportWarning) {
       run.appendOutput(`${result.reportWarning}\r\n`, undefined, item);
@@ -1034,7 +1044,8 @@ async function runByGroup(groupOverride?: string): Promise<void> {
           vscode.TestRunProfileKind.Run,
           run,
         );
-        run.appendOutput(formatTestOutput(result.cases, getOutputPreset(folder), result.output));
+        const sourceSnippets = await readFailureSourceSnippets(result.cases, folder);
+        run.appendOutput(formatTestOutput(result.cases, getOutputPreset(folder), result.output, sourceSnippets));
         if (result.reportWarning) {
           run.appendOutput(`${result.reportWarning}\r\n`);
         }
@@ -1117,6 +1128,49 @@ function getConfig(scope?: vscode.ConfigurationScope): vscode.WorkspaceConfigura
 function getOutputPreset(folder?: vscode.WorkspaceFolder): OutputPreset {
   const value = getConfig(folder).get<string>('output.preset', 'collision');
   return value === 'progress' || value === 'pretty' ? value : 'collision';
+}
+
+async function readFailureSourceSnippets(
+  cases: JUnitTestCase[],
+  folder?: vscode.WorkspaceFolder,
+): Promise<Map<string, string>> {
+  const snippets = new Map<string, string>();
+  const contentsByPath = new Map<string, string | undefined>();
+
+  for (const testCase of cases) {
+    if (testCase.status !== 'failed' && testCase.status !== 'errored') {
+      continue;
+    }
+
+    const location = firstFailureLocation([testCase]);
+    const sourceFile = location.file ?? testCase.file;
+    const sourceLine = location.line ?? testCase.line;
+    if (!sourceFile || !sourceLine || sourceLine < 1) {
+      continue;
+    }
+
+    const filePath = path.isAbsolute(sourceFile)
+      ? sourceFile
+      : folder ? path.resolve(folder.uri.fsPath, sourceFile) : undefined;
+    if (!filePath) {
+      continue;
+    }
+
+    if (!contentsByPath.has(filePath)) {
+      contentsByPath.set(filePath, await fs.readFile(filePath, 'utf8').catch(() => undefined));
+    }
+    const contents = contentsByPath.get(filePath);
+    if (!contents) {
+      continue;
+    }
+
+    const snippet = sourceSnippetAtLine(contents, sourceLine);
+    if (snippet) {
+      snippets.set(sourceSnippetKey(sourceFile, sourceLine), snippet);
+    }
+  }
+
+  return snippets;
 }
 
 function outputFoldersForRequest(request: vscode.TestRunRequest): Array<vscode.WorkspaceFolder | undefined> {
