@@ -271,6 +271,17 @@ exports.run = async () => {
     await fs.rm(composerLockPath);
     await until(() => findMethod('testAlpha') !== beforeLockDelete, 'deleting composer.lock refreshes discovered tests');
 
+    const composerManifestPath = path.join(workspaceA.uri.fsPath, 'composer.json');
+    const beforeManifestCreate = findMethod('testAlpha');
+    await fs.writeFile(composerManifestPath, '{"require-dev": {"phpunit/phpunit": "^11.0"}}\n');
+    await until(() => findMethod('testAlpha') !== beforeManifestCreate, 'creating composer.json refreshes discovered tests');
+    const beforeManifestChange = findMethod('testAlpha');
+    await fs.writeFile(composerManifestPath, '{"require-dev": {"pestphp/pest": "^3.0"}}\n');
+    await until(() => findMethod('testAlpha') !== beforeManifestChange, 'changing composer.json refreshes discovered tests');
+    const beforeManifestDelete = findMethod('testAlpha');
+    await fs.rm(composerManifestPath);
+    await until(() => findMethod('testAlpha') !== beforeManifestDelete, 'deleting composer.json refreshes discovered tests');
+
     const savedTestPath = path.join(workspaceB.uri.fsPath, 'tests', 'SavedTest.php');
     await fs.writeFile(savedTestPath, '<?php class SavedTest {}', 'utf8');
     const savedDocument = await vscode.workspace.openTextDocument(vscode.Uri.file(savedTestPath));

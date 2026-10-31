@@ -18,8 +18,6 @@ import {
 import { classNamesMatch, datasetSuffixFromTestCase, methodNameFromTestCase, parseTestSource } from './parser';
 import {
   formatTestOutputSegments,
-  sourceSnippetAtLine,
-  sourceSnippetKey,
   type OutputPreset,
   type TestOutputFormat,
 } from './outputFormatter';
@@ -27,6 +25,7 @@ import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
 import { parsePhpUnitXml, resolveDiscoveryGlobs, type PhpUnitSuite } from './phpunitXml';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
 import { resolveOutputFilePath } from './outputLocation';
+import { readFailureSourceSnippets as readSourceFailureSnippets } from './sourceSnippets';
 import { findWithGlobs as findWorkspaceFilesWithGlobs } from './workspaceDiscovery';
 import type { JUnitTestCase, RunnerConfig, SourceRange, TestTarget } from './types';
 
@@ -133,6 +132,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const watcher = vscode.workspace.createFileSystemWatcher('**/*.php');
   const configWatcher = vscode.workspace.createFileSystemWatcher('**/phpunit.xml*');
   const composerLockWatcher = vscode.workspace.createFileSystemWatcher('**/composer.lock');
+  const composerManifestWatcher = vscode.workspace.createFileSystemWatcher('**/composer.json');
   let composerRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   const scheduleComposerRefresh = (uri: vscode.Uri) => {
     if (!vscode.workspace.getWorkspaceFolder(uri)) {
@@ -194,6 +194,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     composerLockWatcher.onDidCreate(scheduleComposerRefresh),
     composerLockWatcher.onDidChange(scheduleComposerRefresh),
     composerLockWatcher.onDidDelete(scheduleComposerRefresh),
+    composerManifestWatcher,
+    composerManifestWatcher.onDidCreate(scheduleComposerRefresh),
+    composerManifestWatcher.onDidChange(scheduleComposerRefresh),
+    composerManifestWatcher.onDidDelete(scheduleComposerRefresh),
   );
 
   await discoverWorkspaceTests();
@@ -1201,43 +1205,7 @@ async function readFailureSourceSnippets(
   cases: JUnitTestCase[],
   folder?: vscode.WorkspaceFolder,
 ): Promise<Map<string, string>> {
-  const snippets = new Map<string, string>();
-  const contentsByPath = new Map<string, string | undefined>();
-
-  for (const testCase of cases) {
-    if (testCase.status !== 'failed' && testCase.status !== 'errored') {
-      continue;
-    }
-
-    const location = firstFailureLocation([testCase]);
-    const sourceFile = location.file ?? testCase.file;
-    const sourceLine = location.line ?? testCase.line;
-    if (!sourceFile || !sourceLine || sourceLine < 1) {
-      continue;
-    }
-
-    const filePath = path.isAbsolute(sourceFile)
-      ? sourceFile
-      : folder ? path.resolve(folder.uri.fsPath, sourceFile) : undefined;
-    if (!filePath) {
-      continue;
-    }
-
-    if (!contentsByPath.has(filePath)) {
-      contentsByPath.set(filePath, await fs.readFile(filePath, 'utf8').catch(() => undefined));
-    }
-    const contents = contentsByPath.get(filePath);
-    if (!contents) {
-      continue;
-    }
-
-    const snippet = sourceSnippetAtLine(contents, sourceLine);
-    if (snippet) {
-      snippets.set(sourceSnippetKey(sourceFile, sourceLine), snippet);
-    }
-  }
-
-  return snippets;
+  return readSourceFailureSnippets(cases, folder?.uri.fsPath);
 }
 
 async function appendStructuredTestOutput(

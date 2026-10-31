@@ -14,6 +14,7 @@ export function parseJUnitXml(xml: string): JUnitTestCase[] {
     status: JUnitStatus;
     message: string;
     activeResult?: 'skipped' | 'failure' | 'error';
+    resultPriority: number;
     resultMessage: string;
     resultAttributeMessage: string;
   } | undefined;
@@ -29,6 +30,7 @@ export function parseJUnitXml(xml: string): JUnitTestCase[] {
         attributes: normalizeSaxAttributes(tag.attributes),
         status: 'passed',
         message: '',
+        resultPriority: 0,
         resultMessage: '',
         resultAttributeMessage: '',
       };
@@ -40,8 +42,9 @@ export function parseJUnitXml(xml: string): JUnitTestCase[] {
     }
 
     const priority = { skipped: 1, failure: 2, error: 3 };
-    if (!current.activeResult || priority[name] >= priority[current.activeResult]) {
+    if (priority[name] > current.resultPriority) {
       current.activeResult = name;
+      current.resultPriority = priority[name];
       current.status = name === 'failure' ? 'failed' : name === 'error' ? 'errored' : 'skipped';
       current.resultMessage = '';
       current.resultAttributeMessage = readSaxAttribute(normalizeSaxAttributes(tag.attributes), 'message');
@@ -152,9 +155,12 @@ export function firstFailureLocation(cases: JUnitTestCase[]): { file?: string; l
 
 export function parseLocationFromMessage(message: string): { file?: string; line?: number } {
   for (const line of message.split(/\r?\n/)) {
-    const match = line.match(/(?:^|\s)([A-Za-z]:\\.+?\.php|\/.+?\.php):(\d+)(?::\d+)?(?:\s|$)/);
+    const match = line.match(/(?:^|\s)([A-Za-z]:\\.+?\.php|\/.+?\.php)(?::(\d+)(?::\d+)?|\((\d+)\))(?::|\s|$)/);
     if (match) {
-      return { file: match[1], line: Number(match[2]) };
+      const sourceLine = Number(match[2] ?? match[3]);
+      if (Number.isInteger(sourceLine) && sourceLine > 0) {
+        return { file: match[1], line: sourceLine };
+      }
     }
   }
   return {};
@@ -170,7 +176,10 @@ function parseTestCase(
   const timeSeconds = Number(attributes.time || '0');
   const file = attributes.file || undefined;
   const lineValue = attributes.line;
-  const line = lineValue ? Number(lineValue) : undefined;
+  const parsedLine = lineValue ? Number(lineValue) : undefined;
+  const line = parsedLine !== undefined && Number.isInteger(parsedLine) && parsedLine > 0
+    ? parsedLine
+    : undefined;
 
   return {
     name,
@@ -179,7 +188,7 @@ function parseTestCase(
     status,
     message,
     file,
-    line: Number.isFinite(line) ? line : undefined,
+    line,
   };
 }
 

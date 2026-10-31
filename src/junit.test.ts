@@ -102,6 +102,60 @@ describe('parseJUnitXml', () => {
     assert.equal(cases[1].message, '<broken> & raw');
   });
 
+  it('ignores XML comments while preserving entities and multiline traces', () => {
+    const cases = parseJUnitXml(`<testsuites><!-- suite note -->
+      <testcase name="trace" classname="C"><failure message="assertion &gt; expected">Assertion failed: a &lt; b.
+<!-- framework comment should not appear -->
+Stack trace:
+#0 /workspace/tests/ExampleTest.php(14): Service-&gt;run()
+#1 {main}</failure></testcase>
+    </testsuites>`);
+
+    assert.equal(cases[0].status, 'failed');
+    assert.equal(cases[0].message, 'Assertion failed: a < b.\n\nStack trace:\n#0 /workspace/tests/ExampleTest.php(14): Service->run()\n#1 {main}');
+    assert.deepEqual(firstFailureLocation(cases), {
+      file: '/workspace/tests/ExampleTest.php',
+      line: 14,
+    });
+  });
+
+  it('ignores zero, negative, fractional, and missing source lines', () => {
+    const cases = parseJUnitXml(`<testsuites>
+      <testcase name="zero" classname="C" file="/tmp/zero.php" line="0"><failure>failure</failure></testcase>
+      <testcase name="negative" classname="C" file="/tmp/negative.php" line="-1"><failure>failure</failure></testcase>
+      <testcase name="fraction" classname="C" file="/tmp/fraction.php" line="1.5"><failure>failure</failure></testcase>
+      <testcase name="missing" classname="C" file="/tmp/missing.php"><failure>failure</failure></testcase>
+    </testsuites>`);
+
+    assert.deepEqual(cases.map((testCase) => testCase.line), [undefined, undefined, undefined, undefined]);
+    assert.deepEqual(cases.map((testCase) => firstFailureLocation([testCase])), [
+      { file: '/tmp/zero.php', line: undefined },
+      { file: '/tmp/negative.php', line: undefined },
+      { file: '/tmp/fraction.php', line: undefined },
+      { file: '/tmp/missing.php', line: undefined },
+    ]);
+    assert.deepEqual(parseLocationFromMessage('/tmp/zero.php:0'), {});
+  });
+
+  it('prefers runtime errors over assertion failures regardless of XML order', () => {
+    const cases = parseJUnitXml(`<testsuites>
+      <testcase name="assertion-first" classname="C"><failure>Assertion did not hold</failure><error>Runtime exception</error></testcase>
+      <testcase name="runtime-first" classname="C"><error>Runtime exception</error><failure>Assertion did not hold</failure></testcase>
+      <testcase name="skipped-then-failed" classname="C"><skipped/><failure>Assertion did not hold</failure></testcase>
+    </testsuites>`);
+
+    assert.deepEqual(cases.map(({ status, message }) => ({ status, message })), [
+      { status: 'errored', message: 'Runtime exception' },
+      { status: 'errored', message: 'Runtime exception' },
+      { status: 'failed', message: 'Assertion did not hold' },
+    ]);
+  });
+
+  it('rejects malformed comments and unknown XML entities', () => {
+    assert.throws(() => parseJUnitXml('<testsuites><!-- unfinished</testsuites>'));
+    assert.throws(() => parseJUnitXml('<testcase name="t" classname="C"><failure>bad &unknown; entity</failure></testcase>'));
+  });
+
   it('rejects malformed XML instead of silently treating it as an empty report', () => {
     assert.throws(() => parseJUnitXml('<testsuite><testcase name="unfinished"></testsuite>'));
   });
