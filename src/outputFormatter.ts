@@ -2,6 +2,15 @@ import type { JUnitTestCase, JUnitStatus } from './types';
 import { firstFailureLocation } from './junit';
 
 export type OutputPreset = 'collision' | 'progress' | 'pretty';
+export type TestOutputFormat = {
+  colors?: boolean;
+  duration?: boolean;
+  icons?: Partial<Record<JUnitStatus, string>>;
+  testCase?: string;
+  failureLocation?: string;
+  failureMessage?: string;
+  sourceSnippet?: boolean;
+};
 
 export function sourceSnippetKey(file: string, line: number): string {
   return `${file}:${line}`;
@@ -29,6 +38,7 @@ export function formatTestOutput(
   preset: OutputPreset,
   fallbackOutput = '',
   sourceSnippets: ReadonlyMap<string, string> = new Map(),
+  format: TestOutputFormat = {},
 ): string {
   if (cases.length === 0) {
     return ensureTrailingNewline(fallbackOutput);
@@ -36,41 +46,45 @@ export function formatTestOutput(
 
   switch (preset) {
     case 'progress':
-      return formatProgress(cases);
+      return formatProgress(cases, format);
     case 'pretty':
-      return formatPretty(cases, sourceSnippets);
+      return formatPretty(cases, sourceSnippets, format);
     case 'collision':
     default:
-      return formatCollision(cases, sourceSnippets);
+      return formatCollision(cases, sourceSnippets, format);
   }
 }
 
-function formatCollision(cases: JUnitTestCase[], sourceSnippets: ReadonlyMap<string, string>): string {
+function formatCollision(
+  cases: JUnitTestCase[],
+  sourceSnippets: ReadonlyMap<string, string>,
+  format: TestOutputFormat,
+): string {
   const lines = cases.flatMap((testCase) => {
     const failureLocation = isFailure(testCase.status) ? firstFailureLocation([testCase]) : {};
     const file = failureLocation.file ?? testCase.file;
     const line = failureLocation.line ?? testCase.line;
-    const location = file && line
-      ? `  ${file}:${line}`
-      : undefined;
-    const message = isFailure(testCase.status) && testCase.message
-      ? indent(testCase.message, '  ')
-      : undefined;
+    const location = isFailure(testCase.status) ? formatFailureLocation(file, line, format) : undefined;
+    const message = isFailure(testCase.status) ? formatFailureMessage(testCase.message, format) : undefined;
     const snippet = isFailure(testCase.status) && file && line
       ? sourceSnippets.get(sourceSnippetKey(file, line))
       : undefined;
     return [
-      `${colorStatusGlyph(statusGlyph(testCase.status), testCase.status)} ${testCase.name}${formatDuration(testCase.timeSeconds)}`,
+      formatTestCaseLine(testCase, statusGlyph(testCase.status), format),
       ...(location ? [location] : []),
-      ...(snippet ? [snippet] : []),
+      ...(snippet && format.sourceSnippet !== false ? [formatSnippet(snippet, format)] : []),
       ...(message ? [message] : []),
     ];
   });
   return `${lines.join('\n')}\n`;
 }
 
-function formatProgress(cases: JUnitTestCase[]): string {
-  const indicators = cases.map((testCase) => colorStatusGlyph(progressGlyph(testCase.status), testCase.status)).join('');
+function formatProgress(cases: JUnitTestCase[], format: TestOutputFormat): string {
+  const indicators = cases.map((testCase) => colorStatusGlyph(
+    format.icons?.[testCase.status] ?? progressGlyph(testCase.status),
+    testCase.status,
+    format.colors !== false,
+  )).join('');
   const passed = countStatus(cases, 'passed');
   const failed = countStatus(cases, 'failed');
   const errored = countStatus(cases, 'errored');
@@ -78,22 +92,74 @@ function formatProgress(cases: JUnitTestCase[]): string {
   return `${indicators}\n${cases.length} tests: ${passed} passed, ${failed} failed, ${errored} errors, ${skipped} skipped\n`;
 }
 
-function formatPretty(cases: JUnitTestCase[], sourceSnippets: ReadonlyMap<string, string>): string {
+function formatPretty(
+  cases: JUnitTestCase[],
+  sourceSnippets: ReadonlyMap<string, string>,
+  format: TestOutputFormat,
+): string {
   const lines = cases.flatMap((testCase) => {
-    const result = `${colorStatusLabel(statusLabel(testCase.status), testCase.status)} ${testCase.name}${formatDuration(testCase.timeSeconds)}`;
+    const result = format.testCase
+      ? formatTestCaseLine(testCase, statusLabel(testCase.status), format)
+      : `${colorStatusLabel(statusLabel(testCase.status), testCase.status, format.colors !== false)} ${testCase.name}${format.duration === false ? '' : formatDuration(testCase.timeSeconds)}`;
     const failureLocation = isFailure(testCase.status) ? firstFailureLocation([testCase]) : {};
     const file = failureLocation.file ?? testCase.file;
     const line = failureLocation.line ?? testCase.line;
-    const location = isFailure(testCase.status) && file && line ? `  ${file}:${line}` : undefined;
+    const location = isFailure(testCase.status) ? formatFailureLocation(file, line, format) : undefined;
     const snippet = isFailure(testCase.status) && file && line
       ? sourceSnippets.get(sourceSnippetKey(file, line))
       : undefined;
-    const detail = isFailure(testCase.status) && testCase.message
-      ? indent(testCase.message, '  ')
-      : undefined;
-    return [result, ...(location ? [location] : []), ...(snippet ? [snippet] : []), ...(detail ? [detail] : [])];
+    const detail = formatFailureMessage(testCase.message, format);
+    return [
+      result,
+      ...(location ? [location] : []),
+      ...(snippet && format.sourceSnippet !== false ? [formatSnippet(snippet, format)] : []),
+      ...(detail ? [detail] : []),
+    ];
   });
   return `${lines.join('\n')}\n`;
+}
+
+function formatTestCaseLine(testCase: JUnitTestCase, defaultStatus: string, format: TestOutputFormat): string {
+  const duration = format.duration === false ? '' : formatDuration(testCase.timeSeconds);
+  const icon = format.icons?.[testCase.status] ?? statusGlyph(testCase.status);
+  if (format.testCase) {
+    return renderTemplate(format.testCase, {
+      status: colorStatusLabel(statusLabel(testCase.status), testCase.status, format.colors !== false),
+      icon: colorStatusGlyph(icon, testCase.status, format.colors !== false),
+      name: testCase.name,
+      duration: duration.trim().replace(/^\(|\)$/g, ''),
+    });
+  }
+  return `${colorStatusGlyph(defaultStatus, testCase.status, format.colors !== false)} ${testCase.name}${duration}`;
+}
+
+function formatFailureLocation(file: string | undefined, line: number | undefined, format: TestOutputFormat): string | undefined {
+  if (format.failureLocation === '') {
+    return undefined;
+  }
+  if (!file || !line) {
+    return undefined;
+  }
+  return format.failureLocation
+    ? renderTemplate(format.failureLocation, { file, line: String(line) })
+    : `  ${file}:${line}`;
+}
+
+function formatFailureMessage(message: string | undefined, format: TestOutputFormat): string | undefined {
+  if (!message || format.failureMessage === '') {
+    return undefined;
+  }
+  return format.failureMessage
+    ? renderTemplate(format.failureMessage, { message })
+    : indent(message, '  ');
+}
+
+function renderTemplate(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(status|icon|name|duration|file|line|message)\}/g, (_, key: string) => values[key] ?? '');
+}
+
+function formatSnippet(snippet: string, format: TestOutputFormat): string {
+  return format.colors === false ? snippet.replace(/\u001b\[[0-9;]*m/g, '') : snippet;
 }
 
 function ensureTrailingNewline(output: string): string {
@@ -155,12 +221,12 @@ const ANSI = {
   reset: '\u001b[0m',
 } as const;
 
-function colorStatusGlyph(value: string, status: JUnitStatus): string {
-  return `${statusColor(status)}${value}${ANSI.reset}`;
+function colorStatusGlyph(value: string, status: JUnitStatus, colors = true): string {
+  return colors ? `${statusColor(status)}${value}${ANSI.reset}` : value;
 }
 
-function colorStatusLabel(value: string, status: JUnitStatus): string {
-  return `${statusColor(status)}${value}${ANSI.reset}`;
+function colorStatusLabel(value: string, status: JUnitStatus, colors = true): string {
+  return colors ? `${statusColor(status)}${value}${ANSI.reset}` : value;
 }
 
 function statusColor(status: JUnitStatus): string {

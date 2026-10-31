@@ -277,6 +277,58 @@ describe('resolveInvocation', () => {
     assert.ok(invocation.args.includes('/var/www/html/tests/ExampleTest.php'));
   });
 
+  it('maps distinct workspace roots into one shared Docker container with per-root commands', async () => {
+    const workspaceMappings = {
+      '/work/api': '/srv/apps/api',
+      '/work/web': '/srv/apps/web',
+    };
+    const apiInvocation = await resolveInvocation({
+      workspacePath: '/work/api',
+      target: { ...fileTarget, filePath: '/work/api/tests/ApiTest.php' },
+      config: {
+        ...config,
+        dockerEnable: true,
+        dockerContainer: 'shared-php',
+        dockerWorkspacePath: '',
+        paths: workspaceMappings,
+        phpunitCommand: '/work/api/vendor/bin/phpunit',
+      },
+    });
+    const webInvocation = await resolveInvocation({
+      workspacePath: '/work/web',
+      target: { ...fileTarget, filePath: '/work/web/tests/WebTest.php' },
+      config: {
+        ...config,
+        dockerEnable: true,
+        dockerContainer: 'shared-php',
+        dockerWorkspacePath: '/container/fallback',
+        dockerExecArgs: ['-u', 'frontend'],
+        additionalArgs: ['--parallel'],
+        paths: workspaceMappings,
+        phpunitCommand: 'artisan test --compact',
+      },
+    });
+
+    assert.deepEqual(apiInvocation.args.slice(0, 8), [
+      'exec', '-i', '-u', 'www-data', '-w', '/srv/apps/api', 'shared-php', 'php',
+    ]);
+    assert.ok(apiInvocation.args.includes('/srv/apps/api/vendor/bin/phpunit'));
+    assert.ok(apiInvocation.args.includes('/srv/apps/api/tests/ApiTest.php'));
+    assert.equal(apiInvocation.mappings?.find(({ from }) => from === '/work/api')?.to, '/srv/apps/api');
+    assert.equal(apiInvocation.mappings?.find(({ from }) => from === '/work/web')?.to, '/srv/apps/web');
+
+    assert.equal(webInvocation.args[2], '-u');
+    assert.equal(webInvocation.args[3], 'frontend');
+    assert.ok(webInvocation.args.includes('/srv/apps/web'));
+    assert.ok(webInvocation.args.includes('shared-php'));
+    assert.ok(webInvocation.args.includes('artisan'));
+    assert.ok(webInvocation.args.includes('test'));
+    assert.ok(webInvocation.args.includes('--compact'));
+    assert.ok(webInvocation.args.includes('--parallel'));
+    assert.ok(webInvocation.args.includes('/srv/apps/web/tests/WebTest.php'));
+    assert.equal(webInvocation.mappings?.find(({ from }) => from === '/work/web')?.to, '/srv/apps/web');
+  });
+
   it('filters a selected data set using its complete PHPUnit case name', async () => {
     const invocation = await resolveInvocation({
       workspacePath: '/proj',

@@ -18,7 +18,7 @@ function flatten(items) {
   return [...items].flatMap(([, item]) => [item, ...flatten(item.children)]);
 }
 
-function captureRunEvents(controller, events, coverages = []) {
+function captureRunEvents(controller, events, coverages = [], outputs = []) {
   const original = controller.createTestRun;
   controller.createTestRun = function (...args) {
     const run = original.apply(controller, args);
@@ -35,6 +35,12 @@ function captureRunEvents(controller, events, coverages = []) {
           return (coverage) => {
             coverages.push(coverage);
             return method.call(target, coverage);
+          };
+        }
+        if (property === 'appendOutput') {
+          return (output, ...rest) => {
+            outputs.push(output);
+            return method.call(target, output, ...rest);
           };
         }
         return typeof method === 'function' ? method.bind(target) : method;
@@ -145,6 +151,25 @@ exports.run = async () => {
     const restorePestCapture = captureRunEvents(api.controller, pestEvents);
     const testRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
     assert.ok(testRunProfile);
+
+    const outputFormatConfig = vscode.workspace.getConfiguration('phpunitRunner', workspaceA);
+    const previousOutputFormat = outputFormatConfig.get('output.format', {});
+    await outputFormatConfig.update('output.format', {
+      colors: false,
+      duration: false,
+      testCase: 'RESULT: {status} {name}',
+    }, vscode.ConfigurationTarget.WorkspaceFolder);
+    const customOutput = [];
+    const restoreOutputCapture = captureRunEvents(api.controller, [], [], customOutput);
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreOutputCapture();
+    await outputFormatConfig.update('output.format', previousOutputFormat, vscode.ConfigurationTarget.WorkspaceFolder);
+    assert.match(customOutput.join(''), /RESULT: PASS \^AlphaTest::testAlpha/);
+    assert.doesNotMatch(customOutput.join(''), /\u001b\[/, 'custom plain output contains no ANSI colors');
+
     const initialClears = outputClears.length;
     await testRunProfile.runHandler(
       new vscode.TestRunRequest([generatorDataset]),
@@ -188,6 +213,17 @@ exports.run = async () => {
     await until(() => flatten(api.controller.items).some((item) => item.label === 'WatcherTest.php'), 'create watcher discovers new PHP tests');
     await fs.rm(dynamicTestPath);
     await until(() => !flatten(api.controller.items).some((item) => item.label === 'WatcherTest.php'), 'delete watcher removes PHP tests');
+
+    const composerLockPath = path.join(workspaceA.uri.fsPath, 'composer.lock');
+    const beforeLockCreate = findMethod('testAlpha');
+    await fs.writeFile(composerLockPath, '{"packages": []}\n');
+    await until(() => findMethod('testAlpha') !== beforeLockCreate, 'creating composer.lock refreshes discovered tests');
+    const beforeLockChange = findMethod('testAlpha');
+    await fs.writeFile(composerLockPath, '{"packages": [], "content-hash": "updated"}\n');
+    await until(() => findMethod('testAlpha') !== beforeLockChange, 'changing composer.lock refreshes discovered tests');
+    const beforeLockDelete = findMethod('testAlpha');
+    await fs.rm(composerLockPath);
+    await until(() => findMethod('testAlpha') !== beforeLockDelete, 'deleting composer.lock refreshes discovered tests');
 
     const savedTestPath = path.join(workspaceB.uri.fsPath, 'tests', 'SavedTest.php');
     await fs.writeFile(savedTestPath, '<?php class SavedTest {}', 'utf8');

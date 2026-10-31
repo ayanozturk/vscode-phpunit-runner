@@ -140,6 +140,32 @@
           "default": "collision",
           "description": "Format structured test results in the Test Results output."
         },
+        "phpunitRunner.output.format": {
+          "type": "object",
+          "scope": "resource",
+          "default": {},
+          "properties": {
+            "colors": { "type": "boolean", "description": "Use ANSI colors in result markers and source snippets." },
+            "duration": { "type": "boolean", "description": "Include each test duration." },
+            "icons": {
+              "type": "object",
+              "properties": {
+                "passed": { "type": "string" },
+                "failed": { "type": "string" },
+                "errored": { "type": "string" },
+                "skipped": { "type": "string" }
+              },
+              "additionalProperties": false,
+              "description": "Override status markers in the progress preset and {icon} template variable."
+            },
+            "testCase": { "type": "string", "description": "Template for each result line. Variables: {status}, {icon}, {name}, {duration}." },
+            "failureLocation": { "type": "string", "description": "Template for a failure location. Variables: {file}, {line}. Use an empty string to hide it." },
+            "failureMessage": { "type": "string", "description": "Template for the failure message. Variable: {message}. Use an empty string to hide it." },
+            "sourceSnippet": { "type": "boolean", "description": "Show the nearby PHP source frame for readable local failures." }
+          },
+          "additionalProperties": false,
+          "description": "Override details in the selected output preset."
+        },
         "phpunitRunner.continuousTesting": {
           "type": "boolean",
           "default": false,

@@ -22,6 +22,37 @@ describe('Clover coverage mapping', () => {
     }]);
   });
 
+  it('does not apply a remote path mapping to a sibling path with the same prefix', () => {
+    const siblingXml = xml.replace('/remote/app/src/Thing.php', '/remote/application/src/Thing.php');
+    const [file] = mapCloverCoverage(siblingXml, [{ from: '/local/app', to: '/remote/app' }]);
+
+    assert.equal(file.path, '/remote/application/src/Thing.php');
+  });
+
+  it('keeps a readable empty report available and returns no mapped files', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit-runner-clover-empty-'));
+    try {
+      const reportPath = path.join(directory, 'coverage.xml');
+      await fs.writeFile(reportPath, '  \n', 'utf8');
+
+      assert.deepEqual(await readCloverReport(reportPath), { files: [], available: true });
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('returns an unavailable result for a report path that cannot be read', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit-runner-clover-unreadable-'));
+    try {
+      const unreadable = await readCloverReport(directory);
+      assert.equal(unreadable.available, false);
+      assert.deepEqual(unreadable.files, []);
+      assert.ok(unreadable.warning);
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('reads reports and reports missing artifacts explicitly', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit-runner-clover-'));
     try {

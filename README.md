@@ -15,8 +15,8 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Understand failures quickly.** See colored outcomes, assertion messages, source locations, and a short PHP code frame for readable local failure files in VS Code’s Test Results panel.
 - **Choose your test output.** Switch between detailed per-test results, a compact progress summary, or plain per-test lines.
 - **Debug and measure coverage.** Start an Xdebug session for a selected test and inspect Clover coverage in the editor.
-- **Fit your environment.** Run locally, through Docker, or with a command template for Laravel Sail, DDEV, SSH, and other remote setups. Host-to-remote path mappings keep results connected to local files.
-- **Keep results current.** Refresh discovery as files or PHPUnit configuration change, or enable continuous testing to rerun a saved file.
+- **Fit your environment.** Run locally, through Docker, or with a command template for Laravel Sail, DDEV, SSH, and other remote setups. Host-to-remote path mappings keep results connected to local files across multi-root workspaces.
+- **Keep results current.** Refresh discovery as PHP files, PHPUnit configuration, or Composer dependencies change, or enable continuous testing to rerun a saved file.
 
 ## Get started
 
@@ -77,6 +77,23 @@ Set `phpunitRunner.output.preset` to choose how structured PHPUnit results appea
 - `collision` (default): a detailed line for each test, with duration and failure details.
 - `progress`: one compact status marker per test followed by a result count.
 - `pretty`: plain per-test status lines without status icons.
+
+Use `phpunitRunner.output.format` to tailor status markers and failure details per workspace. For example, to hide colors and durations and shorten failure lines:
+
+```json
+{
+  "phpunitRunner.output.format": {
+    "colors": false,
+    "duration": false,
+    "testCase": "[{status}] {name}",
+    "failureLocation": "at {file}:{line}",
+    "failureMessage": "{message}",
+    "sourceSnippet": false
+  }
+}
+```
+
+The `testCase` template accepts `{status}`, `{icon}`, `{name}`, and `{duration}`. Failure details accept `{file}` and `{line}` for `failureLocation`, and `{message}` for `failureMessage`. Set either failure template to an empty string to hide that detail. Use `icons` to override markers for `passed`, `failed`, `errored`, and `skipped` cases.
 
 When a JUnit report is unavailable, the runner keeps the raw process output so diagnostics such as `dd()` remain visible.
 

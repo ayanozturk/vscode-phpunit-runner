@@ -6,6 +6,7 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
   const classes: TestClass[] = [];
 
   const namespaces = findNamespaces(code);
+  const namespaceAliases = new Map<string, Set<string>>();
   const classPattern = /\b(?:(?:final|abstract|readonly)\s+)*class\s+([A-Za-z_][A-Za-z0-9_]*)[^\{]*\{/g;
   for (const match of code.matchAll(classPattern)) {
     const matchText = match[0];
@@ -23,13 +24,20 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
     }
 
     const body = source.slice(openBraceIndex + 1, closeBraceIndex);
-    const methods = parseTestMethods(body, openBraceIndex + 1, lineStarts);
+    const namespace = namespaces.find((candidate) => matchIndex >= candidate.start && matchIndex < candidate.end);
+    const namespaceKey = `${namespace?.start ?? 0}:${namespace?.end ?? code.length}`;
+    let testAttributeAliases = namespaceAliases.get(namespaceKey);
+    if (!testAttributeAliases) {
+      testAttributeAliases = findTestAttributeAliases(code, namespace?.start ?? 0, namespace?.end ?? code.length);
+      namespaceAliases.set(namespaceKey, testAttributeAliases);
+    }
+    const methods = parseTestMethods(body, openBraceIndex + 1, lineStarts, testAttributeAliases);
     if (methods.length === 0) {
       continue;
     }
 
-    const namespace = namespaces.find((candidate) => matchIndex >= candidate.start && matchIndex < candidate.end)?.name ?? '';
-    const fqcn = namespace ? `${namespace}\\${className}` : className;
+    const namespaceName = namespace?.name ?? '';
+    const fqcn = namespaceName ? `${namespaceName}\\${className}` : className;
     classes.push({
       name: className,
       fullyQualifiedName: fqcn,
@@ -487,7 +495,12 @@ function readPestStringLiteral(value: string): string | undefined {
   return literal?.[2].replace(/\\(['"\\])/g, '$1');
 }
 
-export function parseTestMethods(body: string, bodyOffset: number, lineStarts: number[]): TestMethod[] {
+export function parseTestMethods(
+  body: string,
+  bodyOffset: number,
+  lineStarts: number[],
+  testAttributeAliases: ReadonlySet<string> = new Set(),
+): TestMethod[] {
   const methods: TestMethod[] = [];
   const code = maskNonCode(body);
   const methodPattern = /(?:(?:abstract|final|static)\s+)*(?:public|protected)\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
@@ -503,7 +516,7 @@ export function parseTestMethods(body: string, bodyOffset: number, lineStarts: n
 
     const isTest = methodName.startsWith('test')
       || /@test\b/.test(header)
-      || /#\[\s*(?:\\?PHPUnit\\Framework\\Attributes\\)?Test\b/.test(header);
+      || hasTestAttribute(header, testAttributeAliases);
     if (!isTest) {
       continue;
     }
@@ -517,6 +530,50 @@ export function parseTestMethods(body: string, bodyOffset: number, lineStarts: n
   }
 
   return methods;
+}
+
+function findTestAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {
+  const aliases = new Set<string>();
+  const namespaceCode = code.slice(namespaceStart, namespaceEnd);
+  const usePattern = /^\s*use\s+(?!function\b|const\b)([^;]+);/gm;
+  const testClass = 'phpunit\\framework\\attributes\\test';
+  const testNamespace = 'phpunit\\framework\\attributes';
+
+  for (const match of namespaceCode.matchAll(usePattern)) {
+    const clause = match[1].trim();
+    const groupStart = clause.indexOf('{');
+    const imports = groupStart >= 0 && clause.endsWith('}')
+      ? clause.slice(groupStart + 1, -1).split(',').map((entry) => `${clause.slice(0, groupStart)}${entry.trim()}`)
+      : clause.split(',');
+
+    for (const importSource of imports) {
+      const importMatch = importSource.trim().match(/^\\?([A-Za-z_][A-Za-z0-9_\\]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/i);
+      if (!importMatch || importMatch[1].toLowerCase() !== testClass) {
+        if (!importMatch || importMatch[1].toLowerCase() !== testNamespace) {
+          continue;
+        }
+      }
+      const alias = importMatch[2] ?? importMatch[1].split('\\').pop()!;
+      aliases.add(importMatch[1].toLowerCase() === testClass ? alias.toLowerCase() : `${alias.toLowerCase()}\\test`);
+    }
+  }
+
+  return aliases;
+}
+
+function hasTestAttribute(header: string, aliases: ReadonlySet<string>): boolean {
+  const attributePattern = /#\[\s*(\\?[A-Za-z_][A-Za-z0-9_\\]*)/g;
+  for (const match of header.matchAll(attributePattern)) {
+    const name = match[1].replace(/^\\/, '').toLowerCase();
+    if (
+      name === 'test'
+      || name === 'phpunit\\framework\\attributes\\test'
+      || aliases.has(name)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 type NamespaceRange = { name: string; start: number; end: number };

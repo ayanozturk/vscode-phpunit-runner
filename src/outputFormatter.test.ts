@@ -38,6 +38,7 @@ describe('formatTestOutput', () => {
     assert.match(output, /^  > 2 \|         \$this->assertTrue\(false\);$/m);
     assert.match(output, /^! testError \(1 ms\)$/m);
     assert.match(output, /^– testSkipped \(0 ms\)$/m);
+    assert.doesNotMatch(output, /Not applicable/);
   });
 
   it('formats progress with one status marker per case and a complete count summary', () => {
@@ -97,6 +98,47 @@ describe('formatTestOutput', () => {
 
     assert.match(output, /^  \/tests\/ExampleTest\.php:24$/m);
     assert.match(output, /^  > 24 \| failing statement$/m);
+  });
+
+  it('supports configurable test-line templates, icons, failure details, and plain output', () => {
+    const snippets = new Map([[sourceSnippetKey('/tests/ExampleTest.php', 24), '\u001b[31m  > 24 | failing line\u001b[0m']]);
+    const output = formatTestOutput([cases[1]], 'collision', '', snippets, {
+      colors: false,
+      duration: false,
+      icons: { failed: 'NO' },
+      testCase: '[{status}] {icon} {name} ({duration})',
+      failureLocation: 'at {file}#{line}',
+      failureMessage: 'details: {message}',
+      sourceSnippet: false,
+    });
+
+    assert.equal(output, '[FAIL] NO testFailure with data set "edge case" ()\nat /tests/ExampleTest.php#24\ndetails: Failed asserting false.\nExpected true.\n');
+    assert.doesNotMatch(output, /\u001b\[|failing line/);
+  });
+
+  it('allows suppressing duration, location, and failure details', () => {
+    const output = stripAnsi(formatTestOutput([cases[1]], 'pretty', '', new Map(), {
+      duration: false,
+      failureLocation: '',
+      failureMessage: '',
+    }));
+
+    assert.equal(output, 'FAIL testFailure with data set "edge case"\n');
+  });
+
+  it('allows progress markers and color to be customized', () => {
+    assert.equal(formatTestOutput(cases, 'progress', '', new Map(), {
+      colors: false,
+      icons: { passed: 'P', failed: 'F!', errored: 'E!', skipped: 'S' },
+    }), 'PF!E!S\n4 tests: 1 passed, 1 failed, 1 errors, 1 skipped\n');
+  });
+
+  it('keeps custom status placeholders colored unless colors are disabled', () => {
+    const output = formatTestOutput([cases[0]], 'collision', '', new Map(), {
+      testCase: '{icon} {status} {name}',
+    });
+
+    assert.equal(output, '\u001b[32m✓\u001b[0m \u001b[32mPASS\u001b[0m testPass\n');
   });
 });
 

@@ -29,4 +29,61 @@ describe('parseCloverXml', () => {
   it('returns nothing for empty input', () => {
     assert.deepEqual(parseCloverXml(''), []);
   });
+
+  it('ignores Clover-shaped tags inside XML comments', () => {
+    const files = parseCloverXml(`<coverage>
+  <!-- <file name="/stale/Fake.php"><line num="99" type="stmt" count="1"/></file> -->
+  <file name="/real/Current.php"><line num="4" type="stmt" count="0"/></file>
+</coverage>`);
+
+    assert.deepEqual(files.map((file) => file.path), ['/real/Current.php']);
+    assert.deepEqual(files[0].lines, [{ line: 4, count: 0, type: 'stmt' }]);
+  });
+
+  it('uses only positive integer line numbers and nonnegative integer execution counts', () => {
+    const files = parseCloverXml(`<coverage><file name="/proj/Numbers.php">
+      <line num="1" type="stmt" count="1.5"/>
+      <line num="2.5" type="stmt" count="2"/>
+      <line num="0" type="stmt" count="1"/>
+      <line num="3" type="stmt" count="-1"/>
+      <line num="4" type="stmt"/>
+    </file></coverage>`);
+
+    assert.deepEqual(files[0].lines, [
+      { line: 1, count: 0, type: 'stmt' },
+      { line: 3, count: 0, type: 'stmt' },
+      { line: 4, count: 0, type: 'stmt' },
+    ]);
+    assert.equal(files[0].statements, 3);
+    assert.equal(files[0].coveredStatements, 0);
+  });
+
+  it('falls back to statement-line totals when metrics are absent or invalid', () => {
+    const files = parseCloverXml(`<coverage>
+      <file name="/proj/NoMetrics.php">
+        <line num="1" type="stmt" count="1"/>
+        <line num="2" type="stmt" count="0"/>
+      </file>
+      <file name="/proj/InvalidMetrics.php">
+        <line num="1" type="stmt" count="2"/>
+        <line num="2" type="stmt" count="0"/>
+        <metrics statements="-1" coveredstatements="-2"/>
+      </file>
+    </coverage>`);
+
+    assert.deepEqual(files.map(({ statements, coveredStatements }) => [statements, coveredStatements]), [
+      [2, 1],
+      [2, 1],
+    ]);
+  });
+
+  it('preserves explicit zero metrics instead of deriving totals from line entries', () => {
+    const [file] = parseCloverXml(`<coverage><file name="/proj/Empty.php">
+      <line num="1" type="stmt" count="1"/>
+      <metrics statements="0" coveredstatements="0"/>
+    </file></coverage>`);
+
+    assert.equal(file.statements, 0);
+    assert.equal(file.coveredStatements, 0);
+  });
 });

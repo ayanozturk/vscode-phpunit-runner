@@ -57,9 +57,12 @@ describe('parseTestSource', () => {
     assert.equal(parsed.classes.length, 0);
   });
 
-  it('skips abstract-looking bodies when the opening brace is unmatched', () => {
-    const parsed = parseTestSource('/tmp/Broken.php', '<?php class BrokenTest { public function testA() {');
-    assert.equal(parsed.classes.length, 0);
+  it('ignores unmatched class bodies without swallowing later classes', () => {
+    const parsed = parseTestSource(
+      '/tmp/Broken.php',
+      '<?php class BrokenTest { public function testA() {\nclass HealthyTest { public function testHealthy(): void {} }',
+    );
+    assert.deepEqual(parsed.classes.map((testClass) => testClass.methods.map((method) => method.name)), [['testHealthy']]);
   });
 
   it('does not treat braces inside quotes as class scope', () => {
@@ -101,6 +104,35 @@ final class GroupedTest {
         { name: 'fromDocblock', groups: ['integration'] },
       ],
     );
+  });
+
+  it('discovers test methods through imported and grouped attribute aliases', () => {
+    const source = `<?php
+namespace App\\Tests {
+    use PHPUnit\\Framework\\Attributes\\Test as IsTest;
+    use PHPUnit\\Framework\\Attributes\\{Test as GroupedTest};
+    use PHPUnit\\Framework\\Attributes as FrameworkAttributes;
+
+    class AliasedAttributeTest {
+        #[IsTest]
+        public function importedAlias(): void {}
+
+        #[GroupedTest]
+        public function groupedAlias(): void {}
+    }
+
+    class NamespaceAliasedAttributeTest {
+        #[FrameworkAttributes\\Test]
+        public function namespaceAlias(): void {}
+    }
+}
+`;
+
+    const parsed = parseTestSource('/tmp/AliasedAttributeTest.php', source);
+    assert.deepEqual(parsed.classes.map((testClass) => testClass.methods.map((method) => method.name)), [
+      ['importedAlias', 'groupedAlias'],
+      ['namespaceAlias'],
+    ]);
   });
 
   it('ignores declarations inside comments, strings, and heredoc bodies', () => {

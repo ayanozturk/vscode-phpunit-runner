@@ -21,10 +21,12 @@ import {
   sourceSnippetAtLine,
   sourceSnippetKey,
   type OutputPreset,
+  type TestOutputFormat,
 } from './outputFormatter';
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
 import { parsePhpUnitXml, resolveDiscoveryGlobs, type PhpUnitSuite } from './phpunitXml';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
+import { findWithGlobs as findWorkspaceFilesWithGlobs } from './workspaceDiscovery';
 import type { JUnitTestCase, RunnerConfig, SourceRange, TestTarget } from './types';
 
 type TestItemData = TestTarget & { uri: vscode.Uri; groups?: string[] };
@@ -129,6 +131,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
 
   const watcher = vscode.workspace.createFileSystemWatcher('**/*.php');
   const configWatcher = vscode.workspace.createFileSystemWatcher('**/phpunit.xml*');
+  const composerLockWatcher = vscode.workspace.createFileSystemWatcher('**/composer.lock');
+  let composerRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleComposerRefresh = (uri: vscode.Uri) => {
+    if (!vscode.workspace.getWorkspaceFolder(uri)) {
+      return;
+    }
+
+    if (composerRefreshTimer) {
+      clearTimeout(composerRefreshTimer);
+    }
+    composerRefreshTimer = setTimeout(() => {
+      composerRefreshTimer = undefined;
+      void discoverWorkspaceTests();
+    }, 100);
+  };
   const codeLensProvider: vscode.CodeLensProvider = {
     provideCodeLenses(document) {
       const parsed = parseTestSource(document.uri.fsPath, document.getText());
@@ -171,6 +188,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     configWatcher.onDidDelete(async (uri) => {
       await refreshForConfiguration(uri);
     }),
+    composerLockWatcher,
+    { dispose: () => composerRefreshTimer && clearTimeout(composerRefreshTimer) },
+    composerLockWatcher.onDidCreate(scheduleComposerRefresh),
+    composerLockWatcher.onDidChange(scheduleComposerRefresh),
+    composerLockWatcher.onDidDelete(scheduleComposerRefresh),
   );
 
   await discoverWorkspaceTests();
@@ -226,7 +248,7 @@ async function findCandidateTestFiles(): Promise<vscode.Uri[]> {
       xmlText,
       xmlDirectoryRelative,
     });
-    await findWithGlobs(resolved.includeGlobs, resolved.excludeGlobs, unique);
+    await findWithGlobs(resolved.includeGlobs, resolved.excludeGlobs, unique, folder);
   }
 
   return [...unique.values()];
@@ -236,15 +258,19 @@ async function findWithGlobs(
   includes: string[],
   excludes: string[],
   unique: Map<string, vscode.Uri>,
+  folder?: vscode.WorkspaceFolder,
 ): Promise<vscode.Uri[]> {
-  const excludeGlob = excludes.length > 0 ? `{${excludes.join(',')}}` : undefined;
-  for (const pattern of includes) {
-    const files = await vscode.workspace.findFiles(pattern, excludeGlob);
-    for (const file of files) {
-      unique.set(file.toString(), file);
-    }
-  }
-  return [...unique.values()];
+  return findWorkspaceFilesWithGlobs(
+    includes,
+    excludes,
+    unique,
+    folder,
+    async (pattern, excludeGlob, scope) => await vscode.workspace.findFiles(
+      scope ? new vscode.RelativePattern(scope, pattern) : pattern,
+      excludeGlob,
+    ),
+    (file) => file.toString(),
+  );
 }
 
 async function findSuiteForFile(uri: vscode.Uri, folder: vscode.WorkspaceFolder): Promise<string | undefined> {
@@ -544,15 +570,18 @@ async function runItem(
 
   try {
     const result = await executePhpUnit(data, token, kind, run);
-    const sourceSnippets = await readFailureSourceSnippets(
-      result.cases,
-      vscode.workspace.getWorkspaceFolder(data.uri),
-    );
+    const folder = vscode.workspace.getWorkspaceFolder(data.uri);
+    const outputPreset = getOutputPreset(folder);
+    const outputFormat = getOutputFormat(folder);
+    const sourceSnippets = outputPreset === 'progress' || outputFormat.sourceSnippet === false
+      ? new Map<string, string>()
+      : await readFailureSourceSnippets(result.cases, folder);
     run.appendOutput(formatTestOutput(
       result.cases,
-      getOutputPreset(vscode.workspace.getWorkspaceFolder(data.uri)),
+      outputPreset,
       result.output,
       sourceSnippets,
+      outputFormat,
     ));
     if (result.reportWarning) {
       run.appendOutput(`${result.reportWarning}\r\n`, undefined, item);
@@ -1044,8 +1073,18 @@ async function runByGroup(groupOverride?: string): Promise<void> {
           vscode.TestRunProfileKind.Run,
           run,
         );
-        const sourceSnippets = await readFailureSourceSnippets(result.cases, folder);
-        run.appendOutput(formatTestOutput(result.cases, getOutputPreset(folder), result.output, sourceSnippets));
+        const outputPreset = getOutputPreset(folder);
+        const outputFormat = getOutputFormat(folder);
+        const sourceSnippets = outputPreset === 'progress' || outputFormat.sourceSnippet === false
+          ? new Map<string, string>()
+          : await readFailureSourceSnippets(result.cases, folder);
+        run.appendOutput(formatTestOutput(
+          result.cases,
+          outputPreset,
+          result.output,
+          sourceSnippets,
+          outputFormat,
+        ));
         if (result.reportWarning) {
           run.appendOutput(`${result.reportWarning}\r\n`);
         }
@@ -1128,6 +1167,29 @@ function getConfig(scope?: vscode.ConfigurationScope): vscode.WorkspaceConfigura
 function getOutputPreset(folder?: vscode.WorkspaceFolder): OutputPreset {
   const value = getConfig(folder).get<string>('output.preset', 'collision');
   return value === 'progress' || value === 'pretty' ? value : 'collision';
+}
+
+function getOutputFormat(folder?: vscode.WorkspaceFolder): TestOutputFormat {
+  const value = getConfig(folder).get<unknown>('output.format', {});
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const format = value as Record<string, unknown>;
+  const iconsValue = format.icons;
+  const icons = iconsValue && typeof iconsValue === 'object' && !Array.isArray(iconsValue)
+    ? iconsValue as TestOutputFormat['icons']
+    : undefined;
+
+  return {
+    colors: typeof format.colors === 'boolean' ? format.colors : undefined,
+    duration: typeof format.duration === 'boolean' ? format.duration : undefined,
+    icons,
+    testCase: typeof format.testCase === 'string' ? format.testCase : undefined,
+    failureLocation: typeof format.failureLocation === 'string' ? format.failureLocation : undefined,
+    failureMessage: typeof format.failureMessage === 'string' ? format.failureMessage : undefined,
+    sourceSnippet: typeof format.sourceSnippet === 'boolean' ? format.sourceSnippet : undefined,
+  };
 }
 
 async function readFailureSourceSnippets(
