@@ -21,15 +21,13 @@ export function mapHostPathToContainer(
   containerWorkspacePath: string,
 ): string {
   const pathApi = pathApiFor(hostWorkspacePath, targetPath);
-  const normalizedHostWorkspace = normalizePathForComparison(hostWorkspacePath);
-  const normalizedTarget = normalizePathForComparison(targetPath);
   const relativePath = pathApi.relative(hostWorkspacePath, targetPath);
   const isInsideWorkspace = relativePath === ''
     || (!pathApi.isAbsolute(relativePath)
       && relativePath !== '..'
       && !relativePath.startsWith(`..${pathApi.sep}`));
 
-  if (normalizedTarget === normalizedHostWorkspace || isInsideWorkspace) {
+  if (isInsideWorkspace) {
     return relativePath
       ? path.posix.join(toPosixPath(containerWorkspacePath), toPosixPath(relativePath))
       : toPosixPath(containerWorkspacePath);

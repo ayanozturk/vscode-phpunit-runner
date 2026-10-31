@@ -12,6 +12,7 @@ export type SourceRange = {
 
 export type TestMethod = {
   name: string;
+  testDoxName?: string;
   range: SourceRange;
   groups: string[];
   pestTestName?: string;

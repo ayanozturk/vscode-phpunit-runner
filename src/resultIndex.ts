@@ -64,7 +64,8 @@ export function findIndexedDatasetCases(
   className: string,
   datasetName: string,
 ): JUnitTestCase[] {
-  return findByClass(index.byClass, index, className)
+  const methodName = methodNameFromTestCase(datasetName);
+  return findByClass(index.byClass, index, className, methodName)
     .flatMap((cases) => cases.filter((testCase) => testCase.name === datasetName));
 }
 

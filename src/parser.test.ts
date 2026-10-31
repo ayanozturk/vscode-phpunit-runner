@@ -135,6 +135,31 @@ namespace App\\Tests {
     ]);
   });
 
+  it('reads literal PHPUnit TestDox labels without changing method identity', () => {
+    const source = `<?php
+namespace App\\Tests;
+use PHPUnit\\Framework\\Attributes\\TestDox as ReadableName;
+
+class TestDoxTest {
+    #[ReadableName('A signed-in user can view settings')]
+    public function testSettingsAreVisible(): void {}
+
+    #[\\PHPUnit\\Framework\\Attributes\\TestDox('A user can view {section}')]
+    public function testDynamicPlaceholder(): void {}
+
+    #[ReadableName($dynamicLabel)]
+    public function testDynamicLabel(): void {}
+}
+`;
+
+    const methods = parseTestSource('/tmp/TestDoxTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map(({ name, testDoxName }) => ({ name, testDoxName })), [
+      { name: 'testSettingsAreVisible', testDoxName: 'A signed-in user can view settings' },
+      { name: 'testDynamicPlaceholder', testDoxName: undefined },
+      { name: 'testDynamicLabel', testDoxName: undefined },
+    ]);
+  });
+
   it('discovers literal repeated PHPUnit TestWith attributes as selectable data sets', () => {
     const source = `<?php
 namespace App\\Tests;

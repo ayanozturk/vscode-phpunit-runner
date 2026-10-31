@@ -97,6 +97,21 @@ describe('formatTestOutput', () => {
     assert.doesNotMatch(output, /testPass|testSkipped|Expected true\.|Not applicable/);
   });
 
+  it('keeps duplicate test names as separate outcomes in report order', () => {
+    const duplicateCases: JUnitTestCase[] = [
+      { ...cases[1], name: 'testRepeated', message: 'First failure' },
+      { ...cases[1], name: 'testRepeated', status: 'errored', message: 'Second error' },
+    ];
+
+    const collisionOutput = stripAnsi(formatTestOutput(duplicateCases, 'collision'));
+    assert.equal((collisionOutput.match(/testRepeated/g) ?? []).length, 2);
+    assert.ok(collisionOutput.indexOf('First failure') < collisionOutput.indexOf('Second error'));
+
+    const summaryOutput = stripAnsi(formatTestOutput(duplicateCases, 'summary'));
+    assert.match(summaryOutput, /^2 tests: 0 passed, 1 failed, 1 error, 0 skipped$/m);
+    assert.ok(summaryOutput.indexOf('First failure') < summaryOutput.indexOf('Second error'));
+  });
+
   it('preserves raw output when no structured report cases are available', () => {
     assert.equal(formatTestOutput([], 'collision', 'dd() output'), 'dd() output\n');
     assert.equal(formatTestOutput([], 'pretty', 'already terminated\n'), 'already terminated\n');

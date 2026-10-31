@@ -429,7 +429,7 @@ async function refreshUri(
     for (const methods of methodsByRange.values()) {
       const method = methods.find((candidate) => !candidate.pestDatasetName && !candidate.phpunitDatasetName) ?? methods[0];
       const methodId = `${classId}::${method.name}`;
-      const methodItem = controller.createTestItem(methodId, method.name, uri);
+      const methodItem = controller.createTestItem(methodId, method.testDoxName ?? method.name, uri);
       methodItem.range = toVscodeRange(method.range);
       itemData.set(methodItem, {
         kind: 'method',

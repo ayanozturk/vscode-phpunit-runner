@@ -7,6 +7,7 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
 
   const namespaces = findNamespaces(code);
   const namespaceAliases = new Map<string, Set<string>>();
+  const namespaceTestDoxAliases = new Map<string, Set<string>>();
   const namespaceTestWithAliases = new Map<string, Set<string>>();
   const namespaceTestWithJsonAliases = new Map<string, Set<string>>();
   const classPattern = /\b(?:(?:final|abstract|readonly)\s+)*class\s+([A-Za-z_][A-Za-z0-9_]*)[^\{]*\{/gi;
@@ -33,6 +34,15 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
       testAttributeAliases = findTestAttributeAliases(code, namespace?.start ?? 0, namespace?.end ?? code.length);
       namespaceAliases.set(namespaceKey, testAttributeAliases);
     }
+    let testDoxAliases = namespaceTestDoxAliases.get(namespaceKey);
+    if (!testDoxAliases) {
+      testDoxAliases = findTestDoxAttributeAliases(
+        code,
+        namespace?.start ?? 0,
+        namespace?.end ?? code.length,
+      );
+      namespaceTestDoxAliases.set(namespaceKey, testDoxAliases);
+    }
     let testWithAttributeAliases = namespaceTestWithAliases.get(namespaceKey);
     if (!testWithAttributeAliases) {
       testWithAttributeAliases = findTestWithAttributeAliases(
@@ -56,6 +66,7 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
       openBraceIndex + 1,
       lineStarts,
       testAttributeAliases,
+      testDoxAliases,
       testWithAttributeAliases,
       testWithJsonAttributeAliases,
     );
@@ -645,6 +656,7 @@ export function parseTestMethods(
   bodyOffset: number,
   lineStarts: number[],
   testAttributeAliases: ReadonlySet<string> = new Set(),
+  testDoxAttributeAliases: ReadonlySet<string> = new Set(),
   testWithAttributeAliases: ReadonlySet<string> = new Set(),
   testWithJsonAttributeAliases: ReadonlySet<string> = new Set(),
 ): TestMethod[] {
@@ -671,6 +683,7 @@ export function parseTestMethods(
     const start = bodyOffset + startOffset;
     methods.push({
       name: methodName,
+      testDoxName: testDoxDisplayName(header, testDoxAttributeAliases),
       range: rangeFromOffsets(lineStarts, start, start + match[0].length),
       groups: extractGroups(header),
     });
@@ -687,6 +700,47 @@ export function parseTestMethods(
   }
 
   return methods;
+}
+
+function testDoxDisplayName(header: string, aliases: ReadonlySet<string>): string | undefined {
+  const code = maskNonCode(header);
+  const attributePattern = /#\[\s*(\\?[A-Za-z_][A-Za-z0-9_\\]*)/g;
+  let displayName: string | undefined;
+
+  for (const match of code.matchAll(attributePattern)) {
+    const attributeName = match[1].replace(/^\\/, '').toLowerCase();
+    if (attributeName !== 'phpunit\\framework\\attributes\\testdox' && !aliases.has(attributeName)) {
+      continue;
+    }
+    if (displayName !== undefined) {
+      return undefined;
+    }
+
+    let argumentStart = (match.index ?? 0) + match[0].length;
+    while (argumentStart < code.length && /\s/.test(code[argumentStart])) {
+      argumentStart += 1;
+    }
+    if (code[argumentStart] !== '(') {
+      return undefined;
+    }
+
+    const closeParen = findMatchingParenthesis(code, argumentStart);
+    if (closeParen < 0) {
+      return undefined;
+    }
+    const attributeEnd = code.indexOf(']', closeParen + 1);
+    if (attributeEnd < 0 || code.slice(closeParen + 1, attributeEnd).trim()) {
+      return undefined;
+    }
+
+    const value = readPhpStringLiteral(header.slice(argumentStart + 1, closeParen).trim());
+    if (!value || /\{[A-Za-z_][A-Za-z0-9_]*\}/.test(value)) {
+      return undefined;
+    }
+    displayName = value;
+  }
+
+  return displayName;
 }
 
 function testWithDatasetNames(
@@ -861,6 +915,10 @@ function sanitizePhpUnitDataSetName(name: string): string {
 
 function findTestAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {
   return findAttributeAliases(code, namespaceStart, namespaceEnd, 'phpunit\\framework\\attributes\\test');
+}
+
+function findTestDoxAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {
+  return findAttributeAliases(code, namespaceStart, namespaceEnd, 'phpunit\\framework\\attributes\\testdox');
 }
 
 function findTestWithAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {

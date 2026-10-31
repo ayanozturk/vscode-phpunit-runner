@@ -111,6 +111,7 @@ exports.run = async () => {
         '  if [ "$previous" = "filter" ]; then',
         '    case "$argument" in',
         '      *"generated values"*) testcaseName=\'generated values with data set "first"\';;',
+        '      *"TestDoxTest::testRawMethodName"*) testcaseName=\'testRawMethodName\'; testcaseClass=\'TestDoxTest\'; testcaseFile=\'tests/TestDoxTest.php\';;',
         '      *"TestWithTest::testWithRows with data set #0"*) testcaseName=\'testWithRows with data set #0\'; testcaseClass=\'TestWithTest\'; testcaseFile=\'tests/TestWithTest.php\';;',
         "      *'TestWithTest::testWithRows with data set \"positive pair\"'*) testcaseName='testWithRows with data set &quot;positive pair&quot;'; testcaseClass='TestWithTest'; testcaseFile='tests/TestWithTest.php';;",
         "      *'TestWithJsonTest::testJsonRows with data set \"json named\"'*) testcaseName='testJsonRows with data set &quot;json named&quot;'; testcaseClass='TestWithJsonTest'; testcaseFile='tests/TestWithJsonTest.php';;",
@@ -188,10 +189,22 @@ class TestWithJsonTest
 }
 `, 'utf8');
 
+    await fs.writeFile(path.join(workspaceA.uri.fsPath, 'tests', 'TestDoxTest.php'), `<?php
+use PHPUnit\\Framework\\Attributes\\TestDox;
+
+class TestDoxTest
+{
+    #[TestDox('A readable description')]
+    public function testRawMethodName(): void {}
+}
+`, 'utf8');
+
     await api.refresh();
     const findMethod = (name) => flatten(api.controller.items).find((item) => item.label === name);
     assert.ok(findMethod('testAlpha'), 'workspace A test is discovered');
     assert.ok(findMethod('testBeta'), 'workspace B test is discovered');
+    const testDoxItem = findMethod('A readable description');
+    assert.ok(testDoxItem, 'literal TestDox labels are shown for PHPUnit methods');
     const pestParent = findMethod('adds values');
     const pestDataset = findMethod('adds values (with data set #0)');
     assert.ok(pestParent && pestDataset, 'literal Pest data sets appear in the test tree');
@@ -224,6 +237,22 @@ class TestWithJsonTest
     const restorePestCapture = captureRunEvents(api.controller, pestEvents);
     const testRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
     assert.ok(testRunProfile);
+
+    const testDoxLog = path.join(workspaceA.uri.fsPath, 'runner.log');
+    await fs.writeFile(testDoxLog, '', 'utf8');
+    const testDoxEvents = [];
+    const restoreTestDoxCapture = captureRunEvents(api.controller, testDoxEvents);
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([testDoxItem]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreTestDoxCapture();
+    const testDoxInvocation = await fs.readFile(testDoxLog, 'utf8');
+    assert.ok(testDoxInvocation.includes('--filter ~^TestDoxTest::testRawMethodName(?: with data set .*)?$~i'), testDoxInvocation);
+    assert.ok(
+      testDoxEvents.some((event) => event.id === testDoxItem.id && event.state === 'passed'),
+      `the TestDox label still runs and maps to its method: ${JSON.stringify(testDoxEvents)}`,
+    );
 
     const outputFormatConfig = vscode.workspace.getConfiguration('phpunitRunner', workspaceA);
     const previousOutputFormat = outputFormatConfig.get('output.format', {});

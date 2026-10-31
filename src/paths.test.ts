@@ -11,6 +11,7 @@ describe('mapHostPathToContainer', () => {
   it('maps a workspace root and descendants without crossing sibling path boundaries', () => {
     assert.equal(mapHostPathToContainer('/proj', '/proj', '/app'), '/app');
     assert.equal(mapHostPathToContainer('/proj/tests/A Test.php', '/proj', '/app'), '/app/tests/A Test.php');
+    assert.equal(mapHostPathToContainer('/proj/tests/../A.php', '/proj', '/app'), '/app/A.php');
     assert.equal(mapHostPathToContainer('/project/tests/A.php', '/proj', '/app'), '/project/tests/A.php');
     assert.equal(mapHostPathToContainer('--colors=always', '/proj', '/app'), '--colors=always');
   });
@@ -20,6 +21,7 @@ describe('mapHostPathToContainer', () => {
   });
 
   it('maps Windows paths case-insensitively even when tests run on another platform', () => {
+    assert.equal(mapHostPathToContainer('c:/projects/app/.', 'C:\\Projects\\App', '/app'), '/app');
     assert.equal(
       mapHostPathToContainer('c:\\Projects\\App\\tests\\A Test.php', 'C:\\Projects\\App', '/app'),
       '/app/tests/A Test.php',
