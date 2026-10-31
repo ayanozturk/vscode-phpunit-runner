@@ -1,7 +1,8 @@
 import * as path from 'path';
 
 export function resolvePath(workspacePath: string, targetPath: string): string {
-  return path.isAbsolute(targetPath) ? targetPath : path.join(workspacePath, targetPath);
+  const pathApi = pathApiFor(workspacePath, targetPath);
+  return pathApi.isAbsolute(targetPath) ? targetPath : pathApi.join(workspacePath, targetPath);
 }
 
 export function toPosixPath(targetPath: string): string {
@@ -9,7 +10,9 @@ export function toPosixPath(targetPath: string): string {
 }
 
 export function normalizePathForComparison(targetPath: string): string {
-  return toPosixPath(path.resolve(targetPath));
+  const pathApi = pathApiFor(targetPath);
+  const normalized = toPosixPath(pathApi.resolve(targetPath));
+  return pathApi === path.win32 ? normalized.toLowerCase() : normalized;
 }
 
 export function mapHostPathToContainer(
@@ -17,11 +20,16 @@ export function mapHostPathToContainer(
   hostWorkspacePath: string,
   containerWorkspacePath: string,
 ): string {
+  const pathApi = pathApiFor(hostWorkspacePath, targetPath);
   const normalizedHostWorkspace = normalizePathForComparison(hostWorkspacePath);
   const normalizedTarget = normalizePathForComparison(targetPath);
+  const relativePath = pathApi.relative(hostWorkspacePath, targetPath);
+  const isInsideWorkspace = relativePath === ''
+    || (!pathApi.isAbsolute(relativePath)
+      && relativePath !== '..'
+      && !relativePath.startsWith(`..${pathApi.sep}`));
 
-  if (normalizedTarget === normalizedHostWorkspace || normalizedTarget.startsWith(`${normalizedHostWorkspace}/`)) {
-    const relativePath = path.relative(hostWorkspacePath, targetPath);
+  if (normalizedTarget === normalizedHostWorkspace || isInsideWorkspace) {
     return relativePath
       ? path.posix.join(toPosixPath(containerWorkspacePath), toPosixPath(relativePath))
       : toPosixPath(containerWorkspacePath);
@@ -35,11 +43,23 @@ export function mapCommandForContainer(
   hostWorkspacePath: string,
   containerWorkspacePath: string,
 ): string {
-  if (path.isAbsolute(command)) {
+  if (pathApiFor(command).isAbsolute(command)) {
     return mapHostPathToContainer(command, hostWorkspacePath, containerWorkspacePath);
   }
 
   return command;
+}
+
+type PathApi = typeof path.posix | typeof path.win32;
+
+function pathApiFor(...paths: string[]): PathApi {
+  return paths.some(isWindowsAbsolutePath) ? path.win32 : path;
+}
+
+function isWindowsAbsolutePath(targetPath: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(targetPath)
+    || /^\\\\[^\\]+\\[^\\]+/.test(targetPath)
+    || /^\/\/[^/]+\/[^/]+/.test(targetPath);
 }
 
 export function isPhpScript(command: string): boolean {
