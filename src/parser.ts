@@ -7,14 +7,14 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
 
   const namespaces = findNamespaces(code);
   const namespaceAliases = new Map<string, Set<string>>();
-  const classPattern = /\b(?:(?:final|abstract|readonly)\s+)*class\s+([A-Za-z_][A-Za-z0-9_]*)[^\{]*\{/g;
+  const classPattern = /\b(?:(?:final|abstract|readonly)\s+)*class\s+([A-Za-z_][A-Za-z0-9_]*)[^\{]*\{/gi;
   for (const match of code.matchAll(classPattern)) {
     const matchText = match[0];
     const className = match[1];
     const matchIndex = match.index ?? 0;
     const classKeywordOffset = matchText.indexOf('class');
     const classKeywordIndex = matchIndex + Math.max(classKeywordOffset, 0);
-    if (/\babstract\s+class\b/.test(matchText)) {
+    if (/\babstract\s+class\b/i.test(matchText)) {
       continue;
     }
     const openBraceIndex = matchIndex + matchText.lastIndexOf('{');
@@ -79,10 +79,10 @@ function parsePestTests(source: string, code: string, lineStarts: number[]): Tes
   const methods: TestMethod[] = [];
   const occurrences = new Map<string, number>();
   const describeBlocks = parsePestDescribeBlocks(source, code);
-  const callPattern = /\b(?:test|it)\s*\(/g;
+  const callPattern = /\b(?:test|it)\s*\(/gi;
   for (const match of code.matchAll(callPattern)) {
     const start = match.index ?? 0;
-    if (/\bfunction\s*$/.test(code.slice(Math.max(0, start - 32), start))) {
+    if (/\bfunction\s*$/i.test(code.slice(Math.max(0, start - 32), start))) {
       continue;
     }
 
@@ -128,10 +128,10 @@ function parsePestTests(source: string, code: string, lineStarts: number[]): Tes
 
 function parsePestDescribeBlocks(source: string, code: string): { name: string; bodyStart: number; bodyEnd: number }[] {
   const blocks: { name: string; bodyStart: number; bodyEnd: number }[] = [];
-  const callPattern = /\bdescribe\s*\(/g;
+  const callPattern = /\bdescribe\s*\(/gi;
   for (const match of code.matchAll(callPattern)) {
     const start = match.index ?? 0;
-    if (/\bfunction\s*$/.test(code.slice(Math.max(0, start - 32), start))) {
+    if (/\bfunction\s*$/i.test(code.slice(Math.max(0, start - 32), start))) {
       continue;
     }
 
@@ -193,7 +193,7 @@ function parsePestDatasetNames(source: string, code: string, chainStart: number)
 
   while (true) {
     const remaining = code.slice(cursor);
-    const withCall = remaining.match(/^\s*->\s*with\s*\(/);
+    const withCall = remaining.match(/^\s*->\s*with\s*\(/i);
     if (!withCall) {
       break;
     }
@@ -215,7 +215,7 @@ function parsePestDatasetNames(source: string, code: string, chainStart: number)
         return undefined;
       }
       labels = parseArrayDatasetLabels(source, code, argumentStart, arrayClose);
-    } else if (/^(?:static\s+)?function\b/.test(code.slice(argumentStart, closeParen))) {
+    } else if (/^(?:static\s+)?function\b/i.test(code.slice(argumentStart, closeParen))) {
       labels = parseGeneratorDatasetLabels(source, code, argumentStart, closeParen);
     }
     if (!labels || labels.length === 0) {
@@ -329,12 +329,12 @@ function parseGeneratorDatasetLabels(
         continue;
       }
 
-      const yieldMatch = statementCode.match(/^yield\b/);
-      if (!yieldMatch || /^yield\s+from\b/.test(statementCode)) {
+      const yieldMatch = statementCode.match(/^yield\b/i);
+      if (!yieldMatch || /^yield\s+from\b/i.test(statementCode)) {
         return undefined;
       }
       const codeLeadingWhitespace = statementCodeSource.length - statementCodeSource.trimStart().length;
-      const yieldOffset = statementCode.indexOf('yield') + 'yield'.length;
+      const yieldOffset = (yieldMatch.index ?? 0) + yieldMatch[0].length;
       const expressionSource = source.slice(statementStart + codeLeadingWhitespace + yieldOffset, index).trim();
       const expressionCode = maskNonCode(expressionSource);
       if (!expressionCode || !expressionSource) {
@@ -503,14 +503,14 @@ export function parseTestMethods(
 ): TestMethod[] {
   const methods: TestMethod[] = [];
   const code = maskNonCode(body);
-  const methodPattern = /(?:(?:abstract|final|static)\s+)*(?:public|protected)\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+  const methodPattern = /(?:(?:abstract|final|static)\s+)*(?:public|protected)\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/gi;
 
   for (const match of code.matchAll(methodPattern)) {
     const methodName = match[1];
     const startOffset = match.index ?? 0;
     const header = methodAnnotationHeader(body, startOffset);
 
-    if (/\babstract\b/.test(match[0])) {
+    if (/\babstract\b/i.test(match[0])) {
       continue;
     }
 
@@ -535,7 +535,7 @@ export function parseTestMethods(
 function findTestAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {
   const aliases = new Set<string>();
   const namespaceCode = code.slice(namespaceStart, namespaceEnd);
-  const usePattern = /^\s*use\s+(?!function\b|const\b)([^;]+);/gm;
+  const usePattern = /^\s*use\s+(?!function\b|const\b)([^;]+);/gim;
   const testClass = 'phpunit\\framework\\attributes\\test';
   const testNamespace = 'phpunit\\framework\\attributes';
 
@@ -580,7 +580,7 @@ type NamespaceRange = { name: string; start: number; end: number };
 
 function findNamespaces(code: string): NamespaceRange[] {
   const declarations: { name: string; start: number; delimiter: ';' | '{'; end?: number }[] = [];
-  const pattern = /\bnamespace\s*(?:([A-Za-z_\\][A-Za-z0-9_\\]*))?\s*(;|\{)/g;
+  const pattern = /\bnamespace\s*(?:([A-Za-z_\\][A-Za-z0-9_\\]*))?\s*(;|\{)/gi;
   for (const match of code.matchAll(pattern)) {
     const start = (match.index ?? 0) + match[0].length;
     const delimiter = match[2] as ';' | '{';

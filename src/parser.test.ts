@@ -135,6 +135,47 @@ namespace App\\Tests {
     ]);
   });
 
+  it('recognizes PHP keywords regardless of case when discovering class tests and attribute aliases', () => {
+    const source = `<?php
+NAMESPACE App\\Tests;
+USE PHPUnit\\Framework\\Attributes\\Test AS IsTest;
+
+FINAL CLASS MixedCaseKeywordsTest {
+    #[IsTest]
+    PUBLIC FUNCTION explicitAttribute(): void {}
+
+    PROTECTED FUNCTION testPrefixMethod(): void {}
+}
+`;
+
+    const parsed = parseTestSource('/tmp/MixedCaseKeywordsTest.php', source);
+    assert.equal(parsed.classes.length, 1);
+    assert.equal(parsed.classes[0].fullyQualifiedName, 'App\\Tests\\MixedCaseKeywordsTest');
+    assert.deepEqual(parsed.classes[0].methods.map((method) => method.name), [
+      'explicitAttribute',
+      'testPrefixMethod',
+    ]);
+  });
+
+  it('discovers Pest tests and generator datasets when PHP keywords and method calls use uppercase', () => {
+    const source = `<?php
+TEST('uppercase Pest generator', static FUNCTION (): iterable {
+    YIELD 'first' => ['one'];
+    YIELD ['two'];
+})->WITH(function (): iterable {
+    YIELD 'named' => ['one'];
+    YIELD ['two'];
+});
+`;
+
+    const methods = parseTestSource('/tmp/UppercasePestTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map((method) => method.pestTestName), [
+      'uppercase Pest generator',
+      'uppercase Pest generator with data set "named"',
+      'uppercase Pest generator with data set #1',
+    ]);
+  });
+
   it('ignores declarations inside comments, strings, and heredoc bodies', () => {
     const source = `<?php
 // class CommentPhantomTest { public function testGhost() {} }
