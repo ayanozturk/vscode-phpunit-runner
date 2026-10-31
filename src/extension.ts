@@ -1218,10 +1218,18 @@ async function appendStructuredTestOutput(
   folder?: vscode.WorkspaceFolder,
 ): Promise<void> {
   const segments = formatTestOutputSegments(cases, preset, fallbackOutput, sourceSnippets, format);
-  for (const segment of segments) {
-    const location = await resolveOutputLocation(segment.location, folder);
-    run.appendOutput(segment.text, location);
+  const output = segments.map((segment) => segment.text).join('');
+  if (!output) {
+    return;
   }
+
+  // VS Code lays out each appendOutput call separately in the Test Results
+  // pane. Keep a multi-case report together instead of scattering lines
+  // across the available width. A single segment can still carry its link.
+  const location = segments.length === 1
+    ? await resolveOutputLocation(segments[0].location, folder)
+    : undefined;
+  run.appendOutput(output, location);
 }
 
 async function resolveOutputLocation(

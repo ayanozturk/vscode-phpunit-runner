@@ -114,6 +114,10 @@ exports.run = async () => {
         '  cat > "$report" <<XML',
         "<testsuites><testcase name='$testcaseName' classname='" + className + "' file='tests/" + className + ".php' line='2' time='0.01'><failure message='Assertion failed'>Assertion failed</failure></testcase></testsuites>",
         'XML',
+        'elif [ "$PHPUNIT_RUNNER_MODE" = "multi-output" ]; then',
+        '  cat > "$report" <<XML',
+        "<testsuites><testsuite><testcase name='testFirst' classname='" + className + "' time='0.01'/><testcase name='testSecond' classname='" + className + "' time='0.02'/></testsuite></testsuites>",
+        'XML',
         'elif [ "$PHPUNIT_RUNNER_MODE" = "fail-no-location" ]; then',
         '  cat > "$report" <<XML',
         "<testsuites><testcase name='$testcaseName' classname='" + className + "' time='0.01'><failure message='Assertion failed'>Assertion failed</failure></testcase></testsuites>",
@@ -180,6 +184,23 @@ exports.run = async () => {
     await outputFormatConfig.update('output.format', previousOutputFormat, vscode.ConfigurationTarget.WorkspaceFolder);
     assert.match(customOutput.join(''), /RESULT: PASS \^AlphaTest::testAlpha/);
     assert.doesNotMatch(customOutput.join(''), /\u001b\[/, 'custom plain output contains no ANSI colors');
+
+    const multiCaseOutput = [];
+    const restoreMultiOutputCapture = captureRunEvents(api.controller, [], [], multiCaseOutput);
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: 'multi-output' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreMultiOutputCapture();
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    assert.equal(multiCaseOutput.length, 1, 'multi-case output is appended as one block to keep the Test Results layout aligned');
+    assert.match(multiCaseOutput[0], /testFirst/);
+    assert.match(multiCaseOutput[0], /testSecond/);
 
     const failureOutputEvents = [];
     const restoreFailureOutputCapture = captureRunEvents(api.controller, [], [], [], failureOutputEvents);
