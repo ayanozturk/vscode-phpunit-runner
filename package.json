@@ -2,7 +2,7 @@
   "name": "aos-phpunit",
   "displayName": "PHPUnit Runner",
   "description": "Parse PHPUnit tests in PHP files and run them from VS Code.",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "publisher": "AOSSoftware",
   "license": "MIT",
   "repository": {
@@ -145,23 +145,49 @@
           "scope": "resource",
           "default": {},
           "properties": {
-            "colors": { "type": "boolean", "description": "Use ANSI colors in result markers and source snippets." },
-            "duration": { "type": "boolean", "description": "Include each test duration." },
+            "colors": {
+              "type": "boolean",
+              "description": "Use ANSI colors in result markers and source snippets."
+            },
+            "duration": {
+              "type": "boolean",
+              "description": "Include each test duration."
+            },
             "icons": {
               "type": "object",
               "properties": {
-                "passed": { "type": "string" },
-                "failed": { "type": "string" },
-                "errored": { "type": "string" },
-                "skipped": { "type": "string" }
+                "passed": {
+                  "type": "string"
+                },
+                "failed": {
+                  "type": "string"
+                },
+                "errored": {
+                  "type": "string"
+                },
+                "skipped": {
+                  "type": "string"
+                }
               },
               "additionalProperties": false,
               "description": "Override status markers in the progress preset and {icon} template variable."
             },
-            "testCase": { "type": "string", "description": "Template for each result line. Variables: {status}, {icon}, {name}, {duration}." },
-            "failureLocation": { "type": "string", "description": "Template for a failure location. Variables: {file}, {line}. Use an empty string to hide it." },
-            "failureMessage": { "type": "string", "description": "Template for the failure message. Variable: {message}. Use an empty string to hide it." },
-            "sourceSnippet": { "type": "boolean", "description": "Show the nearby PHP source frame for readable local failures." }
+            "testCase": {
+              "type": "string",
+              "description": "Template for each result line. Variables: {status}, {icon}, {name}, {duration}."
+            },
+            "failureLocation": {
+              "type": "string",
+              "description": "Template for a failure location. Variables: {file}, {line}. Use an empty string to hide it."
+            },
+            "failureMessage": {
+              "type": "string",
+              "description": "Template for the failure message. Variable: {message}. Use an empty string to hide it."
+            },
+            "sourceSnippet": {
+              "type": "boolean",
+              "description": "Show the nearby PHP source frame for readable local failures."
+            }
           },
           "additionalProperties": false,
           "description": "Override details in the selected output preset."
