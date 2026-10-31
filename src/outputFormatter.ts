@@ -76,14 +76,10 @@ export function formatTestOutputSegments(
 }
 
 function formatSummarySegments(cases: JUnitTestCase[], format: TestOutputFormat): TestOutputSegment[] {
-  const failedCases = cases.filter((testCase) => isFailure(testCase.status));
-  const passed = countStatus(cases, 'passed');
-  const failed = countStatus(cases, 'failed');
-  const errored = countStatus(cases, 'errored');
-  const skipped = countStatus(cases, 'skipped');
+  const { counts, failedCases } = tallyOutcomes(cases);
   const testCount = cases.length === 1 ? '1 test' : `${cases.length} tests`;
-  const errorCount = errored === 1 ? '1 error' : `${errored} errors`;
-  const lines = [`${testCount}: ${passed} passed, ${failed} failed, ${errorCount}, ${skipped} skipped`];
+  const errorCount = counts.errored === 1 ? '1 error' : `${counts.errored} errors`;
+  const lines = [`${testCount}: ${counts.passed} passed, ${counts.failed} failed, ${errorCount}, ${counts.skipped} skipped`];
 
   for (const testCase of failedCases) {
     const failureLocation = firstFailureLocation([testCase]);
@@ -140,16 +136,13 @@ function formatCollisionSegments(
 }
 
 function formatProgress(cases: JUnitTestCase[], format: TestOutputFormat): string {
+  const { counts } = tallyOutcomes(cases);
   const indicators = cases.map((testCase) => colorStatusGlyph(
     format.icons?.[testCase.status] ?? progressGlyph(testCase.status),
     testCase.status,
     format.colors !== false,
   )).join('');
-  const passed = countStatus(cases, 'passed');
-  const failed = countStatus(cases, 'failed');
-  const errored = countStatus(cases, 'errored');
-  const skipped = countStatus(cases, 'skipped');
-  return `${indicators}\n${cases.length} tests: ${passed} passed, ${failed} failed, ${errored} errors, ${skipped} skipped\n`;
+  return `${indicators}\n${cases.length} tests: ${counts.passed} passed, ${counts.failed} failed, ${counts.errored} errors, ${counts.skipped} skipped\n`;
 }
 
 function formatPrettySegments(
@@ -272,8 +265,26 @@ function isFailure(status: JUnitStatus): boolean {
   return status === 'failed' || status === 'errored';
 }
 
-function countStatus(cases: JUnitTestCase[], status: JUnitStatus): number {
-  return cases.filter((testCase) => testCase.status === status).length;
+function tallyOutcomes(cases: JUnitTestCase[]): {
+  counts: Record<JUnitStatus, number>;
+  failedCases: JUnitTestCase[];
+} {
+  const counts: Record<JUnitStatus, number> = {
+    passed: 0,
+    failed: 0,
+    errored: 0,
+    skipped: 0,
+  };
+  const failedCases: JUnitTestCase[] = [];
+
+  for (const testCase of cases) {
+    counts[testCase.status] += 1;
+    if (isFailure(testCase.status)) {
+      failedCases.push(testCase);
+    }
+  }
+
+  return { counts, failedCases };
 }
 
 const ANSI = {

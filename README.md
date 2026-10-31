@@ -57,7 +57,8 @@ Core settings:
 - `phpunitRunner.environment`
 - `phpunitRunner.saveBeforeTest`
 - `phpunitRunner.clearOutputOnRun` (defaults to `true`)
-- `phpunitRunner.output.preset` (`collision`, `progress`, or `pretty`)
+- `phpunitRunner.output.preset` (`collision`, `progress`, `pretty`, or `summary`)
+- `phpunitRunner.output.sourceSnippetContextLines` (source lines shown before and after a failure, from 0 to 5)
 - `phpunitRunner.continuousTesting`
 - `phpunitRunner.testFileGlobs`
 - `phpunitRunner.excludeGlobs`
@@ -97,6 +98,8 @@ Use `phpunitRunner.output.format` to tailor status markers and failure details p
 ```
 
 The `testCase` template accepts `{status}`, `{icon}`, `{name}`, and `{duration}`. Failure details accept `{file}` and `{line}` for `failureLocation`, and `{message}` for `failureMessage`. Set either failure template to an empty string to hide that detail. Use `icons` to override markers for `passed`, `failed`, `errored`, and `skipped` cases.
+
+Set `phpunitRunner.output.sourceSnippetContextLines` to control how much PHP source appears around a failure location. It defaults to one line above and below; set it to `0` to show only the failing line, or choose up to `5` lines of context on each side.
 
 When a JUnit report is unavailable, the runner keeps the raw process output so diagnostics such as `dd()` remain visible.
 

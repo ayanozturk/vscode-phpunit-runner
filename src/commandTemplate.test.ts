@@ -26,7 +26,11 @@ describe('command templates', () => {
       { workspaceFolder: '/proj' },
     );
     assert.equal(mapWithMappings('/proj/tests/A.php', mappings), '/var/www/html/tests/A.php');
+    assert.equal(mapWithMappings('/proj', mappings), '/var/www/html');
     assert.equal(unmapWithMappings('/var/www/html/tests/A.php', mappings), '/proj/tests/A.php');
+    assert.equal(unmapWithMappings('/var/www/html', mappings), '/proj');
+    assert.equal(mapWithMappings('/project/tests/A.php', mappings), '/project/tests/A.php');
+    assert.equal(unmapWithMappings('/var/www/html-old/tests/A.php', mappings), '/var/www/html-old/tests/A.php');
     assert.equal(mapWithMappings('--filter', mappings), '--filter');
   });
 

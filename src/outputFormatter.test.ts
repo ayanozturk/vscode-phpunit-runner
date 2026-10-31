@@ -46,6 +46,22 @@ describe('formatTestOutput', () => {
     assert.equal(stripAnsi(formatTestOutput(cases, 'progress')), '.FES\n4 tests: 1 passed, 1 failed, 1 errors, 1 skipped\n');
   });
 
+  it('counts every outcome once and retains zero counts in compact presets', () => {
+    assert.equal(stripAnsi(formatTestOutput(cases, 'progress')), '.FES\n4 tests: 1 passed, 1 failed, 1 errors, 1 skipped\n');
+    assert.equal(stripAnsi(formatTestOutput(cases, 'summary')), [
+      '4 tests: 1 passed, 1 failed, 1 error, 1 skipped',
+      'FAIL testFailure with data set "edge case"',
+      '  /tests/ExampleTest.php:24',
+      '  Failed asserting false.',
+      'ERROR testError',
+      '  Runtime exception',
+      '',
+    ].join('\n'));
+
+    assert.equal(stripAnsi(formatTestOutput([cases[0]], 'progress')), '.\n1 tests: 1 passed, 0 failed, 0 errors, 0 skipped\n');
+    assert.equal(stripAnsi(formatTestOutput([cases[0]], 'summary')), '1 test: 1 passed, 0 failed, 0 errors, 0 skipped\n');
+  });
+
   it('formats pretty output as plain per-case status lines without icons', () => {
     const output = stripAnsi(formatTestOutput(cases, 'pretty'));
     assert.match(output, /^PASS testPass \(12 ms\)$/m);

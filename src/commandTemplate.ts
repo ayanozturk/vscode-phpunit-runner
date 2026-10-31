@@ -31,11 +31,9 @@ export function mapWithMappings(value: string, mappings: PathMapping[]): string 
 
   const normalized = looksLikePath(value) ? normalizeMappedPath(value) : value;
   for (const mapping of mappings) {
-    if (normalized === mapping.from) {
-      return mapping.to;
-    }
-    if (normalized.startsWith(`${mapping.from}/`)) {
-      return `${mapping.to}${normalized.slice(mapping.from.length)}`;
+    const mapped = replacePathPrefix(normalized, mapping.from, mapping.to);
+    if (mapped !== undefined) {
+      return mapped;
     }
   }
 
@@ -50,11 +48,9 @@ export function unmapWithMappings(value: string, mappings: PathMapping[]): strin
   const normalized = normalizeMappedPath(value);
   const ordered = [...mappings].sort((left, right) => right.to.length - left.to.length);
   for (const mapping of ordered) {
-    if (normalized === mapping.to) {
-      return mapping.from;
-    }
-    if (normalized.startsWith(`${mapping.to}/`)) {
-      return `${mapping.from}${normalized.slice(mapping.to.length)}`;
+    const unmapped = replacePathPrefix(normalized, mapping.to, mapping.from);
+    if (unmapped !== undefined) {
+      return unmapped;
     }
   }
 
@@ -104,4 +100,14 @@ function looksLikePath(value: string): boolean {
 
 function normalizeMappedPath(targetPath: string): string {
   return targetPath.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+function replacePathPrefix(value: string, from: string, to: string): string | undefined {
+  if (value === from) {
+    return to;
+  }
+  if (value.startsWith(`${from}/`)) {
+    return `${to}${value.slice(from.length)}`;
+  }
+  return undefined;
 }

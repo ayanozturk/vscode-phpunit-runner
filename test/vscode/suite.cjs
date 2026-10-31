@@ -119,7 +119,11 @@ exports.run = async () => {
         '  if [ "$argument" = "--filter" ]; then previous="filter"; fi',
         '  case "$argument" in *ValuesTest.php) testcaseFile="tests/ValuesTest.php"; additionalCase="<testcase name=\'testValues\' classname=\'ValuesTest\' file=\'tests/ValuesTest.php\' time=\'0.02\'/>";; esac',
         'done',
-        'if [ "$PHPUNIT_RUNNER_MODE" = "fail" ]; then',
+        'if [ "$PHPUNIT_RUNNER_MODE" = "summary" ]; then',
+        '  cat > "$report" <<XML',
+        "<testsuites><testsuite><testcase name='testAlpha' classname='" + className + "' file='tests/" + className + ".php' time='0.01'/><testcase name='testAlpha with data set #0' classname='" + className + "' file='tests/" + className + ".php' line='2' time='0.02'><failure message='Summary assertion failed'>Summary failure detail</failure></testcase></testsuite></testsuites>",
+        'XML',
+        'elif [ "$PHPUNIT_RUNNER_MODE" = "fail" ]; then',
         '  cat > "$report" <<XML',
         "<testsuites><testcase name='$testcaseName' classname='" + className + "' file='tests/" + className + ".php' line='2' time='0.01'><failure message='Assertion failed'>Assertion failed</failure></testcase></testsuites>",
         'XML',
@@ -233,6 +237,36 @@ exports.run = async () => {
     assert.equal(multiCaseOutput.length, 1, 'multi-case output is appended as one block to keep the Test Results layout aligned');
     assert.match(multiCaseOutput[0], /testFirst/);
     assert.match(multiCaseOutput[0], /testSecond/);
+
+    const outputPresetConfig = vscode.workspace.getConfiguration('phpunitRunner', workspaceA);
+    const previousOutputPreset = outputPresetConfig.get('output.preset', 'collision');
+    const previousSummaryFormat = outputPresetConfig.get('output.format', {});
+    await outputPresetConfig.update('output.preset', 'summary', vscode.ConfigurationTarget.Workspace);
+    await outputPresetConfig.update('output.format', {
+      ...previousSummaryFormat,
+      colors: false,
+      duration: false,
+    }, vscode.ConfigurationTarget.WorkspaceFolder);
+    const summaryOutput = [];
+    const restoreSummaryOutputCapture = captureRunEvents(api.controller, [], [], summaryOutput);
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: 'summary' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreSummaryOutputCapture();
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await outputPresetConfig.update('output.preset', previousOutputPreset, vscode.ConfigurationTarget.Workspace);
+    await outputPresetConfig.update('output.format', previousSummaryFormat, vscode.ConfigurationTarget.WorkspaceFolder);
+    const summaryText = summaryOutput.join('');
+    assert.match(summaryText, /2 tests: 1 passed, 1 failed, 0 errors, 0 skipped/);
+    assert.match(summaryText, /testAlpha with data set #0/);
+    assert.match(summaryText, /Summary failure detail/);
+    assert.doesNotMatch(summaryText, /PASS testAlpha(?:\r?\n|$)/, 'summary omits passed-case detail lines');
 
     const failureOutputEvents = [];
     const restoreFailureOutputCapture = captureRunEvents(api.controller, [], [], [], failureOutputEvents);

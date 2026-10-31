@@ -141,6 +141,14 @@
           "default": "collision",
           "description": "Format structured test results in the Test Results output."
         },
+        "phpunitRunner.output.sourceSnippetContextLines": {
+          "type": "integer",
+          "scope": "resource",
+          "minimum": 0,
+          "maximum": 5,
+          "default": 1,
+          "description": "Number of context lines to show around a failure source line."
+        },
         "phpunitRunner.output.format": {
           "type": "object",
           "scope": "resource",

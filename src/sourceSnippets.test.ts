@@ -47,6 +47,30 @@ describe('readFailureSourceSnippets', () => {
     assert.match(snippets.get(sourceSnippetKey('Two.php', 1)) ?? '', /two/);
   });
 
+  it('supports zero, default, and maximum source context lines', async () => {
+    const sourceFile = path.join(path.sep, 'workspace', 'Context.php');
+    const source = Array.from({ length: 11 }, (_, index) => `line ${index + 1}`).join('\n');
+    const readSourceFile = async () => source;
+    const key = sourceSnippetKey(sourceFile, 6);
+
+    const noContext = await readFailureSourceSnippets([failure(sourceFile, 6)], undefined, readSourceFile, 0);
+    assert.equal(stripAnsi(noContext.get(key) ?? ''), '  > 6 | line 6');
+
+    const defaultContext = await readFailureSourceSnippets([failure(sourceFile, 6)], undefined, readSourceFile);
+    const defaultLines = stripAnsi(defaultContext.get(key) ?? '').split('\n');
+    assert.equal(defaultLines.length, 3);
+    assert.match(defaultLines[0], /line 5$/);
+    assert.match(defaultLines[1], /> 6 \| line 6$/);
+    assert.match(defaultLines[2], /line 7$/);
+
+    const maximumContext = await readFailureSourceSnippets([failure(sourceFile, 6)], undefined, readSourceFile, 5);
+    const maximumLines = stripAnsi(maximumContext.get(key) ?? '').split('\n');
+    assert.equal(maximumLines.length, 11);
+    assert.match(maximumLines[0], /line 1$/);
+    assert.match(maximumLines[5], />\s+6 \| line 6$/);
+    assert.match(maximumLines[10], /line 11$/);
+  });
+
   it('limits simultaneous reads when a run has many distinct failure files', async () => {
     const cases = Array.from({ length: 40 }, (_, index) => failure(
       path.join(path.sep, 'workspace', `Failure${index}.php`),
@@ -93,3 +117,7 @@ describe('readFailureSourceSnippets', () => {
     assert.equal(snippets.size, 0);
   });
 });
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001b\[[0-9;]*m/g, '');
+}

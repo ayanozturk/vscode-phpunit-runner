@@ -1345,7 +1345,8 @@ async function readFailureSourceSnippets(
   cases: JUnitTestCase[],
   folder?: vscode.WorkspaceFolder,
 ): Promise<Map<string, string>> {
-  return readSourceFailureSnippets(cases, folder?.uri.fsPath);
+  const contextLines = getConfig(folder).get<number>('output.sourceSnippetContextLines', 1);
+  return readSourceFailureSnippets(cases, folder?.uri.fsPath, undefined, contextLines);
 }
 
 async function appendStructuredTestOutput(
