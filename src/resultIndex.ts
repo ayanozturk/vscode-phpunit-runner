@@ -9,6 +9,7 @@ export type TestCaseIndex = {
   withoutFile: JUnitTestCase[];
   classNameSuffixes: Map<string, string[]>;
   classNameOrder: Map<string, number>;
+  withoutFileByTrigram: Map<string, JUnitTestCase[]>;
 };
 
 export function indexTestCases(cases: JUnitTestCase[], workspaceRoot?: string): TestCaseIndex {
@@ -50,6 +51,7 @@ export function indexTestCases(cases: JUnitTestCase[], workspaceRoot?: string): 
     withoutFile,
     classNameSuffixes,
     classNameOrder,
+    withoutFileByTrigram: buildPestTrigramIndex(withoutFile),
   };
 }
 
@@ -72,9 +74,12 @@ export function findIndexedPestCases(
   filePath: string,
 ): JUnitTestCase[] {
   const expectedPath = path.resolve(filePath);
+  const fileCases = index.byFile.get(expectedPath) ?? [];
+  const indexedCases = findPestTrigramCandidates(index.withoutFileByTrigram, testName);
+  const casesWithoutFile = indexedCases ?? index.withoutFile;
   const candidates = [
-    ...(index.byFile.get(expectedPath) ?? []),
-    ...index.withoutFile,
+    ...fileCases,
+    ...casesWithoutFile,
   ];
   return candidates.filter((testCase) => testCase.name.includes(testName));
 }
@@ -142,6 +147,140 @@ function classNameSuffixesFor(className: string): string[] {
     }
   }
   return suffixes;
+}
+
+const MIN_PEST_TRIGRAM_CASES = 128;
+const MAX_PEST_TRIGRAM_KEYS = 512;
+const MAX_PEST_TRIGRAM_POSTINGS = 256;
+
+type RankedTrigram = { value: string; hash: number };
+
+function buildPestTrigramIndex(cases: JUnitTestCase[]): Map<string, JUnitTestCase[]> {
+  if (cases.length < MIN_PEST_TRIGRAM_CASES) {
+    return new Map();
+  }
+
+  const selected = new Map<string, number>();
+  const sampleHeap: RankedTrigram[] = [];
+  for (const testCase of cases) {
+    forEachTrigram(testCase.name, (trigram) => {
+      if (selected.has(trigram)) {
+        return;
+      }
+
+      const candidate = { value: trigram, hash: hashTrigram(trigram) };
+      if (sampleHeap.length < MAX_PEST_TRIGRAM_KEYS) {
+        selected.set(trigram, candidate.hash);
+        pushMaxHeap(sampleHeap, candidate);
+        return;
+      }
+
+      if (compareTrigrams(candidate, sampleHeap[0]) < 0) {
+        const removed = popMaxHeap(sampleHeap);
+        selected.delete(removed.value);
+        selected.set(trigram, candidate.hash);
+        pushMaxHeap(sampleHeap, candidate);
+      }
+    });
+  }
+
+  const index = new Map<string, JUnitTestCase[]>();
+  const overfull = new Set<string>();
+  for (const testCase of cases) {
+    const seen = new Set<string>();
+    forEachTrigram(testCase.name, (trigram) => {
+      if (!selected.has(trigram) || seen.has(trigram) || overfull.has(trigram)) {
+        return;
+      }
+      seen.add(trigram);
+
+      const posting = index.get(trigram) ?? [];
+      if (posting.length >= MAX_PEST_TRIGRAM_POSTINGS) {
+        index.delete(trigram);
+        overfull.add(trigram);
+        return;
+      }
+      posting.push(testCase);
+      index.set(trigram, posting);
+    });
+  }
+
+  return index;
+}
+
+function findPestTrigramCandidates(
+  index: Map<string, JUnitTestCase[]>,
+  testName: string,
+): JUnitTestCase[] | undefined {
+  if (testName.length < 3) {
+    return undefined;
+  }
+
+  let rarest: JUnitTestCase[] | undefined;
+  forEachTrigram(testName, (trigram) => {
+    const candidates = index.get(trigram);
+    if (candidates && (!rarest || candidates.length < rarest.length)) {
+      rarest = candidates;
+    }
+  });
+  return rarest;
+}
+
+function forEachTrigram(value: string, visit: (trigram: string) => void): void {
+  for (let index = 0; index <= value.length - 3; index += 1) {
+    visit(value.slice(index, index + 3));
+  }
+}
+
+function hashTrigram(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function compareTrigrams(left: RankedTrigram, right: RankedTrigram): number {
+  return left.hash - right.hash || (left.value < right.value ? -1 : left.value > right.value ? 1 : 0);
+}
+
+function pushMaxHeap(heap: RankedTrigram[], value: RankedTrigram): void {
+  let child = heap.push(value) - 1;
+  while (child > 0) {
+    const parent = Math.floor((child - 1) / 2);
+    if (compareTrigrams(heap[parent], heap[child]) >= 0) {
+      break;
+    }
+    [heap[parent], heap[child]] = [heap[child], heap[parent]];
+    child = parent;
+  }
+}
+
+function popMaxHeap(heap: RankedTrigram[]): RankedTrigram {
+  const maximum = heap[0];
+  const last = heap.pop();
+  if (heap.length > 0 && last) {
+    heap[0] = last;
+    let parent = 0;
+    while (true) {
+      const left = parent * 2 + 1;
+      const right = left + 1;
+      let largest = parent;
+      if (left < heap.length && compareTrigrams(heap[left], heap[largest]) > 0) {
+        largest = left;
+      }
+      if (right < heap.length && compareTrigrams(heap[right], heap[largest]) > 0) {
+        largest = right;
+      }
+      if (largest === parent) {
+        break;
+      }
+      [heap[parent], heap[largest]] = [heap[largest], heap[parent]];
+      parent = largest;
+    }
+  }
+  return maximum;
 }
 
 function addToNestedIndex(

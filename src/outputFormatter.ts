@@ -114,23 +114,18 @@ function formatCollisionSegments(
   format: TestOutputFormat,
 ): TestOutputSegment[] {
   return cases.map((testCase) => {
-    const failureLocation = isFailure(testCase.status) ? firstFailureLocation([testCase]) : {};
-    const file = failureLocation.file ?? testCase.file;
-    const line = failureLocation.line ?? testCase.line;
-    const location = isFailure(testCase.status) ? formatFailureLocation(file, line, format) : undefined;
-    const message = isFailure(testCase.status) ? formatFailureMessage(testCase.message, format) : undefined;
-    const snippet = isFailure(testCase.status) && file && line
-      ? sourceSnippets.get(sourceSnippetKey(file, line))
-      : undefined;
+    const details = formatCaseDetails(testCase, sourceSnippets, format, false);
     const lines = [
       formatTestCaseLine(testCase, statusGlyph(testCase.status), format),
-      ...(location ? [location] : []),
-      ...(snippet && format.sourceSnippet !== false ? [formatSnippet(snippet, format)] : []),
-      ...(message ? [message] : []),
+      ...(details.location ? [details.location] : []),
+      ...(details.snippet && format.sourceSnippet !== false ? [formatSnippet(details.snippet, format)] : []),
+      ...(details.message ? [details.message] : []),
     ];
     return {
       text: `${lines.join('\n')}\n`,
-      ...(location && file && line ? { location: { file, line } } : {}),
+      ...(details.location && details.file && details.line
+        ? { location: { file: details.file, line: details.line } }
+        : {}),
     };
   });
 }
@@ -154,25 +149,39 @@ function formatPrettySegments(
     const result = format.testCase
       ? formatTestCaseLine(testCase, statusLabel(testCase.status), format)
       : `${colorStatusLabel(statusLabel(testCase.status), testCase.status, format.colors !== false)} ${testCase.name}${format.duration === false ? '' : formatDuration(testCase.timeSeconds)}`;
-    const failureLocation = isFailure(testCase.status) ? firstFailureLocation([testCase]) : {};
-    const file = failureLocation.file ?? testCase.file;
-    const line = failureLocation.line ?? testCase.line;
-    const location = isFailure(testCase.status) ? formatFailureLocation(file, line, format) : undefined;
-    const snippet = isFailure(testCase.status) && file && line
-      ? sourceSnippets.get(sourceSnippetKey(file, line))
-      : undefined;
-    const detail = formatFailureMessage(testCase.message, format);
+    const details = formatCaseDetails(testCase, sourceSnippets, format, true);
     const lines = [
       result,
-      ...(location ? [location] : []),
-      ...(snippet && format.sourceSnippet !== false ? [formatSnippet(snippet, format)] : []),
-      ...(detail ? [detail] : []),
+      ...(details.location ? [details.location] : []),
+      ...(details.snippet && format.sourceSnippet !== false ? [formatSnippet(details.snippet, format)] : []),
+      ...(details.message ? [details.message] : []),
     ];
     return {
       text: `${lines.join('\n')}\n`,
-      ...(location && file && line ? { location: { file, line } } : {}),
+      ...(details.location && details.file && details.line
+        ? { location: { file: details.file, line: details.line } }
+        : {}),
     };
   });
+}
+
+function formatCaseDetails(
+  testCase: JUnitTestCase,
+  sourceSnippets: ReadonlyMap<string, string>,
+  format: TestOutputFormat,
+  includeNonFailureMessage: boolean,
+): { file?: string; line?: number; location?: string; snippet?: string; message?: string } {
+  const failure = isFailure(testCase.status);
+  const failureLocation = failure ? firstFailureLocation([testCase]) : {};
+  const file = failureLocation.file ?? testCase.file;
+  const line = failureLocation.line ?? testCase.line;
+  return {
+    file,
+    line,
+    location: failure ? formatFailureLocation(file, line, format) : undefined,
+    snippet: failure && file && line ? sourceSnippets.get(sourceSnippetKey(file, line)) : undefined,
+    message: failure || includeNonFailureMessage ? formatFailureMessage(testCase.message, format) : undefined,
+  };
 }
 
 function formatTestCaseLine(testCase: JUnitTestCase, defaultStatus: string, format: TestOutputFormat): string {

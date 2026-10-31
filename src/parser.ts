@@ -7,6 +7,7 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
 
   const namespaces = findNamespaces(code);
   const namespaceAliases = new Map<string, Set<string>>();
+  const namespaceTestWithAliases = new Map<string, Set<string>>();
   const classPattern = /\b(?:(?:final|abstract|readonly)\s+)*class\s+([A-Za-z_][A-Za-z0-9_]*)[^\{]*\{/gi;
   for (const match of code.matchAll(classPattern)) {
     const matchText = match[0];
@@ -31,7 +32,22 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
       testAttributeAliases = findTestAttributeAliases(code, namespace?.start ?? 0, namespace?.end ?? code.length);
       namespaceAliases.set(namespaceKey, testAttributeAliases);
     }
-    const methods = parseTestMethods(body, openBraceIndex + 1, lineStarts, testAttributeAliases);
+    let testWithAttributeAliases = namespaceTestWithAliases.get(namespaceKey);
+    if (!testWithAttributeAliases) {
+      testWithAttributeAliases = findTestWithAttributeAliases(
+        code,
+        namespace?.start ?? 0,
+        namespace?.end ?? code.length,
+      );
+      namespaceTestWithAliases.set(namespaceKey, testWithAttributeAliases);
+    }
+    const methods = parseTestMethods(
+      body,
+      openBraceIndex + 1,
+      lineStarts,
+      testAttributeAliases,
+      testWithAttributeAliases,
+    );
     if (methods.length === 0) {
       continue;
     }
@@ -618,6 +634,7 @@ export function parseTestMethods(
   bodyOffset: number,
   lineStarts: number[],
   testAttributeAliases: ReadonlySet<string> = new Set(),
+  testWithAttributeAliases: ReadonlySet<string> = new Set(),
 ): TestMethod[] {
   const methods: TestMethod[] = [];
   const code = maskNonCode(body);
@@ -645,17 +662,81 @@ export function parseTestMethods(
       range: rangeFromOffsets(lineStarts, start, start + match[0].length),
       groups: extractGroups(header),
     });
+
+    const datasetNames = testWithDatasetNames(header, testWithAttributeAliases);
+    for (const datasetName of datasetNames ?? []) {
+      methods.push({
+        name: datasetName.replace(/^with data set\s*/, ''),
+        range: rangeFromOffsets(lineStarts, start, start + match[0].length),
+        groups: extractGroups(header),
+        phpunitDatasetName: datasetName,
+      });
+    }
   }
 
   return methods;
 }
 
+function testWithDatasetNames(header: string, aliases: ReadonlySet<string>): string[] | undefined {
+  const code = maskNonCode(header);
+  const attributePattern = /#\[\s*(\\?[A-Za-z_][A-Za-z0-9_\\]*)/g;
+  const names: string[] = [];
+  let found = false;
+
+  for (const match of code.matchAll(attributePattern)) {
+    const attributeName = match[1].replace(/^\\/, '').toLowerCase();
+    if (attributeName !== 'phpunit\\framework\\attributes\\testwith' && !aliases.has(attributeName)) {
+      continue;
+    }
+    found = true;
+
+    const openParen = (match.index ?? 0) + match[0].length;
+    let argumentStart = openParen;
+    while (argumentStart < code.length && /\s/.test(code[argumentStart])) {
+      argumentStart += 1;
+    }
+    if (code[argumentStart] !== '(') {
+      return undefined;
+    }
+
+    const closeParen = findMatchingParenthesis(code, argumentStart);
+    if (closeParen < 0) {
+      return undefined;
+    }
+    const attributeEnd = code.indexOf(']', closeParen + 1);
+    if (attributeEnd < 0 || code.slice(closeParen + 1, attributeEnd).trim()) {
+      return undefined;
+    }
+
+    const dataSource = header.slice(argumentStart + 1, closeParen).trim();
+    if (!dataSource.startsWith('[') || !isStaticPhpLiteral(dataSource)) {
+      return undefined;
+    }
+    names.push(`with data set #${names.length}`);
+  }
+
+  return found ? names : undefined;
+}
+
 function findTestAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {
+  return findAttributeAliases(code, namespaceStart, namespaceEnd, 'phpunit\\framework\\attributes\\test');
+}
+
+function findTestWithAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {
+  return findAttributeAliases(code, namespaceStart, namespaceEnd, 'phpunit\\framework\\attributes\\testwith');
+}
+
+function findAttributeAliases(
+  code: string,
+  namespaceStart: number,
+  namespaceEnd: number,
+  attributeClass: string,
+): Set<string> {
   const aliases = new Set<string>();
   const namespaceCode = code.slice(namespaceStart, namespaceEnd);
   const usePattern = /^\s*use\s+(?!function\b|const\b)([^;]+);/gim;
-  const testClass = 'phpunit\\framework\\attributes\\test';
-  const testNamespace = 'phpunit\\framework\\attributes';
+  const attributeNamespace = attributeClass.slice(0, attributeClass.lastIndexOf('\\'));
+  const shortName = attributeClass.slice(attributeClass.lastIndexOf('\\') + 1);
 
   for (const match of namespaceCode.matchAll(usePattern)) {
     const clause = match[1].trim();
@@ -666,13 +747,17 @@ function findTestAttributeAliases(code: string, namespaceStart: number, namespac
 
     for (const importSource of imports) {
       const importMatch = importSource.trim().match(/^\\?([A-Za-z_][A-Za-z0-9_\\]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/i);
-      if (!importMatch || importMatch[1].toLowerCase() !== testClass) {
-        if (!importMatch || importMatch[1].toLowerCase() !== testNamespace) {
-          continue;
-        }
+      if (!importMatch) {
+        continue;
       }
+
       const alias = importMatch[2] ?? importMatch[1].split('\\').pop()!;
-      aliases.add(importMatch[1].toLowerCase() === testClass ? alias.toLowerCase() : `${alias.toLowerCase()}\\test`);
+      const importedName = importMatch[1].replace(/^\\/, '').toLowerCase();
+      if (importedName === attributeClass) {
+        aliases.add(alias.toLowerCase());
+      } else if (importedName === attributeNamespace) {
+        aliases.add(`${alias.toLowerCase()}\\${shortName}`);
+      }
     }
   }
 

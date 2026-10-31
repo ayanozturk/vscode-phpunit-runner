@@ -97,6 +97,29 @@ describe('JUnit result index', () => {
     );
   });
 
+  it('uses complete trigram postings for large no-file Pest result sets', () => {
+    const cases = Array.from({ length: 180 }, (_, index) => testCase({
+      name: `sample Pest test ${String(index).padStart(3, '0')}`,
+    }));
+    const index = indexTestCases(cases, '/workspace');
+    const target = cases[37];
+
+    assert.equal(index.withoutFileByTrigram.get('sam')?.length, cases.length);
+    assert.deepEqual(findIndexedPestCases(index, target.name, '/workspace/tests/PestTest.php'), [target]);
+  });
+
+  it('falls back to exact substring matching when common Pest trigrams exceed the posting cap', () => {
+    const cases = Array.from({ length: 300 }, (_, index) => testCase({
+      name: `case ${index} has shared Pest lookup text`,
+    }));
+    const index = indexTestCases(cases, '/workspace');
+    const query = 'shared Pest lookup';
+    const queryTrigrams = Array.from({ length: query.length - 2 }, (_, offset) => query.slice(offset, offset + 3));
+
+    assert.ok(queryTrigrams.every((trigram) => !index.withoutFileByTrigram.has(trigram)));
+    assert.deepEqual(findIndexedPestCases(index, query, '/workspace/tests/PestTest.php'), cases);
+  });
+
   it('returns duplicate Pest names in the requested file and without file metadata only', () => {
     const firstLocal = testCase({ name: 'adds values with data set #0', file: 'tests/ValuesTest.php' });
     const secondLocal = testCase({ name: 'adds values with data set #0', file: 'tests/ValuesTest.php', className: 'Pest tests\\other' });

@@ -102,6 +102,7 @@ exports.run = async () => {
         'coverage=""',
         'previous=""',
         'testcaseName="' + methodName + '"',
+        'testcaseClass="' + className + '"',
         'testcaseFile="tests/' + className + '.php"',
         'additionalCase=""',
         'for argument in "$@"; do',
@@ -110,6 +111,7 @@ exports.run = async () => {
         '  if [ "$previous" = "filter" ]; then',
         '    case "$argument" in',
         '      *"generated values"*) testcaseName=\'generated values with data set "first"\';;',
+        '      *"TestWithTest::testWithRows with data set #0"*) testcaseName=\'testWithRows with data set #0\'; testcaseClass=\'TestWithTest\'; testcaseFile=\'tests/TestWithTest.php\';;',
         '    esac',
         '    previous=""',
         '    continue',
@@ -141,7 +143,7 @@ exports.run = async () => {
         'XML',
         'else',
         '  cat > "$report" <<XML',
-        "<testsuites><testcase name='$testcaseName' classname='" + className + "' file='$testcaseFile' time='0.01'/>$additionalCase</testsuites>",
+        "<testsuites><testcase name='$testcaseName' classname='$testcaseClass' file='$testcaseFile' time='0.01'/>$additionalCase</testsuites>",
         'XML',
         'fi',
         'if [ -n "$coverage" ]; then',
@@ -161,6 +163,17 @@ exports.run = async () => {
       );
     }
 
+    await fs.writeFile(path.join(workspaceA.uri.fsPath, 'tests', 'TestWithTest.php'), `<?php
+use PHPUnit\\Framework\\Attributes\\TestWith;
+
+class TestWithTest
+{
+    #[TestWith([1, 2])]
+    #[TestWith([3, 4])]
+    public function testWithRows(int $left, int $right): void {}
+}
+`, 'utf8');
+
     await api.refresh();
     const findMethod = (name) => flatten(api.controller.items).find((item) => item.label === name);
     assert.ok(findMethod('testAlpha'), 'workspace A test is discovered');
@@ -179,6 +192,13 @@ exports.run = async () => {
       'generated values (with data set "first")',
       'generated values (with data set "second")',
     ]);
+    const testWithParent = findMethod('testWithRows');
+    assert.ok(testWithParent, 'PHPUnit TestWith method is discovered');
+    assert.deepEqual(
+      [...testWithParent.children].map(([, item]) => item.label),
+      ['#0', '#1'],
+      'literal TestWith rows are selectable before running the test',
+    );
     const pestEvents = [];
     const restorePestCapture = captureRunEvents(api.controller, pestEvents);
     const testRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
@@ -237,6 +257,30 @@ exports.run = async () => {
     assert.equal(multiCaseOutput.length, 1, 'multi-case output is appended as one block to keep the Test Results layout aligned');
     assert.match(multiCaseOutput[0], /testFirst/);
     assert.match(multiCaseOutput[0], /testSecond/);
+
+    const testWithDataset = [...testWithParent.children].map(([, item]) => item).find((item) => item.label === '#0');
+    assert.ok(testWithDataset);
+    const testWithLog = path.join(workspaceA.uri.fsPath, 'runner.log');
+    await fs.writeFile(testWithLog, '', 'utf8');
+    const testWithEvents = [];
+    const restoreTestWithCapture = captureRunEvents(api.controller, testWithEvents);
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: 'test-with' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([testWithDataset]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreTestWithCapture();
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    const testWithInvocation = await fs.readFile(testWithLog, 'utf8');
+    assert.ok(testWithInvocation.includes('--filter ~^TestWithTest::testWithRows with data set #0$~i'), testWithInvocation);
+    assert.ok(
+      testWithEvents.some((event) => event.id === testWithDataset.id && event.state === 'passed'),
+      `the selected TestWith row receives its PHPUnit result: ${JSON.stringify(testWithEvents)}`,
+    );
 
     const outputPresetConfig = vscode.workspace.getConfiguration('phpunitRunner', workspaceA);
     const previousOutputPreset = outputPresetConfig.get('output.preset', 'collision');

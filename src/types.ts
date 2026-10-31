@@ -17,6 +17,7 @@ export type TestMethod = {
   pestTestName?: string;
   pestDescribePath?: string[];
   pestDatasetName?: string;
+  phpunitDatasetName?: string;
 };
 
 export type TestClass = {

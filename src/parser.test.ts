@@ -135,6 +135,89 @@ namespace App\\Tests {
     ]);
   });
 
+  it('discovers literal repeated PHPUnit TestWith attributes as selectable data sets', () => {
+    const source = `<?php
+namespace App\\Tests;
+use PHPUnit\\Framework\\Attributes\\TestWith as WithData;
+
+final class AttributeDataTest {
+    #[WithData([1, 2])]
+    #[WithData(['name' => 'Ada', 'active' => true])]
+    public function testAcceptsData(int|string $value): void {}
+}
+`;
+
+    const methods = parseTestSource('/tmp/AttributeDataTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map((method) => ({
+      name: method.name,
+      datasetName: method.phpunitDatasetName,
+    })), [
+      { name: 'testAcceptsData', datasetName: undefined },
+      { name: '#0', datasetName: 'with data set #0' },
+      { name: '#1', datasetName: 'with data set #1' },
+    ]);
+  });
+
+  it('discovers TestWith through grouped namespace aliases and fully qualified attributes', () => {
+    const source = `<?php
+namespace App\\Tests {
+    use PHPUnit\\Framework\\Attributes as PHPUnitAttributes;
+
+    class NamespaceAliasDataTest {
+        #[PHPUnitAttributes\\TestWith([true])]
+        public function testNamespaceAlias(): void {}
+
+        #[\\PHPUnit\\Framework\\Attributes\\TestWith(['literal'])]
+        public function testFullyQualified(): void {}
+    }
+}
+`;
+
+    const methods = parseTestSource('/tmp/NamespaceAliasDataTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map((method) => method.phpunitDatasetName), [
+      undefined,
+      'with data set #0',
+      undefined,
+      'with data set #0',
+    ]);
+  });
+
+  it('does not guess TestWith datasets when any row is dynamic or ambiguous', () => {
+    const source = `<?php
+use PHPUnit\\Framework\\Attributes\\TestWith;
+
+class DynamicAttributeDataTest {
+    #[TestWith([1, 2])]
+    #[TestWith($sharedData)]
+    public function testDynamic(): void {}
+
+    #[TestWith([...$values])]
+    public function testSpread(): void {}
+
+    #[TestWith([makeValue()])]
+    public function testExpression(): void {}
+}
+`;
+
+    const methods = parseTestSource('/tmp/DynamicAttributeDataTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map((method) => method.name), ['testDynamic', 'testSpread', 'testExpression']);
+    assert.ok(methods.every((method) => method.phpunitDatasetName === undefined));
+  });
+
+  it('does not interpret unrelated attributes as PHPUnit data sets', () => {
+    const source = `<?php
+use App\\Attributes\\TestWith;
+
+class UnrelatedAttributeDataTest {
+    #[TestWith([1, 2])]
+    public function testUnrelated(): void {}
+}
+`;
+
+    const methods = parseTestSource('/tmp/UnrelatedAttributeDataTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map((method) => method.name), ['testUnrelated']);
+  });
+
   it('recognizes PHP keywords regardless of case when discovering class tests and attribute aliases', () => {
     const source = `<?php
 NAMESPACE App\\Tests;

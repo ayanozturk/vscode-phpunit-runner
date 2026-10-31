@@ -72,6 +72,19 @@ describe('formatTestOutput', () => {
     assert.doesNotMatch(output, /[✓✗]/);
   });
 
+  it('preserves pretty messages on passed cases and keeps them out of collision output', () => {
+    const passedWithMessage = { ...cases[0], message: 'Informational runner note' };
+
+    assert.equal(
+      stripAnsi(formatTestOutput([passedWithMessage], 'pretty')),
+      'PASS testPass (12 ms)\n  Informational runner note\n',
+    );
+    assert.equal(
+      stripAnsi(formatTestOutput([passedWithMessage], 'collision')),
+      '✓ testPass (12 ms)\n',
+    );
+  });
+
   it('summarizes all outcomes and shows concise details only for failures and errors', () => {
     const output = stripAnsi(formatTestOutput(cases, 'summary'));
 

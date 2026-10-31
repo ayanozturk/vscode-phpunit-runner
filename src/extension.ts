@@ -399,7 +399,7 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
     }
 
     for (const methods of methodsByRange.values()) {
-      const method = methods.find((candidate) => !candidate.pestDatasetName) ?? methods[0];
+      const method = methods.find((candidate) => !candidate.pestDatasetName && !candidate.phpunitDatasetName) ?? methods[0];
       const methodId = `${classId}::${method.name}`;
       const methodItem = controller.createTestItem(methodId, method.name, uri);
       methodItem.range = toVscodeRange(method.range);
@@ -415,7 +415,27 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
       });
       methodItem.tags = method.groups.map((group) => new vscode.TestTag(`group:${group}`));
 
-      for (const dataset of methods.filter((candidate) => candidate !== method && candidate.pestDatasetName)) {
+      for (const dataset of methods.filter((candidate) => (
+        candidate !== method && (candidate.pestDatasetName || candidate.phpunitDatasetName)
+      ))) {
+        if (dataset.phpunitDatasetName) {
+          const datasetId = `${methodItem.id}::dataset:${dataset.phpunitDatasetName}`;
+          const datasetItem = controller.createTestItem(datasetId, dataset.name, uri);
+          datasetItem.range = toVscodeRange(dataset.range);
+          itemData.set(datasetItem, {
+            kind: 'dataset',
+            uri,
+            filePath: uri.fsPath,
+            className: cls.fullyQualifiedName,
+            methodName: method.name,
+            datasetName: `${method.name} ${dataset.phpunitDatasetName}`,
+            groups: dataset.groups,
+          });
+          datasetItem.tags = dataset.groups.map((group) => new vscode.TestTag(`group:${group}`));
+          methodItem.children.add(datasetItem);
+          continue;
+        }
+
         const datasetId = `${classId}::${dataset.name}`;
         const datasetItem = controller.createTestItem(datasetId, dataset.name, uri);
         datasetItem.range = toVscodeRange(dataset.range);
