@@ -97,11 +97,13 @@ exports.run = async () => {
         '  touch "' + folder.uri.fsPath + '/runner-ready"',
         '  while true; do sleep 1; done',
         'fi',
-        'echo invoked >> "' + runLog + '"',
+        'echo "invoked $@" >> "' + runLog + '"',
         'report=""',
         'coverage=""',
         'previous=""',
         'testcaseName="' + methodName + '"',
+        'testcaseFile="tests/' + className + '.php"',
+        'additionalCase=""',
         'for argument in "$@"; do',
         '  if [ "$previous" = "report" ]; then report="$argument"; previous=""; continue; fi',
         '  if [ "$previous" = "coverage" ]; then coverage="$argument"; previous=""; continue; fi',
@@ -115,6 +117,7 @@ exports.run = async () => {
         '  if [ "$argument" = "--log-junit" ]; then previous="report"; fi',
         '  if [ "$argument" = "--coverage-clover" ]; then previous="coverage"; fi',
         '  if [ "$argument" = "--filter" ]; then previous="filter"; fi',
+        '  case "$argument" in *ValuesTest.php) testcaseFile="tests/ValuesTest.php"; additionalCase="<testcase name=\'testValues\' classname=\'ValuesTest\' file=\'tests/ValuesTest.php\' time=\'0.02\'/>";; esac',
         'done',
         'if [ "$PHPUNIT_RUNNER_MODE" = "fail" ]; then',
         '  cat > "$report" <<XML',
@@ -134,7 +137,7 @@ exports.run = async () => {
         'XML',
         'else',
         '  cat > "$report" <<XML',
-        "<testsuites><testcase name='$testcaseName' classname='" + className + "' time='0.01'/></testsuites>",
+        "<testsuites><testcase name='$testcaseName' classname='" + className + "' file='$testcaseFile' time='0.01'/>$additionalCase</testsuites>",
         'XML',
         'fi',
         'if [ -n "$coverage" ]; then',
@@ -291,11 +294,26 @@ exports.run = async () => {
     ));
     assert.ok(workspaceATestsFolder, 'workspace A test folder is available');
     const disabledFolderClears = outputClears.length;
+    await fs.rm(path.join(workspaceA.uri.fsPath, 'runner.log'), { force: true });
     await testRunProfile.runHandler(
       new vscode.TestRunRequest([workspaceATestsFolder]),
       new vscode.CancellationTokenSource().token,
     );
     assert.equal(outputClears.length, disabledFolderClears, 'folder selections use descendant workspace settings');
+    const folderInvocations = (await fs.readFile(path.join(workspaceA.uri.fsPath, 'runner.log'), 'utf8')).trim().split('\n');
+    assert.equal(folderInvocations.length, 1, 'a folder scope starts PHPUnit once');
+    assert.match(folderInvocations[0], /AlphaTest\.php/, 'the folder invocation includes the first selected PHP test file');
+    assert.match(folderInvocations[0], /ValuesTest\.php/, 'the folder invocation includes the second selected PHP test file');
+
+    await fs.rm(path.join(workspaceA.uri.fsPath, 'runner.log'), { force: true });
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('AlphaTest.php'), findMethod('ValuesTest.php')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    const multiFileInvocations = (await fs.readFile(path.join(workspaceA.uri.fsPath, 'runner.log'), 'utf8')).trim().split('\n');
+    assert.equal(multiFileInvocations.length, 1, 'multiple selected files in one workspace start PHPUnit once');
+    assert.match(multiFileInvocations[0], /AlphaTest\.php/);
+    assert.match(multiFileInvocations[0], /ValuesTest\.php/);
 
     const mixedMultiRootClears = outputClears.length;
     await testRunProfile.runHandler(

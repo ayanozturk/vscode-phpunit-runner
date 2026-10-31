@@ -37,6 +37,7 @@ export type TestItemKind = 'file' | 'suite' | 'class' | 'method' | 'dataset';
 export type TestTarget = {
   kind: TestItemKind;
   filePath?: string;
+  filePaths?: string[];
   className?: string;
   methodName?: string;
   pestTestName?: string;

@@ -530,6 +530,18 @@ async function runTests(request: vscode.TestRunRequest, token: vscode.Cancellati
   const tokenSubscription = token.onCancellationRequested(() => cancellation.cancel());
   const runSubscription = run.token.onCancellationRequested(() => cancellation.cancel());
   const queue = request.include?.length ? [...request.include] : collectTestItems(controller.items);
+  const selectedFilesByWorkspace = new Map<string, vscode.TestItem[]>();
+  for (const item of queue) {
+    const data = itemData.get(item);
+    const workspaceFolder = data?.kind === 'file' ? vscode.workspace.getWorkspaceFolder(data.uri) : undefined;
+    if (!workspaceFolder) {
+      continue;
+    }
+    const files = selectedFilesByWorkspace.get(workspaceFolder.uri.fsPath) ?? [];
+    files.push(item);
+    selectedFilesByWorkspace.set(workspaceFolder.uri.fsPath, files);
+  }
+  const processedFileIds = new Set<string>();
   lastIncludeIds = request.include?.map((item) => item.id);
   lastFailedIds = [];
   debugListenStarted = false;
@@ -545,7 +557,21 @@ async function runTests(request: vscode.TestRunRequest, token: vscode.Cancellati
         break;
       }
 
-      await runItem(item, run, cancellation.token, kind);
+      const data = itemData.get(item);
+      const workspaceFolder = data?.kind === 'file' ? vscode.workspace.getWorkspaceFolder(data.uri) : undefined;
+      const selectedFiles = workspaceFolder
+        ? selectedFilesByWorkspace.get(workspaceFolder.uri.fsPath) ?? []
+        : [];
+      if (selectedFiles.length > 1 && data?.kind === 'file') {
+        if (!processedFileIds.has(item.id)) {
+          for (const file of selectedFiles) {
+            processedFileIds.add(file.id);
+          }
+          await runFileScope(item, selectedFiles, run, cancellation.token, kind);
+        }
+      } else {
+        await runItem(item, run, cancellation.token, kind);
+      }
     }
   } finally {
     tokenSubscription.dispose();
@@ -563,8 +589,11 @@ async function runItem(
 ): Promise<void> {
   const data = itemData.get(item);
   if (!data && item.children.size > 0) {
-    for (const child of collectTestItems(item.children)) {
-      await runItem(child, run, token, kind);
+    const files = collectTestItems(item.children)
+      .flatMap((child) => collectFileItems(child))
+      .filter((fileItem, index, all) => all.findIndex((candidate) => candidate.id === fileItem.id) === index);
+    if (files.length > 0) {
+      await runFileScope(item, files, run, token, kind);
     }
     return;
   }
@@ -610,6 +639,107 @@ async function runItem(
       markDescendants(run, item, 'skipped');
     }
   }
+}
+
+async function runFileScope(
+  scope: vscode.TestItem,
+  files: vscode.TestItem[],
+  run: vscode.TestRun,
+  token: vscode.CancellationToken,
+  kind: vscode.TestRunProfileKind,
+): Promise<void> {
+  const firstFileData = itemData.get(files[0]);
+  if (!firstFileData) {
+    return;
+  }
+
+  const targets = files.flatMap((file) => collectExecutableItems(file))
+    .filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index);
+  for (const target of targets) {
+    run.enqueued(target);
+    run.started(target);
+  }
+
+  try {
+    const scopeData: TestItemData = {
+      ...firstFileData,
+      filePath: undefined,
+      filePaths: files.flatMap((file) => {
+        const filePath = itemData.get(file)?.filePath;
+        return filePath ? [filePath] : [];
+      }),
+    };
+    const result = await executePhpUnit(scopeData, token, kind, run);
+    const folder = vscode.workspace.getWorkspaceFolder(firstFileData.uri);
+    const outputPreset = getOutputPreset(folder);
+    const outputFormat = getOutputFormat(folder);
+    const sourceSnippets = outputPreset === 'progress' || outputFormat.sourceSnippet === false
+      ? new Map<string, string>()
+      : await readFailureSourceSnippets(result.cases, folder);
+    await appendStructuredTestOutput(
+      run,
+      result.cases,
+      outputPreset,
+      result.output,
+      sourceSnippets,
+      outputFormat,
+      folder,
+    );
+    if (result.reportWarning) {
+      run.appendOutput(`${result.reportWarning}\r\n`, undefined, scope);
+    }
+
+    for (const file of files) {
+      const fileCases = casesForFile(result.cases, file);
+      applyExecutionResult(run, file, {
+        ...result,
+        cases: fileCases,
+        exitCode: fileCases.some((testCase) => testCase.status === 'failed' || testCase.status === 'errored') ? 1 : 0,
+      });
+    }
+  } catch (error) {
+    const message = new vscode.TestMessage(String(error));
+    for (const file of files) {
+      if (token.isCancellationRequested) {
+        run.skipped(file);
+        markDescendants(run, file, 'skipped');
+      } else {
+        run.failed(file, message);
+        markDescendants(run, file, 'skipped');
+      }
+    }
+  }
+}
+
+function collectFileItems(item: vscode.TestItem): vscode.TestItem[] {
+  const data = itemData.get(item);
+  if (data?.kind === 'file') {
+    return [item];
+  }
+  return collectTestItems(item.children).flatMap((child) => collectFileItems(child));
+}
+
+function casesForFile(cases: JUnitTestCase[], file: vscode.TestItem): JUnitTestCase[] {
+  const fileData = itemData.get(file);
+  if (!fileData?.filePath) {
+    return [];
+  }
+  const filePath = fileData.filePath;
+  const expectedPath = path.resolve(filePath);
+  const classNames = new Set(collectMethodItems(file).flatMap((item) => {
+    const className = itemData.get(item)?.className;
+    return className ? [className] : [];
+  }));
+  return cases.filter((testCase) => {
+    if (testCase.file) {
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(file.uri!);
+      const actualPath = path.isAbsolute(testCase.file)
+        ? path.resolve(testCase.file)
+        : path.resolve(workspaceFolder?.uri.fsPath ?? path.dirname(filePath), testCase.file);
+      return actualPath === expectedPath;
+    }
+    return [...classNames].some((className) => classNamesMatch(testCase.className, className));
+  });
 }
 
 function applyExecutionResult(
@@ -777,7 +907,13 @@ function findCasesForPestTest(cases: JUnitTestCase[], testName: string, filePath
   const expectedPath = path.resolve(filePath);
   return cases.filter((item) => {
     const nameMatches = item.name.includes(testName);
-    const fileMatches = !item.file || path.resolve(item.file) === expectedPath;
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(filePath));
+    const actualPath = item.file
+      ? path.isAbsolute(item.file)
+        ? path.resolve(item.file)
+        : path.resolve(workspaceFolder?.uri.fsPath ?? path.dirname(expectedPath), item.file)
+      : undefined;
+    const fileMatches = !actualPath || actualPath === expectedPath;
     return nameMatches && fileMatches;
   });
 }

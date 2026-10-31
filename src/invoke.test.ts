@@ -92,6 +92,17 @@ describe('autoDetectPhpUnit', () => {
 });
 
 describe('resolveInvocation', () => {
+  it('passes every selected test file path to one PHPUnit invocation', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: { kind: 'file', filePaths: ['/proj/tests/ApiTest.php', '/proj/tests/AuthTest.php'] },
+      config,
+      phpunitExecutable: '/proj/vendor/bin/phpunit',
+    });
+
+    assert.deepEqual(invocation.args.slice(-2), ['/proj/tests/ApiTest.php', '/proj/tests/AuthTest.php']);
+  });
+
   it('runs phpunit as a php script with junit logging and auto config', async () => {
     const invocation = await resolveInvocation({
       workspacePath: '/proj',

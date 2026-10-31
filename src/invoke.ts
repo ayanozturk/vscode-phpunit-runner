@@ -140,9 +140,7 @@ export async function resolveInvocation(options: {
     phpunitArgs.push('--filter', `~^${escapeRegex(target.className)}(?:::.*)?$~i`);
   }
 
-  if (target.filePath) {
-    phpunitArgs.push(target.filePath);
-  }
+  phpunitArgs.push(...(target.filePaths ?? (target.filePath ? [target.filePath] : [])));
 
   const vars = templateVars(workspacePath, cwd, options.userHome ?? os.homedir());
   const mappings = resolveMappings(workspacePath, config, vars);
