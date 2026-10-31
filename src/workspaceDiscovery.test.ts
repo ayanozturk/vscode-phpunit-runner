@@ -58,4 +58,38 @@ describe('workspace-scoped test discovery', () => {
 
     assert.deepEqual(found, ['standalone/Test.php']);
   });
+
+  it('overlaps independent glob searches and preserves configured result order', async () => {
+    const includes = ['first/**/*.php', 'second/**/*.php'];
+    let started = 0;
+    let overlapped = false;
+    let release!: () => void;
+    const bothStarted = new Promise<void>((resolve) => { release = resolve; });
+    const timeout = setTimeout(release, 100);
+    const unique = new Map<string, string>();
+
+    try {
+      const found = await findWithGlobs(
+        includes,
+        [],
+        unique,
+        'workspace',
+        async (pattern) => {
+          started += 1;
+          if (started === includes.length) {
+            overlapped = true;
+            release();
+          }
+          await bothStarted;
+          return [pattern];
+        },
+        (result) => result,
+      );
+
+      assert.equal(overlapped, true, 'all glob searches start before any result is collected');
+      assert.deepEqual(found, includes);
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
 });

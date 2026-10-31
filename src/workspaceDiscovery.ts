@@ -13,8 +13,10 @@ export async function findWithGlobs<TScope, TResult>(
   keyOf: (result: TResult) => string,
 ): Promise<TResult[]> {
   const excludeGlob = excludes.length > 0 ? `{${excludes.join(',')}}` : undefined;
-  for (const pattern of includes) {
-    const results = await search(pattern, excludeGlob, scope);
+  const matchesByGlob = await Promise.all(
+    includes.map((pattern) => search(pattern, excludeGlob, scope)),
+  );
+  for (const results of matchesByGlob) {
     for (const result of results) {
       unique.set(keyOf(result), result);
     }
