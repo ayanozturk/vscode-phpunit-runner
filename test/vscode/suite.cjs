@@ -105,7 +105,13 @@ exports.run = async () => {
         'for argument in "$@"; do',
         '  if [ "$previous" = "report" ]; then report="$argument"; previous=""; continue; fi',
         '  if [ "$previous" = "coverage" ]; then coverage="$argument"; previous=""; continue; fi',
-        '  if [ "$previous" = "filter" ]; then testcaseName="$argument"; previous=""; continue; fi',
+        '  if [ "$previous" = "filter" ]; then',
+        '    case "$argument" in',
+        '      *"generated values"*) testcaseName=\'generated values with data set "first"\';;',
+        '    esac',
+        '    previous=""',
+        '    continue',
+        '  fi',
         '  if [ "$argument" = "--log-junit" ]; then previous="report"; fi',
         '  if [ "$argument" = "--coverage-clover" ]; then previous="coverage"; fi',
         '  if [ "$argument" = "--filter" ]; then previous="filter"; fi',
@@ -117,6 +123,10 @@ exports.run = async () => {
         'elif [ "$PHPUNIT_RUNNER_MODE" = "multi-output" ]; then',
         '  cat > "$report" <<XML',
         "<testsuites><testsuite><testcase name='testFirst' classname='" + className + "' time='0.01'/><testcase name='testSecond' classname='" + className + "' time='0.02'/></testsuite></testsuites>",
+        'XML',
+        'elif [ "$PHPUNIT_RUNNER_MODE" = "dot-classname" ]; then',
+        '  cat > "$report" <<XML',
+        "<testsuites><testcase name='$testcaseName' classname='App.Tests." + className + "' time='0.01'/></testsuites>",
         'XML',
         'elif [ "$PHPUNIT_RUNNER_MODE" = "fail-no-location" ]; then',
         '  cat > "$report" <<XML',
@@ -182,8 +192,27 @@ exports.run = async () => {
     );
     restoreOutputCapture();
     await outputFormatConfig.update('output.format', previousOutputFormat, vscode.ConfigurationTarget.WorkspaceFolder);
-    assert.match(customOutput.join(''), /RESULT: PASS ~\^AlphaTest::testAlpha/);
+    assert.match(customOutput.join(''), /RESULT: PASS testAlpha/);
     assert.doesNotMatch(customOutput.join(''), /\u001b\[/, 'custom plain output contains no ANSI colors');
+
+    const dottedClassnameEvents = [];
+    const restoreDottedClassnameCapture = captureRunEvents(api.controller, dottedClassnameEvents);
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: 'dot-classname' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreDottedClassnameCapture();
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    assert.equal(
+      dottedClassnameEvents.some((event) => event.id === findMethod('testAlpha').id && event.state === 'passed'),
+      true,
+      `a PHPUnit JUnit classname using dots maps to the selected PHP namespace and method: ${JSON.stringify(dottedClassnameEvents)}`,
+    );
 
     const multiCaseOutput = [];
     const restoreMultiOutputCapture = captureRunEvents(api.controller, [], [], multiCaseOutput);

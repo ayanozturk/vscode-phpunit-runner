@@ -30,9 +30,9 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 
 - Discovers PHPUnit methods marked with a `test*` name, `@test` docblock, or `#[Test]` attribute.
 - Discovers function-style Pest `test()` and `it()` cases with literal string names.
-- Discovers statically declared Pest `->with([...])` data sets and inline generator closures with literal `yield` values as child tests, including Cartesian combinations from chained calls.
+- Discovers statically declared Pest `dataset()` values, `->with([...])` data sets, and inline generator closures with literal `yield` values as selectable child tests, including chained data sets.
 - Groups Pest tests inside named `describe()` blocks so each context can be run as a unit.
-- Groups discovered tests by named suites in `phpunit.xml`; files not assigned to a suite stay grouped by folder.
+- Groups discovered tests by named suites in `phpunit.xml`, respecting directory prefixes and suffixes; files not assigned to a suite stay grouped by folder.
 - Adds inline Run Test and Debug Test actions above each discovered test.
 - Maps JUnit results to individual tests and reports assertion failure locations.
 - Adds PHPUnit data sets to their method after the first run so each data set can be run separately.

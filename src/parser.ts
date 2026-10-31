@@ -46,7 +46,8 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
     });
   }
 
-  const pestMethods = parsePestTests(source, code, lineStarts);
+  const namedPestDatasets = parsePestNamedDatasets(source, code);
+  const pestMethods = parsePestTests(source, code, lineStarts, namedPestDatasets);
   if (pestMethods.length > 0) {
     const grouped = new Map<string, TestMethod[]>();
     for (const method of pestMethods) {
@@ -75,7 +76,12 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
   return { filePath, classes };
 }
 
-function parsePestTests(source: string, code: string, lineStarts: number[]): TestMethod[] {
+function parsePestTests(
+  source: string,
+  code: string,
+  lineStarts: number[],
+  namedDatasets: ReadonlyMap<string, Array<string | undefined> | undefined>,
+): TestMethod[] {
   const methods: TestMethod[] = [];
   const occurrences = new Map<string, number>();
   const describeBlocks = parsePestDescribeBlocks(source, code);
@@ -111,7 +117,7 @@ function parsePestTests(source: string, code: string, lineStarts: number[]): Tes
       groups: [],
     });
 
-    const datasetNames = parsePestDatasetNames(source, code, closeParen + 1);
+    const datasetNames = parsePestDatasetNames(source, code, closeParen + 1, namedDatasets);
     for (const datasetName of datasetNames ?? []) {
       methods.push({
         name: `${displayName} (${datasetName})`,
@@ -187,7 +193,58 @@ function readPestTestName(argumentsSource: string): string | undefined {
  * a literal-only generator closure. Dynamic dataset references stay represented by the
  * parent Pest test because their cases cannot be known without executing project code.
  */
-function parsePestDatasetNames(source: string, code: string, chainStart: number): string[] | undefined {
+function parsePestNamedDatasets(
+  source: string,
+  code: string,
+): Map<string, Array<string | undefined> | undefined> {
+  const datasets = new Map<string, Array<string | undefined> | undefined>();
+  const callPattern = /\bdataset\s*\(/gi;
+  for (const match of code.matchAll(callPattern)) {
+    const start = match.index ?? 0;
+    const prefix = code.slice(Math.max(0, start - 40), start);
+    if (/\bfunction\s*$/i.test(prefix) || /(?:->|::)\s*$/i.test(prefix)) {
+      continue;
+    }
+
+    const openParen = start + match[0].lastIndexOf('(');
+    const closeParen = findMatchingParenthesis(code, openParen);
+    if (closeParen < 0) {
+      continue;
+    }
+
+    const args = splitTopLevelArguments(source, code, openParen + 1, closeParen);
+    const name = args[0] ? readPestStringLiteral(args[0].source.trim()) : undefined;
+    if (name === undefined) {
+      continue;
+    }
+
+    let labels: Array<string | undefined> | undefined;
+    const values = args[1];
+    if (args.length === 2 && values) {
+      const leadingWhitespace = values.source.length - values.source.trimStart().length;
+      const valueSource = values.source.trim();
+      const arrayOpen = values.start + leadingWhitespace;
+      if (valueSource.startsWith('[') && isStaticPhpLiteral(valueSource)) {
+        const arrayClose = findMatchingArrayBracket(code, arrayOpen);
+        if (arrayClose >= 0 && code.slice(arrayClose + 1, values.end).trim() === '') {
+          labels = parseArrayDatasetLabels(source, code, arrayOpen, arrayClose);
+        }
+      }
+    }
+
+    // Duplicate or dynamic declarations are ambiguous; do not guess their cases.
+    datasets.set(name, datasets.has(name) ? undefined : labels);
+  }
+
+  return datasets;
+}
+
+function parsePestDatasetNames(
+  source: string,
+  code: string,
+  chainStart: number,
+  namedDatasets: ReadonlyMap<string, Array<string | undefined> | undefined>,
+): string[] | undefined {
   const dimensions: Array<Array<string | undefined>> = [];
   let cursor = chainStart;
 
@@ -205,7 +262,7 @@ function parsePestDatasetNames(source: string, code: string, chainStart: number)
     }
 
     let argumentStart = openParen + 1;
-    while (argumentStart < closeParen && /\s/.test(code[argumentStart])) {
+    while (argumentStart < closeParen && /\s/.test(source[argumentStart])) {
       argumentStart += 1;
     }
     let labels: Array<string | undefined> | undefined;
@@ -217,6 +274,11 @@ function parsePestDatasetNames(source: string, code: string, chainStart: number)
       labels = parseArrayDatasetLabels(source, code, argumentStart, arrayClose);
     } else if (/^(?:static\s+)?function\b/i.test(code.slice(argumentStart, closeParen))) {
       labels = parseGeneratorDatasetLabels(source, code, argumentStart, closeParen);
+    } else {
+      const datasetName = readPestStringLiteral(source.slice(argumentStart, closeParen).trim());
+      if (datasetName !== undefined) {
+        labels = namedDatasets.get(datasetName);
+      }
     }
     if (!labels || labels.length === 0) {
       return undefined;
@@ -279,6 +341,52 @@ function parseArrayDatasetLabels(
     labels.push(stringKey);
   }
   return labels;
+}
+
+function splitTopLevelArguments(
+  source: string,
+  code: string,
+  argumentsStart: number,
+  argumentsEnd: number,
+): Array<{ source: string; code: string; start: number; end: number }> {
+  const args: Array<{ source: string; code: string; start: number; end: number }> = [];
+  let argumentStart = argumentsStart;
+  let bracketDepth = 0;
+  let parenthesisDepth = 0;
+  let braceDepth = 0;
+
+  for (let index = argumentsStart; index < argumentsEnd; index += 1) {
+    switch (code[index]) {
+      case '[': bracketDepth += 1; break;
+      case ']': bracketDepth -= 1; break;
+      case '(': parenthesisDepth += 1; break;
+      case ')': parenthesisDepth -= 1; break;
+      case '{': braceDepth += 1; break;
+      case '}': braceDepth -= 1; break;
+      case ',':
+        if (bracketDepth === 0 && parenthesisDepth === 0 && braceDepth === 0) {
+          args.push({
+            source: source.slice(argumentStart, index),
+            code: code.slice(argumentStart, index),
+            start: argumentStart,
+            end: index,
+          });
+          argumentStart = index + 1;
+        }
+        break;
+    }
+  }
+
+  if (source.slice(argumentStart, argumentsEnd).trim()) {
+    args.push({
+      source: source.slice(argumentStart, argumentsEnd),
+      code: code.slice(argumentStart, argumentsEnd),
+      start: argumentStart,
+      end: argumentsEnd,
+    });
+  }
+
+  return args;
 }
 
 function parseGeneratorDatasetLabels(
@@ -868,7 +976,7 @@ export function findMatchingBrace(source: string, openBraceIndex: number): numbe
 }
 
 export function normalizeClassName(value: string): string {
-  return value.replace(/^\\+/, '').replace(/\\\\/g, '\\');
+  return value.replace(/^\\+/, '').replace(/\\\\/g, '\\').replace(/\./g, '\\');
 }
 
 export function classNamesMatch(left: string, right: string): boolean {

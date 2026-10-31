@@ -266,6 +266,51 @@ test('combined values', fn ($left, $right) => expect($left)->not->toBe($right))
     ]);
   });
 
+  it('resolves statically declared named Pest datasets into selectable cases', () => {
+    const source = `<?php
+dataset('accounts', [
+    'admin' => ['role' => 'admin'],
+    'member' => ['role' => 'member'],
+]);
+dataset('regions', [
+    ['north', ['cities' => ['Oslo', 'Bergen']]],
+    ['south', ['cities' => ['Rome', 'Naples']]],
+]);
+
+test('account access', fn ($account) => expect($account)->toBeArray())->with('accounts');
+test('regional access', fn ($region) => expect($region)->toBeArray())->with('regions');
+`;
+
+    const methods = parseTestSource('/tmp/NamedDatasetsTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map((method) => method.name), [
+      'account access',
+      'account access (with data set "admin")',
+      'account access (with data set "member")',
+      'regional access',
+      'regional access (with data set #0)',
+      'regional access (with data set #1)',
+    ]);
+  });
+
+  it('does not guess named Pest cases when declarations or references are dynamic or ambiguous', () => {
+    const source = `<?php
+dataset('dynamic', getAccounts());
+dataset('ambiguous', ['first' => ['value']]);
+dataset('ambiguous', ['second' => ['value']]);
+
+test('dynamic declaration', fn ($account) => null)->with('dynamic');
+test('unknown declaration', fn ($account) => null)->with('external');
+test('ambiguous declaration', fn ($account) => null)->with('ambiguous');
+`;
+
+    const methods = parseTestSource('/tmp/DynamicNamedDatasetsTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map((method) => method.name), [
+      'dynamic declaration',
+      'unknown declaration',
+      'ambiguous declaration',
+    ]);
+  });
+
   it('discovers named and positional Pest datasets yielded by inline generator closures', () => {
     const source = `<?php
 test('named generator values', fn ($value) => expect($value)->not->toBeNull())
@@ -362,6 +407,13 @@ describe('classNamesMatch', () => {
     assert.equal(classNamesMatch('App\\Tests\\ExampleTest', 'ExampleTest'), true);
     assert.equal(classNamesMatch('App\\Tests\\ExampleTest', 'App\\Tests\\ExampleTest'), true);
     assert.equal(classNamesMatch('App\\Tests\\ExampleTest', 'OtherTest'), false);
+  });
+
+  it('matches PHPUnit JUnit classnames that use dots for namespace separators', () => {
+    assert.equal(
+      classNamesMatch('App.Tests.Unit.Api.Model.Auth.AuthSuccessResponseTest', 'App\\Tests\\Unit\\Api\\Model\\Auth\\AuthSuccessResponseTest'),
+      true,
+    );
   });
 });
 
