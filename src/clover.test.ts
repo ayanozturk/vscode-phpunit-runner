@@ -40,6 +40,14 @@ describe('parseCloverXml', () => {
     assert.deepEqual(files[0].lines, [{ line: 4, count: 0, type: 'stmt' }]);
   });
 
+  it('decodes decimal and hexadecimal XML references in source paths', () => {
+    const files = parseCloverXml(`<coverage>
+      <file name="/proj/white&#x20;space/Quote&#39;Test.php"><line num="1" type="stmt" count="1"/></file>
+    </coverage>`);
+
+    assert.equal(files[0].path, "/proj/white space/Quote'Test.php");
+  });
+
   it('uses only positive integer line numbers and nonnegative integer execution counts', () => {
     const files = parseCloverXml(`<coverage><file name="/proj/Numbers.php">
       <line num="1" type="stmt" count="1.5"/>

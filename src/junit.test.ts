@@ -93,6 +93,17 @@ describe('parseJUnitXml', () => {
     });
   });
 
+  it('normalizes negative or non-finite test durations to zero', () => {
+    const cases = parseJUnitXml(`<testsuites>
+      <testcase name="negative" classname="C" time="-1.25"/>
+      <testcase name="not-a-number" classname="C" time="unknown"/>
+      <testcase name="infinite" classname="C" time="Infinity"/>
+      <testcase name="valid" classname="C" time="0.125"/>
+    </testsuites>`);
+
+    assert.deepEqual(cases.map((testCase) => testCase.timeSeconds), [0, 0, 0, 0.125]);
+  });
+
   it('uses failure message attributes and preserves CDATA content', () => {
     const cases = parseJUnitXml(`<testsuite>
       <testcase name="attribute" classname="C"><failure message="assertion &gt; expectation"/></testcase>

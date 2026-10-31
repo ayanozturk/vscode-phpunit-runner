@@ -184,7 +184,7 @@ function parseTestCase(
   return {
     name,
     className,
-    timeSeconds: Number.isFinite(timeSeconds) ? timeSeconds : 0,
+    timeSeconds: Number.isFinite(timeSeconds) && timeSeconds >= 0 ? timeSeconds : 0,
     status,
     message,
     file,
