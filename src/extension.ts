@@ -16,7 +16,7 @@ import {
   firstFailureMessage,
   readJUnitReport,
 } from './junit';
-import { classNamesMatch, datasetSuffixFromTestCase, methodNameFromTestCase, parseTestSource } from './parser';
+import { datasetSuffixFromTestCase, parseTestSource } from './parser';
 import {
   formatTestOutputSegments,
   type OutputPreset,
@@ -26,6 +26,14 @@ import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
 import { parsePhpUnitXml, resolveDiscoveryGlobs, type PhpUnitSuite } from './phpunitXml';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
 import { resolveOutputFilePath } from './outputLocation';
+import {
+  findIndexedDatasetCases,
+  findIndexedFileCases,
+  findIndexedMethodCases,
+  findIndexedPestCases,
+  indexTestCases,
+  type TestCaseIndex,
+} from './resultIndex';
 import { readFailureSourceSnippets as readSourceFailureSnippets } from './sourceSnippets';
 import { findWithGlobs as findWorkspaceFilesWithGlobs } from './workspaceDiscovery';
 import type { JUnitTestCase, RunnerConfig, SourceRange, TestTarget } from './types';
@@ -602,11 +610,8 @@ async function runItem(
     return;
   }
 
-  const targets = collectExecutableItems(item);
-  for (const target of targets) {
-    run.enqueued(target);
-    run.started(target);
-  }
+  run.enqueued(item);
+  run.started(item);
 
   try {
     const result = await executePhpUnit(data, token, kind, run);
@@ -653,11 +658,11 @@ async function runFileScope(
     return;
   }
 
-  const targets = files.flatMap((file) => collectExecutableItems(file))
-    .filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index);
-  for (const target of targets) {
-    run.enqueued(target);
-    run.started(target);
+  const scopeIsExecutable = itemData.has(scope);
+  const activeItems = scopeIsExecutable ? files : [scope];
+  for (const activeItem of activeItems) {
+    run.enqueued(activeItem);
+    run.started(activeItem);
   }
 
   try {
@@ -689,13 +694,29 @@ async function runFileScope(
       run.appendOutput(`${result.reportWarning}\r\n`, undefined, scope);
     }
 
+    const caseIndex = indexTestCases(result.cases, folder?.uri.fsPath);
     for (const file of files) {
-      const fileCases = casesForFile(result.cases, file);
+      const fileCases = casesForFile(caseIndex, file);
       applyExecutionResult(run, file, {
         ...result,
         cases: fileCases,
         exitCode: fileCases.some((testCase) => testCase.status === 'failed' || testCase.status === 'errored') ? 1 : 0,
       });
+    }
+    if (!scopeIsExecutable) {
+      const disposition = executionDisposition({
+        cancelled: result.cancelled,
+        exitCode: result.exitCode,
+        caseCount: result.cases.length,
+      });
+      if (disposition === 'cancelled' || disposition === 'unverified') {
+        run.skipped(scope);
+      } else if (result.cases.some((testCase) => testCase.status === 'failed' || testCase.status === 'errored')
+        || result.exitCode !== 0) {
+        run.failed(scope, new vscode.TestMessage(result.output || 'One or more PHPUnit tests failed.'), result.duration);
+      } else {
+        run.passed(scope, result.duration);
+      }
     }
   } catch (error) {
     const message = new vscode.TestMessage(String(error));
@@ -706,6 +727,13 @@ async function runFileScope(
       } else {
         run.failed(file, message);
         markDescendants(run, file, 'skipped');
+      }
+    }
+    if (!scopeIsExecutable) {
+      if (token.isCancellationRequested) {
+        run.skipped(scope);
+      } else {
+        run.failed(scope, message);
       }
     }
   }
@@ -719,39 +747,32 @@ function collectFileItems(item: vscode.TestItem): vscode.TestItem[] {
   return collectTestItems(item.children).flatMap((child) => collectFileItems(child));
 }
 
-function casesForFile(cases: JUnitTestCase[], file: vscode.TestItem): JUnitTestCase[] {
+function casesForFile(index: TestCaseIndex, file: vscode.TestItem): JUnitTestCase[] {
   const fileData = itemData.get(file);
   if (!fileData?.filePath) {
     return [];
   }
-  const filePath = fileData.filePath;
-  const expectedPath = path.resolve(filePath);
   const classNames = new Set(collectMethodItems(file).flatMap((item) => {
     const className = itemData.get(item)?.className;
     return className ? [className] : [];
   }));
-  return cases.filter((testCase) => {
-    if (testCase.file) {
-      const workspaceFolder = vscode.workspace.getWorkspaceFolder(file.uri!);
-      const actualPath = path.isAbsolute(testCase.file)
-        ? path.resolve(testCase.file)
-        : path.resolve(workspaceFolder?.uri.fsPath ?? path.dirname(filePath), testCase.file);
-      return actualPath === expectedPath;
-    }
-    return [...classNames].some((className) => classNamesMatch(testCase.className, className));
-  });
+  return findIndexedFileCases(index, fileData.filePath, classNames);
 }
 
 function applyExecutionResult(
   run: vscode.TestRun,
   item: vscode.TestItem,
   result: { output: string; exitCode: number; duration: number; cases: JUnitTestCase[]; reportWarning?: string; cancelled?: boolean },
+  caseIndex: TestCaseIndex = indexTestCases(
+    result.cases,
+    vscode.workspace.getWorkspaceFolder(item.uri ?? vscode.Uri.file(process.cwd()))?.uri.fsPath,
+  ),
 ): void {
   let methods = collectMethodItems(item);
   for (const methodItem of methods) {
     const data = itemData.get(methodItem);
     if (data?.kind === 'method' && data.className && data.methodName && !data.pestTestName) {
-      syncDatasetItems(run, methodItem, data, findCasesForMethod(result.cases, data.className, data.methodName));
+      syncDatasetItems(run, methodItem, data, findIndexedMethodCases(caseIndex, data.className, data.methodName));
     }
   }
   methods = collectMethodItems(item);
@@ -803,12 +824,10 @@ function applyExecutionResult(
     }
 
     const cases = data.kind === 'dataset' && datasetName
-      ? result.cases.filter((testCase) => (
-        testCase.name === datasetName && classNamesMatch(testCase.className, className)
-      ))
+      ? findIndexedDatasetCases(caseIndex, className, datasetName)
       : data.pestTestName
-        ? findCasesForPestTest(result.cases, data.pestTestName, data.uri.fsPath)
-        : findCasesForMethod(result.cases, className, methodName);
+        ? findIndexedPestCases(caseIndex, data.pestTestName, data.uri.fsPath)
+        : findIndexedMethodCases(caseIndex, className, methodName);
     if (!cases || cases.length === 0) {
       run.skipped(methodItem);
       continue;
@@ -894,28 +913,6 @@ function syncDatasetItems(
       methodItem.children.delete(id);
     }
   }
-}
-
-function findCasesForMethod(cases: JUnitTestCase[], className: string, methodName: string): JUnitTestCase[] {
-  return cases.filter((item) => (
-    classNamesMatch(item.className, className)
-    && methodNameFromTestCase(item.name) === methodName
-  ));
-}
-
-function findCasesForPestTest(cases: JUnitTestCase[], testName: string, filePath: string): JUnitTestCase[] {
-  const expectedPath = path.resolve(filePath);
-  return cases.filter((item) => {
-    const nameMatches = item.name.includes(testName);
-    const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(filePath));
-    const actualPath = item.file
-      ? path.isAbsolute(item.file)
-        ? path.resolve(item.file)
-        : path.resolve(workspaceFolder?.uri.fsPath ?? path.dirname(expectedPath), item.file)
-      : undefined;
-    const fileMatches = !actualPath || actualPath === expectedPath;
-    return nameMatches && fileMatches;
-  });
 }
 
 function createFailureMessage(item: vscode.TestItem, cases: JUnitTestCase[]): vscode.TestMessage {
@@ -1239,8 +1236,9 @@ async function runByGroup(groupOverride?: string): Promise<void> {
         if (result.reportWarning) {
           run.appendOutput(`${result.reportWarning}\r\n`);
         }
+        const resultIndex = indexTestCases(result.cases, folder.uri.fsPath);
         for (const item of items) {
-          applyExecutionResult(run, item, result);
+          applyExecutionResult(run, item, result, resultIndex);
         }
       } catch (error) {
         const message = new vscode.TestMessage(String(error));

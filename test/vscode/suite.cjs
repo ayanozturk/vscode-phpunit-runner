@@ -25,7 +25,7 @@ function captureRunEvents(controller, events, coverages = [], outputs = [], outp
     return new Proxy(run, {
       get(target, property) {
         const method = Reflect.get(target, property, target);
-        if (['passed', 'failed', 'skipped', 'errored'].includes(property)) {
+        if (['started', 'passed', 'failed', 'skipped', 'errored'].includes(property)) {
           return (item, ...rest) => {
             events.push({ state: property, id: item.id, label: item.label });
             return method.call(target, item, ...rest);
@@ -294,12 +294,16 @@ exports.run = async () => {
     ));
     assert.ok(workspaceATestsFolder, 'workspace A test folder is available');
     const disabledFolderClears = outputClears.length;
+    const folderRunEvents = [];
+    const restoreFolderRunCapture = captureRunEvents(api.controller, folderRunEvents);
     await fs.rm(path.join(workspaceA.uri.fsPath, 'runner.log'), { force: true });
     await testRunProfile.runHandler(
       new vscode.TestRunRequest([workspaceATestsFolder]),
       new vscode.CancellationTokenSource().token,
     );
+    restoreFolderRunCapture();
     assert.equal(outputClears.length, disabledFolderClears, 'folder selections use descendant workspace settings');
+    assert.equal(folderRunEvents.filter((event) => event.state === 'started').length, 1, 'large scopes start their parent while PHPUnit runs instead of sending a start update for every test');
     const folderInvocations = (await fs.readFile(path.join(workspaceA.uri.fsPath, 'runner.log'), 'utf8')).trim().split('\n');
     assert.equal(folderInvocations.length, 1, 'a folder scope starts PHPUnit once');
     assert.match(folderInvocations[0], /AlphaTest\.php/, 'the folder invocation includes the first selected PHP test file');
