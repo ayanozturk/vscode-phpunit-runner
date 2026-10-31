@@ -64,6 +64,17 @@ describe('parseJUnitXml', () => {
     assert.deepEqual(parseLocationFromMessage('no location here'), {});
   });
 
+  it('extracts Unix and Windows file locations when paths contain spaces', () => {
+    assert.deepEqual(
+      parseLocationFromMessage('Failed in /workspace with spaces/tests/Example Test.php:42'),
+      { file: '/workspace with spaces/tests/Example Test.php', line: 42 },
+    );
+    assert.deepEqual(
+      parseLocationFromMessage('  C:\\Work Folder\\tests\\Example Test.php:17  '),
+      { file: 'C:\\Work Folder\\tests\\Example Test.php', line: 17 },
+    );
+  });
+
   it('decodes xml entities in failure bodies', () => {
     const cases = parseJUnitXml(`<testcase name="t" classname="C"><failure>a &lt; b &amp; c</failure></testcase>`);
     assert.equal(cases[0].message, 'a < b & c');

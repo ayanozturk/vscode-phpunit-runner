@@ -20,7 +20,13 @@ describe('unverified PHPUnit results', () => {
 
   it('gives cancellation precedence over the process exit and report', () => {
     assert.equal(executionDisposition({ cancelled: true, exitCode: 143, caseCount: 2 }), 'cancelled');
+    assert.equal(executionDisposition({ cancelled: true, exitCode: 0, caseCount: 0 }), 'cancelled');
     assert.equal(executionDisposition({ cancelled: false, exitCode: 0, caseCount: 0 }), 'unverified');
     assert.equal(executionDisposition({ exitCode: 1, caseCount: 0 }), 'reported');
+  });
+
+  it('reports structured cases even when the process exits unsuccessfully', () => {
+    assert.equal(executionDisposition({ exitCode: 0, caseCount: 1 }), 'reported');
+    assert.equal(executionDisposition({ exitCode: 1, caseCount: 3 }), 'reported');
   });
 });

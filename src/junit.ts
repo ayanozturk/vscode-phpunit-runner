@@ -151,12 +151,13 @@ export function firstFailureLocation(cases: JUnitTestCase[]): { file?: string; l
 }
 
 export function parseLocationFromMessage(message: string): { file?: string; line?: number } {
-  const match = message.match(/([A-Za-z]:\\[^\s:]+?\.php|\/[^\s:]+?\.php):(\d+)/);
-  if (!match) {
-    return {};
+  for (const line of message.split(/\r?\n/)) {
+    const match = line.match(/(?:^|\s)([A-Za-z]:\\.+?\.php|\/.+?\.php):(\d+)(?::\d+)?(?:\s|$)/);
+    if (match) {
+      return { file: match[1], line: Number(match[2]) };
+    }
   }
-
-  return { file: match[1], line: Number(match[2]) };
+  return {};
 }
 
 function parseTestCase(
