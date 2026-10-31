@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import { unmapWithMappings, type PathMapping } from './commandTemplate';
 import { testCodeLensTargets } from './codeLens';
 import { readCloverReport } from './coverage';
+import { createDebouncedTaskScheduler } from './continuousTesting';
 import { autoDetectConfigurationFile, resolveInvocation } from './invoke';
 import { groupItemsBy, runGroupsSequentially } from './grouping';
 import { terminateProcessTree } from './processTree';
@@ -56,8 +57,9 @@ const continuousRuns = new Map<string, vscode.CancellationTokenSource>();
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionTestApi | undefined> {
   outputChannel = vscode.window.createOutputChannel('PHPUnit Runner');
   controller = vscode.tests.createTestController('phpunitRunner', 'PHPUnit Runner');
+  const continuousTestingScheduler = createDebouncedTaskScheduler(250);
 
-  context.subscriptions.push(outputChannel, controller);
+  context.subscriptions.push(outputChannel, controller, { dispose: () => continuousTestingScheduler.dispose() });
 
   controller.resolveHandler = async (item) => {
     if (item) {
@@ -119,7 +121,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
 
       await refreshUri(document.uri, document.getText());
       if (getConfig(vscode.workspace.getWorkspaceFolder(document.uri)).get<boolean>('continuousTesting', false)) {
-        await rerunSavedFile(document.uri);
+        continuousTestingScheduler.schedule(document.uri.toString(), async () => {
+          if (getConfig(vscode.workspace.getWorkspaceFolder(document.uri)).get<boolean>('continuousTesting', false)) {
+            await rerunSavedFile(document.uri);
+          }
+        });
       }
     }),
     vscode.workspace.onDidDeleteFiles(async (event) => {

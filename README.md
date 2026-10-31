@@ -38,7 +38,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 - Adds PHPUnit data sets to their method after the first run so each data set can be run separately.
 - Supports run, debug, and coverage profiles, plus commands to run all, rerun the last selection, run failed tests, or choose a group.
 - Supports local and Docker execution, custom remote command templates, environment variables, and host-to-remote path mappings.
-- Can save dirty editors before a run and automatically rerun a saved PHP file.
+- Can save dirty editors before a run and automatically rerun a saved PHP file. Rapid saves to the same file are coalesced into one run.
 
 ## Configuration
 
@@ -139,11 +139,14 @@ Quote arguments that contain spaces so they remain one argument.
 ```json
 {
   "phpunitRunner.docker.enable": true,
+  "phpunitRunner.docker.command": "docker compose",
   "phpunitRunner.docker.container": "app",
   "phpunitRunner.docker.workspacePath": "/var/www/html",
   "phpunitRunner.phpunitCommand": "vendor/bin/phpunit"
 }
 ```
+
+Set `phpunitRunner.docker.command` to `docker` for the Docker CLI or `docker compose` for the Compose subcommand. A quoted executable path can include spaces.
 
 ### Laravel Sail or Docker Compose
 
