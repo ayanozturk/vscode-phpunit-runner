@@ -8,6 +8,7 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
   const namespaces = findNamespaces(code);
   const namespaceAliases = new Map<string, Set<string>>();
   const namespaceTestWithAliases = new Map<string, Set<string>>();
+  const namespaceTestWithJsonAliases = new Map<string, Set<string>>();
   const classPattern = /\b(?:(?:final|abstract|readonly)\s+)*class\s+([A-Za-z_][A-Za-z0-9_]*)[^\{]*\{/gi;
   for (const match of code.matchAll(classPattern)) {
     const matchText = match[0];
@@ -41,12 +42,22 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
       );
       namespaceTestWithAliases.set(namespaceKey, testWithAttributeAliases);
     }
+    let testWithJsonAttributeAliases = namespaceTestWithJsonAliases.get(namespaceKey);
+    if (!testWithJsonAttributeAliases) {
+      testWithJsonAttributeAliases = findTestWithJsonAttributeAliases(
+        code,
+        namespace?.start ?? 0,
+        namespace?.end ?? code.length,
+      );
+      namespaceTestWithJsonAliases.set(namespaceKey, testWithJsonAttributeAliases);
+    }
     const methods = parseTestMethods(
       body,
       openBraceIndex + 1,
       lineStarts,
       testAttributeAliases,
       testWithAttributeAliases,
+      testWithJsonAttributeAliases,
     );
     if (methods.length === 0) {
       continue;
@@ -635,6 +646,7 @@ export function parseTestMethods(
   lineStarts: number[],
   testAttributeAliases: ReadonlySet<string> = new Set(),
   testWithAttributeAliases: ReadonlySet<string> = new Set(),
+  testWithJsonAttributeAliases: ReadonlySet<string> = new Set(),
 ): TestMethod[] {
   const methods: TestMethod[] = [];
   const code = maskNonCode(body);
@@ -663,7 +675,7 @@ export function parseTestMethods(
       groups: extractGroups(header),
     });
 
-    const datasets = testWithDatasetNames(header, testWithAttributeAliases);
+    const datasets = testWithDatasetNames(header, testWithAttributeAliases, testWithJsonAttributeAliases);
     for (const dataset of datasets ?? []) {
       methods.push({
         name: dataset.label,
@@ -680,6 +692,7 @@ export function parseTestMethods(
 function testWithDatasetNames(
   header: string,
   aliases: ReadonlySet<string>,
+  jsonAliases: ReadonlySet<string>,
 ): Array<{ label: string; caseSuffix: string }> | undefined {
   const code = maskNonCode(header);
   const attributePattern = /#\[\s*(\\?[A-Za-z_][A-Za-z0-9_\\]*)/g;
@@ -688,7 +701,13 @@ function testWithDatasetNames(
 
   for (const match of code.matchAll(attributePattern)) {
     const attributeName = match[1].replace(/^\\/, '').toLowerCase();
-    if (attributeName !== 'phpunit\\framework\\attributes\\testwith' && !aliases.has(attributeName)) {
+    const isJsonAttribute = attributeName === 'phpunit\\framework\\attributes\\testwithjson'
+      || jsonAliases.has(attributeName);
+    if (
+      !isJsonAttribute
+      && attributeName !== 'phpunit\\framework\\attributes\\testwith'
+      && !aliases.has(attributeName)
+    ) {
       continue;
     }
     found = true;
@@ -715,7 +734,20 @@ function testWithDatasetNames(
     const argumentsCode = code.slice(argumentStart + 1, closeParen);
     const args = splitPhpArguments(argumentsSource, argumentsCode);
     const dataSource = args[0]?.trim();
-    if (!dataSource?.startsWith('[') || !isStaticPhpLiteral(dataSource)) {
+    if (isJsonAttribute) {
+      const jsonSource = dataSource ? readPhpStringLiteral(dataSource) : undefined;
+      if (jsonSource === undefined) {
+        return undefined;
+      }
+      try {
+        const decoded: unknown = JSON.parse(jsonSource);
+        if (decoded === null || typeof decoded !== 'object') {
+          return undefined;
+        }
+      } catch {
+        return undefined;
+      }
+    } else if (!dataSource?.startsWith('[') || !isStaticPhpLiteral(dataSource)) {
       return undefined;
     }
 
@@ -833,6 +865,10 @@ function findTestAttributeAliases(code: string, namespaceStart: number, namespac
 
 function findTestWithAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {
   return findAttributeAliases(code, namespaceStart, namespaceEnd, 'phpunit\\framework\\attributes\\testwith');
+}
+
+function findTestWithJsonAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {
+  return findAttributeAliases(code, namespaceStart, namespaceEnd, 'phpunit\\framework\\attributes\\testwithjson');
 }
 
 function findAttributeAliases(

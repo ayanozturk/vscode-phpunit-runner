@@ -237,7 +237,8 @@ async function discoverWorkspaceTests(): Promise<void> {
   const uris = await findCandidateTestFiles();
   controller.items.replace([]);
   fileItemPaths.clear();
-  await Promise.all(uris.map((uri) => refreshUri(uri)));
+  const suiteConfigLookups = new Map<string, Promise<SuiteConfigCache | undefined>>();
+  await Promise.all(uris.map((uri) => refreshUri(uri, undefined, suiteConfigLookups)));
 }
 
 async function refreshForConfiguration(uri: vscode.Uri): Promise<void> {
@@ -294,31 +295,24 @@ async function findWithGlobs(
   );
 }
 
-async function findSuiteForFile(uri: vscode.Uri, folder: vscode.WorkspaceFolder): Promise<string | undefined> {
-  const xmlPath = await autoDetectConfigurationFile(folder.uri.fsPath);
-  if (!xmlPath) {
-    suiteConfigCache.delete(folder.uri.fsPath);
+async function findSuiteForFile(
+  uri: vscode.Uri,
+  folder: vscode.WorkspaceFolder,
+  lookups?: Map<string, Promise<SuiteConfigCache | undefined>>,
+): Promise<string | undefined> {
+  const workspacePath = folder.uri.fsPath;
+  let configLookup = lookups?.get(workspacePath);
+  if (!configLookup) {
+    configLookup = loadSuiteConfig(folder);
+    lookups?.set(workspacePath, configLookup);
+  }
+
+  const cached = await configLookup;
+  if (!cached) {
     return undefined;
   }
 
-  let modifiedAt: number;
-  try {
-    modifiedAt = (await fs.stat(xmlPath)).mtimeMs;
-  } catch {
-    return undefined;
-  }
-
-  let cached = suiteConfigCache.get(folder.uri.fsPath);
-  if (!cached || cached.xmlPath !== xmlPath || cached.modifiedAt !== modifiedAt) {
-    const xmlText = await fs.readFile(xmlPath, 'utf8').catch(() => undefined);
-    if (xmlText === undefined) {
-      return undefined;
-    }
-    cached = { xmlPath, modifiedAt, suites: parsePhpUnitXml(xmlText).suites };
-    suiteConfigCache.set(folder.uri.fsPath, cached);
-  }
-
-  const xmlDirectory = path.dirname(xmlPath);
+  const xmlDirectory = path.dirname(cached.xmlPath);
   const filePath = path.resolve(uri.fsPath);
   for (const suite of cached.suites) {
     const excluded = suite.excludes.some((exclude) => isPathInside(
@@ -344,6 +338,33 @@ async function findSuiteForFile(uri: vscode.Uri, folder: vscode.WorkspaceFolder)
   return undefined;
 }
 
+async function loadSuiteConfig(folder: vscode.WorkspaceFolder): Promise<SuiteConfigCache | undefined> {
+  const workspacePath = folder.uri.fsPath;
+  const xmlPath = await autoDetectConfigurationFile(workspacePath);
+  if (!xmlPath) {
+    suiteConfigCache.delete(workspacePath);
+    return undefined;
+  }
+
+  let modifiedAt: number;
+  try {
+    modifiedAt = (await fs.stat(xmlPath)).mtimeMs;
+  } catch {
+    return undefined;
+  }
+
+  let cached = suiteConfigCache.get(workspacePath);
+  if (!cached || cached.xmlPath !== xmlPath || cached.modifiedAt !== modifiedAt) {
+    const xmlText = await fs.readFile(xmlPath, 'utf8').catch(() => undefined);
+    if (xmlText === undefined) {
+      return undefined;
+    }
+    cached = { xmlPath, modifiedAt, suites: parsePhpUnitXml(xmlText).suites };
+    suiteConfigCache.set(workspacePath, cached);
+  }
+  return cached;
+}
+
 function isPathInside(filePath: string, directoryPath: string): boolean {
   const relative = path.relative(directoryPath, filePath);
   return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
@@ -358,7 +379,11 @@ async function refreshTestItem(item: vscode.TestItem): Promise<void> {
   await refreshUri(data.uri);
 }
 
-async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
+async function refreshUri(
+  uri: vscode.Uri,
+  text?: string,
+  suiteConfigLookups?: Map<string, Promise<SuiteConfigCache | undefined>>,
+): Promise<void> {
   if (path.extname(uri.fsPath).toLowerCase() !== '.php') {
     return;
   }
@@ -370,7 +395,9 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
   }
 
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-  const suiteName = workspaceFolder ? await findSuiteForFile(uri, workspaceFolder) : undefined;
+  const suiteName = workspaceFolder
+    ? await findSuiteForFile(uri, workspaceFolder, suiteConfigLookups)
+    : undefined;
   const label = path.basename(uri.fsPath);
 
   const fileItem = controller.createTestItem(uri.toString(), label, uri);

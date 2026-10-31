@@ -113,6 +113,7 @@ exports.run = async () => {
         '      *"generated values"*) testcaseName=\'generated values with data set "first"\';;',
         '      *"TestWithTest::testWithRows with data set #0"*) testcaseName=\'testWithRows with data set #0\'; testcaseClass=\'TestWithTest\'; testcaseFile=\'tests/TestWithTest.php\';;',
         "      *'TestWithTest::testWithRows with data set \"positive pair\"'*) testcaseName='testWithRows with data set &quot;positive pair&quot;'; testcaseClass='TestWithTest'; testcaseFile='tests/TestWithTest.php';;",
+        "      *'TestWithJsonTest::testJsonRows with data set \"json named\"'*) testcaseName='testJsonRows with data set &quot;json named&quot;'; testcaseClass='TestWithJsonTest'; testcaseFile='tests/TestWithJsonTest.php';;",
         '    esac',
         '    previous=""',
         '    continue',
@@ -176,6 +177,17 @@ class TestWithTest
 }
 `, 'utf8');
 
+    await fs.writeFile(path.join(workspaceA.uri.fsPath, 'tests', 'TestWithJsonTest.php'), `<?php
+use PHPUnit\\Framework\\Attributes\\TestWithJson;
+
+class TestWithJsonTest
+{
+    #[TestWithJson('[1, "one"]')]
+    #[TestWithJson('[2, "two"]', 'json named')]
+    public function testJsonRows(int $id, string $label): void {}
+}
+`, 'utf8');
+
     await api.refresh();
     const findMethod = (name) => flatten(api.controller.items).find((item) => item.label === name);
     assert.ok(findMethod('testAlpha'), 'workspace A test is discovered');
@@ -200,6 +212,13 @@ class TestWithTest
       [...testWithParent.children].map(([, item]) => item.label),
       ['#0', 'positive pair', '#1'],
       'literal TestWith rows are selectable before running the test',
+    );
+    const testWithJsonParent = findMethod('testJsonRows');
+    assert.ok(testWithJsonParent, 'PHPUnit TestWithJson method is discovered');
+    assert.deepEqual(
+      [...testWithJsonParent.children].map(([, item]) => item.label),
+      ['#0', 'json named'],
+      'literal TestWithJson rows are selectable before running the test',
     );
     const pestEvents = [];
     const restorePestCapture = captureRunEvents(api.controller, pestEvents);
@@ -282,6 +301,30 @@ class TestWithTest
     assert.ok(
       testWithEvents.some((event) => event.id === testWithDataset.id && event.state === 'passed'),
       `the selected TestWith row receives its PHPUnit result: ${JSON.stringify(testWithEvents)}`,
+    );
+
+    const testWithJsonDataset = [...testWithJsonParent.children].map(([, item]) => item).find((item) => item.label === 'json named');
+    assert.ok(testWithJsonDataset);
+    const testWithJsonLog = path.join(workspaceA.uri.fsPath, 'runner.log');
+    await fs.writeFile(testWithJsonLog, '', 'utf8');
+    const testWithJsonEvents = [];
+    const restoreTestWithJsonCapture = captureRunEvents(api.controller, testWithJsonEvents);
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: 'test-with' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([testWithJsonDataset]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreTestWithJsonCapture();
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    const testWithJsonInvocation = await fs.readFile(testWithJsonLog, 'utf8');
+    assert.ok(testWithJsonInvocation.includes('--filter ~^TestWithJsonTest::testJsonRows with data set "json named"$~i'), testWithJsonInvocation);
+    assert.ok(
+      testWithJsonEvents.some((event) => event.id === testWithJsonDataset.id && event.state === 'passed'),
+      `the selected TestWithJson row receives its PHPUnit result: ${JSON.stringify(testWithJsonEvents)}`,
     );
 
     const outputPresetConfig = vscode.workspace.getConfiguration('phpunitRunner', workspaceA);

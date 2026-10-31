@@ -4,6 +4,20 @@ import type { JUnitStatus, JUnitTestCase } from './types';
 import { methodNameFromTestCase, normalizeClassName } from './parser';
 import { normalizeSaxAttributes, readSaxAttribute } from './xmlAttributes';
 
+type ResultElement = 'skipped' | 'failure' | 'error';
+
+const RESULT_PRIORITY: Record<ResultElement, number> = {
+  skipped: 1,
+  failure: 2,
+  error: 3,
+};
+
+const RESULT_STATUS: Record<ResultElement, JUnitStatus> = {
+  skipped: 'skipped',
+  failure: 'failed',
+  error: 'errored',
+};
+
 export function parseJUnitXml(xml: string): JUnitTestCase[] {
   if (!xml.trim()) {
     return [];
@@ -14,7 +28,7 @@ export function parseJUnitXml(xml: string): JUnitTestCase[] {
     attributes: Record<string, string>;
     status: JUnitStatus;
     message: string;
-    activeResult?: 'skipped' | 'failure' | 'error';
+    activeResult?: ResultElement;
     resultPriority: number;
     resultMessage: string;
     resultAttributeMessage: string;
@@ -42,11 +56,12 @@ export function parseJUnitXml(xml: string): JUnitTestCase[] {
       return;
     }
 
-    const priority = { skipped: 1, failure: 2, error: 3 };
-    if (priority[name] > current.resultPriority) {
-      current.activeResult = name;
-      current.resultPriority = priority[name];
-      current.status = name === 'failure' ? 'failed' : name === 'error' ? 'errored' : 'skipped';
+    const resultElement = name as ResultElement;
+    const priority = RESULT_PRIORITY[resultElement];
+    if (priority > current.resultPriority) {
+      current.activeResult = resultElement;
+      current.resultPriority = priority;
+      current.status = RESULT_STATUS[resultElement];
       current.resultMessage = '';
       current.resultAttributeMessage = readSaxAttribute(tag.attributes, 'message');
     }

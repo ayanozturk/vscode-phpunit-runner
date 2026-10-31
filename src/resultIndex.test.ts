@@ -58,6 +58,25 @@ describe('JUnit result index', () => {
     );
   });
 
+  it('retains duplicate full dataset cases in report order', () => {
+    const first = testCase({
+      name: 'testFirst with data set "shared"',
+      file: 'tests/FirstTest.php',
+    });
+    const repeated = testCase({
+      name: 'testFirst with data set "shared"',
+      file: 'tests/FirstTest.php',
+      status: 'failed',
+    });
+    const index = indexTestCases([first, repeated], '/workspace');
+
+    assert.deepEqual(
+      findIndexedDatasetCases(index, 'App\\Tests\\ExampleTest', repeated.name),
+      [first, repeated],
+      'duplicate report entries remain available so callers can aggregate their outcomes',
+    );
+  });
+
   it('groups relative testcase files under their workspace and uses classname for missing file attributes', () => {
     const explicit = testCase({ file: 'tests/ExampleTest.php' });
     const withoutFile = testCase({ name: 'testAlsoWorks', className: 'Tests.ExampleTest' });
@@ -94,6 +113,18 @@ describe('JUnit result index', () => {
     assert.deepEqual(
       findIndexedPestCases(index, 'adds values', '/workspace/tests/ValuesTest.php'),
       [local, noFile],
+    );
+  });
+
+  it('falls back to exact matching for Pest names shorter than one trigram', () => {
+    const first = testCase({ name: 'ab case one' });
+    const second = testCase({ name: 'ab case two' });
+    const nonMatch = testCase({ name: 'ac case' });
+    const index = indexTestCases([first, second, nonMatch], '/workspace');
+
+    assert.deepEqual(
+      findIndexedPestCases(index, 'ab', '/workspace/tests/PestTest.php'),
+      [first, second],
     );
   });
 

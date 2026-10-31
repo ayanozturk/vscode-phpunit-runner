@@ -202,6 +202,52 @@ class AmbiguousNamedAttributeDataTest {
     ]);
   });
 
+  it('discovers literal PHPUnit TestWithJson data sets with optional names', () => {
+    const source = `<?php
+use PHPUnit\\Framework\\Attributes\\TestWith;
+use PHPUnit\\Framework\\Attributes\\TestWithJson as JsonData;
+
+class JsonAttributeDataTest {
+    #[JsonData('[1, "one"]')]
+    #[JsonData('{"name":"Ada"}', 'named json')]
+    #[TestWith([true])]
+    public function testJsonData(mixed $value): void {}
+}
+`;
+
+    const methods = parseTestSource('/tmp/JsonAttributeDataTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map(({ name, phpunitDatasetName }) => ({ name, phpunitDatasetName })), [
+      { name: 'testJsonData', phpunitDatasetName: undefined },
+      { name: '#0', phpunitDatasetName: 'with data set #0' },
+      { name: 'named json', phpunitDatasetName: 'with data set "named json"' },
+      { name: '#1', phpunitDatasetName: 'with data set #1' },
+    ]);
+  });
+
+  it('does not guess PHPUnit TestWithJson cases for dynamic, invalid, or non-array JSON data', () => {
+    const source = `<?php
+use PHPUnit\\Framework\\Attributes\\TestWithJson;
+
+class DynamicJsonAttributeDataTest {
+    #[TestWithJson($json)]
+    public function testDynamicJson(mixed $value): void {}
+
+    #[TestWithJson('{invalid json}')]
+    public function testInvalidJson(mixed $value): void {}
+
+    #[TestWithJson('"not an array"')]
+    public function testScalarJson(mixed $value): void {}
+}
+`;
+
+    const methods = parseTestSource('/tmp/DynamicJsonAttributeDataTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map(({ name, phpunitDatasetName }) => ({ name, phpunitDatasetName })), [
+      { name: 'testDynamicJson', phpunitDatasetName: undefined },
+      { name: 'testInvalidJson', phpunitDatasetName: undefined },
+      { name: 'testScalarJson', phpunitDatasetName: undefined },
+    ]);
+  });
+
   it('discovers TestWith through grouped namespace aliases and fully qualified attributes', () => {
     const source = `<?php
 namespace App\\Tests {

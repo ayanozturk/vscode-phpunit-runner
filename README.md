@@ -10,7 +10,7 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Run configured suites directly.** Named suites from `phpunit.xml` appear as groups in the Testing view and run with PHPUnit’s suite selection, with individual results mapped back to discovered tests.
 - **Run the right amount.** Run a test at the cursor, the open file, failed tests, a group, or the whole suite. Rerun the last selection when you need another pass.
 - **Run or debug inline.** Use the Run Test and Debug Test actions shown above discovered PHPUnit methods and Pest cases.
-- **Work with data providers.** After a test run, PHPUnit data sets appear beneath their test and can be run individually.
+- **Work with data providers.** Literal PHPUnit `#[TestWith]` and `#[TestWithJson]` rows appear beneath each test before the first run; data-provider cases discovered from results can also be run individually.
 - **Run Pest data sets individually.** Literal arrays and inline generators with literal `yield` values passed to Pest’s `->with()` appear under their test, including chained data sets.
 - **Understand failures quickly.** See colored outcomes, assertion messages, source locations, and a short PHP code frame for readable local failure files in VS Code’s Test Results panel.
 - **Choose your test output.** Switch between detailed per-test results, a compact progress summary, or plain per-test lines.
@@ -29,7 +29,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 ## Features
 
 - Discovers PHPUnit methods marked with a `test*` name, `@test` docblock, or `#[Test]` attribute.
-- Discovers literal PHPUnit `#[TestWith([...])]` rows before the first run, showing numeric labels such as `#0` or custom names such as `positive pair` as selectable data-set tests.
+- Discovers literal PHPUnit `#[TestWith([...])]` and `#[TestWithJson('...')]` rows before the first run, showing numeric labels such as `#0` or custom names such as `positive pair` as selectable data-set tests.
 - Discovers function-style Pest `test()` and `it()` cases with literal string names.
 - Discovers statically declared Pest `dataset()` values, `->with([...])` data sets, and inline generator closures with literal `yield` values as selectable child tests, including chained data sets.
 - Groups Pest tests inside named `describe()` blocks so each context can be run as a unit.

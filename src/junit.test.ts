@@ -162,6 +162,20 @@ Stack trace:
     ]);
   });
 
+  it('keeps the first message when multiple results have the same priority', () => {
+    const cases = parseJUnitXml(`<testsuite>
+      <testcase name="duplicate-errors" classname="C">
+        <error>First runtime error</error>
+        <error>Second runtime error</error>
+      </testcase>
+    </testsuite>`);
+
+    assert.deepEqual(
+      { status: cases[0].status, message: cases[0].message },
+      { status: 'errored', message: 'First runtime error' },
+    );
+  });
+
   it('rejects malformed comments and unknown XML entities', () => {
     assert.throws(() => parseJUnitXml('<testsuites><!-- unfinished</testsuites>'));
     assert.throws(() => parseJUnitXml('<testcase name="t" classname="C"><failure>bad &unknown; entity</failure></testcase>'));
