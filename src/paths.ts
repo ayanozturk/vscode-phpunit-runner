@@ -71,7 +71,7 @@ export function isPhpScript(command: string): boolean {
 }
 
 export function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return value.replace(/[.*+?^${}()|[\]\\~]/g, '\\$&');
 }
 
 export const DEFAULT_TEST_GLOBS = ['**/*Test.php', '**/tests/**/*.php'];

@@ -131,13 +131,13 @@ export async function resolveInvocation(options: {
   }
 
   if (target.datasetName && target.className) {
-    phpunitArgs.push('--filter', `^${escapeRegex(`${target.className}::${target.datasetName}`)}$`);
+    phpunitArgs.push('--filter', `~^${escapeRegex(`${target.className}::${target.datasetName}`)}$~i`);
   } else if (target.pestTestName) {
-    phpunitArgs.push('--filter', escapeRegex(target.pestTestName));
+    phpunitArgs.push('--filter', `~${escapeRegex(target.pestTestName)}~i`);
   } else if (target.className && target.methodName) {
-    phpunitArgs.push('--filter', `^${escapeRegex(target.className)}::${escapeRegex(target.methodName)}(?: with data set .*|#.*|@.*)?$`);
+    phpunitArgs.push('--filter', `~^${escapeRegex(target.className)}::${escapeRegex(target.methodName)}(?: with data set .*)?$~i`);
   } else if (target.className) {
-    phpunitArgs.push('--filter', `^${escapeRegex(target.className)}(?:::.*)?$`);
+    phpunitArgs.push('--filter', `~^${escapeRegex(target.className)}(?:::.*)?$~i`);
   }
 
   if (target.filePath) {

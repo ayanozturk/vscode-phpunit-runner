@@ -182,7 +182,7 @@ exports.run = async () => {
     );
     restoreOutputCapture();
     await outputFormatConfig.update('output.format', previousOutputFormat, vscode.ConfigurationTarget.WorkspaceFolder);
-    assert.match(customOutput.join(''), /RESULT: PASS \^AlphaTest::testAlpha/);
+    assert.match(customOutput.join(''), /RESULT: PASS ~\^AlphaTest::testAlpha/);
     assert.doesNotMatch(customOutput.join(''), /\u001b\[/, 'custom plain output contains no ANSI colors');
 
     const multiCaseOutput = [];

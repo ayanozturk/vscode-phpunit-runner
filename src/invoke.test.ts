@@ -128,8 +128,8 @@ describe('resolveInvocation', () => {
     assert.equal(invocation.args[0], 'exec');
     assert.ok(invocation.args.includes('-u'));
     assert.ok(invocation.args.includes('--filter'));
-    assert.ok(invocation.args.some((arg) => arg.includes('ExampleTest::testItWorks')));
-    assert.ok(invocation.args.some((arg) => arg.includes('with data set .*|#.*|@.*')));
+    const filterIndex = invocation.args.indexOf('--filter');
+    assert.equal(invocation.args[filterIndex + 1], '~^App\\\\Tests\\\\ExampleTest::testItWorks(?: with data set .*)?$~i');
     assert.ok(invocation.args.includes('/var/www/html/vendor/bin/phpunit'));
     assert.ok(invocation.args.includes('/var/www/html/tests/ExampleTest.php'));
   });
@@ -395,7 +395,7 @@ describe('resolveInvocation', () => {
 
     const filterIndex = invocation.args.indexOf('--filter');
     assert.ok(filterIndex >= 0);
-    assert.match(invocation.args[filterIndex + 1], /ExampleTest::testAdd with data set "zeros"/);
+    assert.equal(invocation.args[filterIndex + 1], '~^App\\\\Tests\\\\ExampleTest::testAdd with data set "zeros"$~i');
   });
 
   it('filters a selected Pest data set by its complete case name', async () => {
@@ -415,7 +415,7 @@ describe('resolveInvocation', () => {
 
     const filterIndex = invocation.args.indexOf('--filter');
     assert.ok(filterIndex >= 0);
-    assert.equal(invocation.args[filterIndex + 1], 'adds values with data set #0');
+    assert.equal(invocation.args[filterIndex + 1], '~adds values with data set #0~i');
     assert.ok(invocation.args.includes('/proj/tests/ValuesTest.php'));
   });
 
