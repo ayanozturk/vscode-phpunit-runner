@@ -96,6 +96,27 @@ describe('resolveInvocation', () => {
     assert.match(invocation.args[filterIndex + 1], /ExampleTest::testAdd with data set "zeros"/);
   });
 
+  it('filters a selected Pest data set by its complete case name', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: {
+        kind: 'method',
+        filePath: '/proj/tests/ValuesTest.php',
+        className: 'Pest tests\\root',
+        methodName: 'adds values (with data set #0)',
+        pestTestName: 'adds values with data set #0',
+        pestDatasetName: 'with data set #0',
+      },
+      config,
+      phpunitExecutable: '/proj/vendor/bin/pest',
+    });
+
+    const filterIndex = invocation.args.indexOf('--filter');
+    assert.ok(filterIndex >= 0);
+    assert.equal(invocation.args[filterIndex + 1], 'adds values with data set #0');
+    assert.ok(invocation.args.includes('/proj/tests/ValuesTest.php'));
+  });
+
   it('adds debug, coverage, and group flags and omits a file when running a group', async () => {
     const invocation = await resolveInvocation({
       workspacePath: '/proj',

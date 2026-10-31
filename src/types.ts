@@ -16,6 +16,7 @@ export type TestMethod = {
   groups: string[];
   pestTestName?: string;
   pestDescribePath?: string[];
+  pestDatasetName?: string;
 };
 
 export type TestClass = {
@@ -39,6 +40,7 @@ export type TestTarget = {
   className?: string;
   methodName?: string;
   pestTestName?: string;
+  pestDatasetName?: string;
   group?: string;
   suiteName?: string;
   datasetName?: string;

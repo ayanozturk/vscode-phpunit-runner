@@ -75,14 +75,17 @@ exports.run = async () => {
         'report=""',
         'coverage=""',
         'previous=""',
+        'testcaseName="' + methodName + '"',
         'for argument in "$@"; do',
         '  if [ "$previous" = "report" ]; then report="$argument"; previous=""; continue; fi',
         '  if [ "$previous" = "coverage" ]; then coverage="$argument"; previous=""; continue; fi',
+        '  if [ "$previous" = "filter" ]; then testcaseName="$argument"; previous=""; continue; fi',
         '  if [ "$argument" = "--log-junit" ]; then previous="report"; fi',
         '  if [ "$argument" = "--coverage-clover" ]; then previous="coverage"; fi',
+        '  if [ "$argument" = "--filter" ]; then previous="filter"; fi',
         'done',
         'cat > "$report" <<XML',
-        '<testsuites><testcase name="' + methodName + '" classname="' + className + '" time="0.01"/></testsuites>',
+        '<testsuites><testcase name="$testcaseName" classname="' + className + '" time="0.01"/></testsuites>',
         'XML',
         'if [ -n "$coverage" ]; then',
         '  cat > "$coverage" <<XML',
@@ -105,6 +108,23 @@ exports.run = async () => {
     const findMethod = (name) => flatten(api.controller.items).find((item) => item.label === name);
     assert.ok(findMethod('testAlpha'), 'workspace A test is discovered');
     assert.ok(findMethod('testBeta'), 'workspace B test is discovered');
+    const pestParent = findMethod('adds values');
+    const pestDataset = findMethod('adds values (with data set #0)');
+    assert.ok(pestParent && pestDataset, 'literal Pest data sets appear in the test tree');
+    assert.deepEqual([...pestParent.children].map(([, item]) => item.label), [
+      'adds values (with data set #0)',
+      'adds values (with data set #1)',
+    ]);
+    const pestEvents = [];
+    const restorePestCapture = captureRunEvents(api.controller, pestEvents);
+    const pestRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
+    assert.ok(pestRunProfile);
+    await pestRunProfile.runHandler(
+      new vscode.TestRunRequest([pestDataset]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restorePestCapture();
+    assert.ok(pestEvents.some((event) => event.id === pestDataset.id && event.state === 'passed'), 'a Pest data set can run independently');
 
     const dynamicTestPath = path.join(workspaceA.uri.fsPath, 'tests', 'WatcherTest.php');
     await fs.writeFile(dynamicTestPath, '<?php class WatcherTest { public function testCreated(): void {} }', 'utf8');

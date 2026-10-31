@@ -144,6 +144,69 @@ namespace Second\\Tests {
       ['First\\Tests\\FirstTest', 'Second\\Tests\\SecondTest'],
     );
   });
+
+  it('discovers literal Pest datasets as individually selectable cases', () => {
+    const source = `<?php
+it('adds values', function (int $value) {
+    expect($value)->toBeGreaterThan(0);
+})->with([1, 2]);
+`;
+
+    const parsed = parseTestSource('/tmp/ValuesTest.php', source);
+    const methods = parsed.classes[0].methods;
+    assert.deepEqual(methods.map((method) => method.name), [
+      'adds values',
+      'adds values (with data set #0)',
+      'adds values (with data set #1)',
+    ]);
+    assert.deepEqual(methods.slice(1).map((method) => method.pestTestName), [
+      'adds values with data set #0',
+      'adds values with data set #1',
+    ]);
+    assert.deepEqual(methods.slice(1).map((method) => method.pestDatasetName), [
+      'with data set #0',
+      'with data set #1',
+    ]);
+  });
+
+  it('uses Pest dataset keys and computes chained literal dataset combinations', () => {
+    const source = `<?php
+test('named values', fn ($value) => expect($value)->not->toBeNull())
+    ->with(['first' => 'one', 'second' => 'two']);
+
+test('combined values', fn ($left, $right) => expect($left)->not->toBe($right))
+    ->with(['a' => 1, 'b' => 2])
+    ->with(['x' => 'x', 'y' => 'y']);
+`;
+
+    const parsed = parseTestSource('/tmp/DatasetsTest.php', source);
+    const methods = parsed.classes[0].methods;
+    assert.deepEqual(methods.slice(1, 3).map((method) => method.pestTestName), [
+      'named values with data set "first"',
+      'named values with data set "second"',
+    ]);
+    assert.deepEqual(methods.slice(4).map((method) => method.pestTestName), [
+      'combined values with data set #0',
+      'combined values with data set #1',
+      'combined values with data set #2',
+      'combined values with data set #3',
+    ]);
+  });
+
+  it('keeps dynamic datasets and malformed or spread entries as a single Pest case', () => {
+    const source = `<?php
+test('external set', fn ($value) => expect($value)->toBeTruthy())->with('external_values');
+test('spread set', fn ($value) => expect($value)->toBeTruthy())->with([...$values]);
+test('computed key', fn ($value) => expect($value)->toBeTruthy())->with([$key => 'value']);
+`;
+
+    const parsed = parseTestSource('/tmp/DynamicDatasetsTest.php', source);
+    assert.deepEqual(parsed.classes[0].methods.map((method) => method.name), [
+      'external set',
+      'spread set',
+      'computed key',
+    ]);
+  });
 });
 
 describe('classNamesMatch', () => {

@@ -18,4 +18,15 @@ test('a Pest case', function () {});
       { line: 4, itemId: `${uri}::Pest tests\\root::a Pest case` },
     ]);
   });
+
+  it('keeps one CodeLens per Pest test when literal data sets are discovered', () => {
+    const uri = 'file:///workspace/tests/DatasetsTest.php';
+    const parsed = parseTestSource('/workspace/tests/DatasetsTest.php', `<?php
+test('a data-driven case', fn ($value) => expect($value)->toBeTruthy())->with([1, 2]);
+`);
+
+    assert.deepEqual(testCodeLensTargets(uri, parsed), [
+      { line: 1, itemId: `${uri}::Pest tests\\root::a data-driven case` },
+    ]);
+  });
 });

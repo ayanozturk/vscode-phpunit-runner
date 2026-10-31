@@ -9,7 +9,7 @@ export function testCodeLensTargets(uri: string, parsed: ParsedTestFile): TestCo
   return parsed.classes
     .flatMap((testClass) => {
       const classId = `${uri}::${testClass.fullyQualifiedName}`;
-      return testClass.methods.map((method) => ({
+      return testClass.methods.filter((method) => !method.pestDatasetName).map((method) => ({
         line: method.range.start.line,
         itemId: `${classId}::${method.name}`,
       }));

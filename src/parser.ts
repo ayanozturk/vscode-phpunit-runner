@@ -94,13 +94,26 @@ function parsePestTests(source: string, code: string, lineStarts: number[]): Tes
     const occurrenceKey = `${JSON.stringify(describePath)}:${name}`;
     const occurrence = (occurrences.get(occurrenceKey) ?? 0) + 1;
     occurrences.set(occurrenceKey, occurrence);
+    const displayName = occurrence === 1 ? name : `${name} (${occurrence})`;
     methods.push({
-      name: occurrence === 1 ? name : `${name} (${occurrence})`,
+      name: displayName,
       pestTestName: name,
       pestDescribePath: describePath,
       range: rangeFromOffsets(lineStarts, start, closeParen + 1),
       groups: [],
     });
+
+    const datasetNames = parsePestDatasetNames(source, code, closeParen + 1);
+    for (const datasetName of datasetNames ?? []) {
+      methods.push({
+        name: `${displayName} (${datasetName})`,
+        pestTestName: `${name} ${datasetName}`,
+        pestDatasetName: datasetName,
+        pestDescribePath: describePath,
+        range: rangeFromOffsets(lineStarts, start, closeParen + 1),
+        groups: [],
+      });
+    }
   }
   return methods;
 }
@@ -159,6 +172,171 @@ function readPestTestName(argumentsSource: string): string | undefined {
     return undefined;
   }
   return literal[2].replace(/\\(['"\\])/g, '$1').trim() || undefined;
+}
+
+/**
+ * Reads dataset identities when every chained `with()` call uses a literal PHP array.
+ * Dynamic dataset references remain represented by the parent Pest test because their
+ * cases cannot be known without executing project code.
+ */
+function parsePestDatasetNames(source: string, code: string, chainStart: number): string[] | undefined {
+  const dimensions: Array<Array<string | undefined>> = [];
+  let cursor = chainStart;
+
+  while (true) {
+    const remaining = code.slice(cursor);
+    const withCall = remaining.match(/^\s*->\s*with\s*\(/);
+    if (!withCall) {
+      break;
+    }
+
+    const openParen = cursor + withCall[0].lastIndexOf('(');
+    const closeParen = findMatchingParenthesis(code, openParen);
+    if (closeParen < 0) {
+      return undefined;
+    }
+
+    let arrayOpen = openParen + 1;
+    while (arrayOpen < closeParen && /\s/.test(code[arrayOpen])) {
+      arrayOpen += 1;
+    }
+    if (code[arrayOpen] !== '[') {
+      return undefined;
+    }
+
+    const arrayClose = findMatchingArrayBracket(code, arrayOpen);
+    if (arrayClose < 0 || arrayClose > closeParen) {
+      return undefined;
+    }
+
+    const entries = splitArrayEntries(source, code, arrayOpen, arrayClose);
+    if (entries.length === 0) {
+      return undefined;
+    }
+    const labels: Array<string | undefined> = [];
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      if (/^\s*\.\.\./.test(entry.code)) {
+        return undefined;
+      }
+
+      const arrowIndex = findTopLevelArrow(entry.code);
+      if (arrowIndex < 0) {
+        labels.push(undefined);
+        continue;
+      }
+
+      const key = entry.source.slice(0, arrowIndex).trim();
+      const stringKey = readPestStringLiteral(key);
+      if (stringKey === undefined) {
+        return undefined;
+      }
+      labels.push(stringKey);
+    }
+
+    dimensions.push(labels);
+    cursor = closeParen + 1;
+  }
+
+  if (dimensions.length === 0) {
+    return undefined;
+  }
+
+  const combinations: Array<Array<string | undefined>> = [[]];
+  for (const dimension of dimensions) {
+    const next: Array<Array<string | undefined>> = [];
+    for (const prefix of combinations) {
+      for (const label of dimension) {
+        next.push([...prefix, label]);
+      }
+    }
+    combinations.splice(0, combinations.length, ...next);
+  }
+
+  return combinations.map((labels, index) => {
+    if (dimensions.length === 1 && labels[0] !== undefined) {
+      return `with data set "${labels[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+    }
+    return `with data set #${index}`;
+  });
+}
+
+function findMatchingArrayBracket(code: string, open: number): number {
+  let depth = 0;
+  for (let index = open; index < code.length; index += 1) {
+    if (code[index] === '[') {
+      depth += 1;
+    } else if (code[index] === ']') {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return -1;
+}
+
+function splitArrayEntries(
+  source: string,
+  code: string,
+  arrayOpen: number,
+  arrayClose: number,
+): Array<{ source: string; code: string }> {
+  const entries: Array<{ source: string; code: string }> = [];
+  let entryStart = arrayOpen + 1;
+  let bracketDepth = 0;
+  let parenthesisDepth = 0;
+  let braceDepth = 0;
+
+  for (let index = entryStart; index < arrayClose; index += 1) {
+    switch (code[index]) {
+      case '[': bracketDepth += 1; break;
+      case ']': bracketDepth -= 1; break;
+      case '(': parenthesisDepth += 1; break;
+      case ')': parenthesisDepth -= 1; break;
+      case '{': braceDepth += 1; break;
+      case '}': braceDepth -= 1; break;
+      case ',':
+        if (bracketDepth === 0 && parenthesisDepth === 0 && braceDepth === 0) {
+          entries.push({ source: source.slice(entryStart, index), code: code.slice(entryStart, index) });
+          entryStart = index + 1;
+        }
+        break;
+    }
+  }
+
+  const finalEntry = source.slice(entryStart, arrayClose);
+  if (finalEntry.trim()) {
+    entries.push({ source: finalEntry, code: code.slice(entryStart, arrayClose) });
+  }
+  return entries;
+}
+
+function findTopLevelArrow(code: string): number {
+  let bracketDepth = 0;
+  let parenthesisDepth = 0;
+  let braceDepth = 0;
+  for (let index = 0; index < code.length - 1; index += 1) {
+    switch (code[index]) {
+      case '[': bracketDepth += 1; break;
+      case ']': bracketDepth -= 1; break;
+      case '(': parenthesisDepth += 1; break;
+      case ')': parenthesisDepth -= 1; break;
+      case '{': braceDepth += 1; break;
+      case '}': braceDepth -= 1; break;
+      case '=':
+        if (code[index + 1] === '>' && bracketDepth === 0 && parenthesisDepth === 0 && braceDepth === 0) {
+          return index;
+        }
+        break;
+    }
+  }
+  return -1;
+}
+
+function readPestStringLiteral(value: string): string | undefined {
+  const literal = value.match(/^(['"])((?:\\.|[^\\])*?)\1$/);
+  return literal?.[2].replace(/\\(['"\\])/g, '$1');
 }
 
 export function parseTestMethods(body: string, bodyOffset: number, lineStarts: number[]): TestMethod[] {

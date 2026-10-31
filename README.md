@@ -11,7 +11,9 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Run the right amount.** Run a test at the cursor, the open file, failed tests, a group, or the whole suite. Rerun the last selection when you need another pass.
 - **Run or debug inline.** Use the Run Test and Debug Test actions shown above discovered PHPUnit methods and Pest cases.
 - **Work with data providers.** After a test run, PHPUnit data sets appear beneath their test and can be run individually.
+- **Run Pest data sets individually.** Literal arrays passed to Pest’s `->with()` appear under their test, including chained data sets.
 - **Understand failures quickly.** See pass, fail, and skipped results with assertion messages and source locations in VS Code’s Test Results panel.
+- **Choose your test output.** Switch between detailed per-test results, a compact progress summary, or plain per-test lines.
 - **Debug and measure coverage.** Start an Xdebug session for a selected test and inspect Clover coverage in the editor.
 - **Fit your environment.** Run locally, through Docker, or with a command template for Laravel Sail, DDEV, SSH, and other remote setups. Host-to-remote path mappings keep results connected to local files.
 - **Keep results current.** Refresh discovery as files or PHPUnit configuration change, or enable continuous testing to rerun a saved file.
@@ -28,6 +30,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 
 - Discovers PHPUnit methods marked with a `test*` name, `@test` docblock, or `#[Test]` attribute.
 - Discovers function-style Pest `test()` and `it()` cases with literal string names.
+- Discovers statically declared Pest `->with([...])` data sets as child tests, including Cartesian combinations from chained calls.
 - Groups Pest tests inside named `describe()` blocks so each context can be run as a unit.
 - Groups discovered tests by named suites in `phpunit.xml`; files not assigned to a suite stay grouped by folder.
 - Adds inline Run Test and Debug Test actions above each discovered test.
@@ -51,6 +54,7 @@ Core settings:
 - `phpunitRunner.paths`
 - `phpunitRunner.environment`
 - `phpunitRunner.saveBeforeTest`
+- `phpunitRunner.output.preset` (`collision`, `progress`, or `pretty`)
 - `phpunitRunner.continuousTesting`
 - `phpunitRunner.testFileGlobs`
 - `phpunitRunner.excludeGlobs`
@@ -64,6 +68,16 @@ Docker settings:
 - `phpunitRunner.docker.container`
 - `phpunitRunner.docker.workspacePath`
 - `phpunitRunner.docker.execArgs`
+
+### Test output
+
+Set `phpunitRunner.output.preset` to choose how structured PHPUnit results appear in VS Code’s Test Results output:
+
+- `collision` (default): a detailed line for each test, with duration and failure details.
+- `progress`: one compact status marker per test followed by a result count.
+- `pretty`: plain per-test status lines without status icons.
+
+When a JUnit report is unavailable, the runner keeps the raw process output so diagnostics such as `dd()` remain visible.
 
 ### Local project
 

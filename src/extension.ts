@@ -16,6 +16,7 @@ import {
   readJUnitReport,
 } from './junit';
 import { classNamesMatch, datasetSuffixFromTestCase, methodNameFromTestCase, parseTestSource } from './parser';
+import { formatTestOutput, type OutputPreset } from './outputFormatter';
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
 import { parsePhpUnitXml, resolveDiscoveryGlobs, type PhpUnitSuite } from './phpunitXml';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
@@ -338,7 +339,16 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
       });
     }
 
+    const methodsByRange = new Map<string, typeof cls.methods>();
     for (const method of cls.methods) {
+      const rangeKey = `${method.range.start.line}:${method.range.start.character}:${method.range.end.line}:${method.range.end.character}`;
+      const methods = methodsByRange.get(rangeKey) ?? [];
+      methods.push(method);
+      methodsByRange.set(rangeKey, methods);
+    }
+
+    for (const methods of methodsByRange.values()) {
+      const method = methods.find((candidate) => !candidate.pestDatasetName) ?? methods[0];
       const methodId = `${classId}::${method.name}`;
       const methodItem = controller.createTestItem(methodId, method.name, uri);
       methodItem.range = toVscodeRange(method.range);
@@ -349,9 +359,29 @@ async function refreshUri(uri: vscode.Uri, text?: string): Promise<void> {
         className: cls.fullyQualifiedName,
         methodName: method.name,
         pestTestName: method.pestTestName,
+        pestDatasetName: method.pestDatasetName,
         groups: method.groups,
       });
       methodItem.tags = method.groups.map((group) => new vscode.TestTag(`group:${group}`));
+
+      for (const dataset of methods.filter((candidate) => candidate !== method && candidate.pestDatasetName)) {
+        const datasetId = `${classId}::${dataset.name}`;
+        const datasetItem = controller.createTestItem(datasetId, dataset.name, uri);
+        datasetItem.range = toVscodeRange(dataset.range);
+        itemData.set(datasetItem, {
+          kind: 'method',
+          uri,
+          filePath: uri.fsPath,
+          className: cls.fullyQualifiedName,
+          methodName: dataset.name,
+          pestTestName: dataset.pestTestName,
+          pestDatasetName: dataset.pestDatasetName,
+          groups: dataset.groups,
+        });
+        datasetItem.tags = dataset.groups.map((group) => new vscode.TestTag(`group:${group}`));
+        methodItem.children.add(datasetItem);
+      }
+
       classItem.children.add(methodItem);
     }
 
@@ -508,7 +538,11 @@ async function runItem(
 
   try {
     const result = await executePhpUnit(data, token, kind, run);
-    run.appendOutput(result.output);
+    run.appendOutput(formatTestOutput(
+      result.cases,
+      getOutputPreset(vscode.workspace.getWorkspaceFolder(data.uri)),
+      result.output,
+    ));
     if (result.reportWarning) {
       run.appendOutput(`${result.reportWarning}\r\n`, undefined, item);
     }
@@ -998,7 +1032,7 @@ async function runByGroup(groupOverride?: string): Promise<void> {
           vscode.TestRunProfileKind.Run,
           run,
         );
-        run.appendOutput(result.output);
+        run.appendOutput(formatTestOutput(result.cases, getOutputPreset(folder), result.output));
         if (result.reportWarning) {
           run.appendOutput(`${result.reportWarning}\r\n`);
         }
@@ -1076,6 +1110,11 @@ function readRunnerConfig(scope?: vscode.ConfigurationScope): RunnerConfig {
 
 function getConfig(scope?: vscode.ConfigurationScope): vscode.WorkspaceConfiguration {
   return vscode.workspace.getConfiguration('phpunitRunner', scope);
+}
+
+function getOutputPreset(folder?: vscode.WorkspaceFolder): OutputPreset {
+  const value = getConfig(folder).get<string>('output.preset', 'collision');
+  return value === 'progress' || value === 'pretty' ? value : 'collision';
 }
 
 async function maybeSaveBeforeTest(folders = vscode.workspace.workspaceFolders ?? []): Promise<void> {

@@ -124,6 +124,16 @@
           "default": false,
           "description": "Save all dirty editors before running tests."
         },
+        "phpunitRunner.output.preset": {
+          "type": "string",
+          "enum": [
+            "collision",
+            "progress",
+            "pretty"
+          ],
+          "default": "collision",
+          "description": "Format structured test results in the Test Results output."
+        },
         "phpunitRunner.continuousTesting": {
           "type": "boolean",
           "default": false,
