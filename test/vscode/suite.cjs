@@ -112,6 +112,7 @@ exports.run = async () => {
         '    case "$argument" in',
         '      *"generated values"*) testcaseName=\'generated values with data set "first"\';;',
         '      *"TestWithTest::testWithRows with data set #0"*) testcaseName=\'testWithRows with data set #0\'; testcaseClass=\'TestWithTest\'; testcaseFile=\'tests/TestWithTest.php\';;',
+        "      *'TestWithTest::testWithRows with data set \"positive pair\"'*) testcaseName='testWithRows with data set &quot;positive pair&quot;'; testcaseClass='TestWithTest'; testcaseFile='tests/TestWithTest.php';;",
         '    esac',
         '    previous=""',
         '    continue',
@@ -169,6 +170,7 @@ use PHPUnit\\Framework\\Attributes\\TestWith;
 class TestWithTest
 {
     #[TestWith([1, 2])]
+    #[TestWith([2, 3], 'positive pair')]
     #[TestWith([3, 4])]
     public function testWithRows(int $left, int $right): void {}
 }
@@ -196,7 +198,7 @@ class TestWithTest
     assert.ok(testWithParent, 'PHPUnit TestWith method is discovered');
     assert.deepEqual(
       [...testWithParent.children].map(([, item]) => item.label),
-      ['#0', '#1'],
+      ['#0', 'positive pair', '#1'],
       'literal TestWith rows are selectable before running the test',
     );
     const pestEvents = [];
@@ -258,7 +260,7 @@ class TestWithTest
     assert.match(multiCaseOutput[0], /testFirst/);
     assert.match(multiCaseOutput[0], /testSecond/);
 
-    const testWithDataset = [...testWithParent.children].map(([, item]) => item).find((item) => item.label === '#0');
+    const testWithDataset = [...testWithParent.children].map(([, item]) => item).find((item) => item.label === 'positive pair');
     assert.ok(testWithDataset);
     const testWithLog = path.join(workspaceA.uri.fsPath, 'runner.log');
     await fs.writeFile(testWithLog, '', 'utf8');
@@ -276,7 +278,7 @@ class TestWithTest
       'environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder,
     );
     const testWithInvocation = await fs.readFile(testWithLog, 'utf8');
-    assert.ok(testWithInvocation.includes('--filter ~^TestWithTest::testWithRows with data set #0$~i'), testWithInvocation);
+    assert.ok(testWithInvocation.includes('--filter ~^TestWithTest::testWithRows with data set "positive pair"$~i'), testWithInvocation);
     assert.ok(
       testWithEvents.some((event) => event.id === testWithDataset.id && event.state === 'passed'),
       `the selected TestWith row receives its PHPUnit result: ${JSON.stringify(testWithEvents)}`,

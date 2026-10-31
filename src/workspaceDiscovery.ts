@@ -4,6 +4,21 @@ export type WorkspaceSearch<TScope, TResult> = (
   scope: TScope | undefined,
 ) => Promise<TResult[]>;
 
+export async function findAcrossScopes<TScope, TResult>(
+  scopes: readonly TScope[],
+  search: (scope: TScope) => Promise<TResult[]>,
+  keyOf: (result: TResult) => string,
+): Promise<TResult[]> {
+  const resultsByScope = await Promise.all(scopes.map(search));
+  const unique = new Map<string, TResult>();
+  for (const results of resultsByScope) {
+    for (const result of results) {
+      unique.set(keyOf(result), result);
+    }
+  }
+  return [...unique.values()];
+}
+
 export async function findWithGlobs<TScope, TResult>(
   includes: string[],
   excludes: string[],

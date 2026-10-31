@@ -119,14 +119,9 @@ export async function resolveInvocation(options: {
     phpunitArgs.push('--testsuite', target.suiteName);
   }
 
-  if (target.datasetName && target.className) {
-    phpunitArgs.push('--filter', `~^${escapeRegex(`${target.className}::${target.datasetName}`)}$~i`);
-  } else if (target.pestTestName) {
-    phpunitArgs.push('--filter', `~${escapeRegex(target.pestTestName)}~i`);
-  } else if (target.className && target.methodName) {
-    phpunitArgs.push('--filter', `~^${escapeRegex(target.className)}::${escapeRegex(target.methodName)}(?: with data set .*)?$~i`);
-  } else if (target.className) {
-    phpunitArgs.push('--filter', `~^${escapeRegex(target.className)}(?:::.*)?$~i`);
+  const filter = buildTargetFilter(target);
+  if (filter) {
+    phpunitArgs.push('--filter', filter);
   }
 
   phpunitArgs.push(...(target.filePaths ?? (target.filePath ? [target.filePath] : [])));
@@ -176,6 +171,22 @@ export async function resolveInvocation(options: {
 }
 
 type ParsedRunnerCommand = { command: string; args: string[] };
+
+function buildTargetFilter(target: TestTarget): string | undefined {
+  if (target.datasetName && target.className) {
+    return `~^${escapeRegex(`${target.className}::${target.datasetName}`)}$~i`;
+  }
+  if (target.pestTestName) {
+    return `~${escapeRegex(target.pestTestName)}~i`;
+  }
+  if (target.className && target.methodName) {
+    return `~^${escapeRegex(target.className)}::${escapeRegex(target.methodName)}(?: with data set .*)?$~i`;
+  }
+  if (target.className) {
+    return `~^${escapeRegex(target.className)}(?:::.*)?$~i`;
+  }
+  return undefined;
+}
 
 async function parseRunnerCommand(value: string, cwd: string): Promise<ParsedRunnerCommand> {
   const trimmed = value.trim();

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { findWithGlobs } from './workspaceDiscovery';
+import { findAcrossScopes, findWithGlobs } from './workspaceDiscovery';
 
 describe('workspace-scoped test discovery', () => {
   it('runs every include glob within its owning workspace root and deduplicates results', async () => {
@@ -91,5 +91,44 @@ describe('workspace-scoped test discovery', () => {
     } finally {
       clearTimeout(timeout);
     }
+  });
+
+  it('overlaps independent workspace roots and preserves root order while deduplicating', async () => {
+    type Result = { path: string; root: string };
+    let firstPending = true;
+    let overlapped = false;
+    let resolveFirst!: (results: Result[]) => void;
+
+    const found = await findAcrossScopes(
+      ['workspace-a', 'workspace-b'],
+      async (root) => {
+        if (root === 'workspace-a') {
+          return new Promise<Result[]>((resolve) => {
+            resolveFirst = (results) => {
+              firstPending = false;
+              resolve(results);
+            };
+          });
+        }
+
+        overlapped = firstPending;
+        resolveFirst([
+          { path: 'shared.php', root: 'workspace-a' },
+          { path: 'first.php', root: 'workspace-a' },
+        ]);
+        return [
+          { path: 'shared.php', root: 'workspace-b' },
+          { path: 'second.php', root: 'workspace-b' },
+        ];
+      },
+      (result) => result.path,
+    );
+
+    assert.equal(overlapped, true, 'the second root starts before the first root finishes');
+    assert.deepEqual(found, [
+      { path: 'shared.php', root: 'workspace-b' },
+      { path: 'first.php', root: 'workspace-a' },
+      { path: 'second.php', root: 'workspace-b' },
+    ]);
   });
 });

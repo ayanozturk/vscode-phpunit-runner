@@ -29,7 +29,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 ## Features
 
 - Discovers PHPUnit methods marked with a `test*` name, `@test` docblock, or `#[Test]` attribute.
-- Discovers literal PHPUnit `#[TestWith([...])]` rows as selectable `#0`, `#1`, and later data-set tests before the first run.
+- Discovers literal PHPUnit `#[TestWith([...])]` rows before the first run, showing numeric labels such as `#0` or custom names such as `positive pair` as selectable data-set tests.
 - Discovers function-style Pest `test()` and `it()` cases with literal string names.
 - Discovers statically declared Pest `dataset()` values, `->with([...])` data sets, and inline generator closures with literal `yield` values as selectable child tests, including chained data sets.
 - Groups Pest tests inside named `describe()` blocks so each context can be run as a unit.

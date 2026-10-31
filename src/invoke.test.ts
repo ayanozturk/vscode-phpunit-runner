@@ -166,6 +166,19 @@ describe('resolveInvocation', () => {
     assert.ok(invocation.args.includes('/var/www/html/tests/ExampleTest.php'));
   });
 
+  it('filters a selected test class when no method is selected', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: { kind: 'class', className: 'App\\Tests\\ExampleTest' },
+      config,
+      phpunitExecutable: '/proj/vendor/bin/phpunit',
+    });
+
+    const filterIndex = invocation.args.indexOf('--filter');
+    assert.ok(filterIndex >= 0);
+    assert.equal(invocation.args[filterIndex + 1], '~^App\\\\Tests\\\\ExampleTest(?:::.*)?$~i');
+  });
+
   it('runs an Artisan-style multi-word command through PHP and preserves runner options', async () => {
     const invocation = await resolveInvocation({
       workspacePath: '/proj',

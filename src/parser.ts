@@ -663,13 +663,13 @@ export function parseTestMethods(
       groups: extractGroups(header),
     });
 
-    const datasetNames = testWithDatasetNames(header, testWithAttributeAliases);
-    for (const datasetName of datasetNames ?? []) {
+    const datasets = testWithDatasetNames(header, testWithAttributeAliases);
+    for (const dataset of datasets ?? []) {
       methods.push({
-        name: datasetName.replace(/^with data set\s*/, ''),
+        name: dataset.label,
         range: rangeFromOffsets(lineStarts, start, start + match[0].length),
         groups: extractGroups(header),
-        phpunitDatasetName: datasetName,
+        phpunitDatasetName: dataset.caseSuffix,
       });
     }
   }
@@ -677,10 +677,13 @@ export function parseTestMethods(
   return methods;
 }
 
-function testWithDatasetNames(header: string, aliases: ReadonlySet<string>): string[] | undefined {
+function testWithDatasetNames(
+  header: string,
+  aliases: ReadonlySet<string>,
+): Array<{ label: string; caseSuffix: string }> | undefined {
   const code = maskNonCode(header);
   const attributePattern = /#\[\s*(\\?[A-Za-z_][A-Za-z0-9_\\]*)/g;
-  const names: string[] = [];
+  const datasets: Array<{ label: string; caseSuffix: string; customName?: string }> = [];
   let found = false;
 
   for (const match of code.matchAll(attributePattern)) {
@@ -708,14 +711,120 @@ function testWithDatasetNames(header: string, aliases: ReadonlySet<string>): str
       return undefined;
     }
 
-    const dataSource = header.slice(argumentStart + 1, closeParen).trim();
-    if (!dataSource.startsWith('[') || !isStaticPhpLiteral(dataSource)) {
+    const argumentsSource = header.slice(argumentStart + 1, closeParen);
+    const argumentsCode = code.slice(argumentStart + 1, closeParen);
+    const args = splitPhpArguments(argumentsSource, argumentsCode);
+    const dataSource = args[0]?.trim();
+    if (!dataSource?.startsWith('[') || !isStaticPhpLiteral(dataSource)) {
       return undefined;
     }
-    names.push(`with data set #${names.length}`);
+
+    let customName: string | undefined;
+    if (args.length > 1) {
+      customName = readPhpStringLiteral(args[1].trim());
+      if (!customName) {
+        continue;
+      }
+    }
+    if (args.length > 2) {
+      continue;
+    }
+
+    const unnamedIndex = datasets.filter((dataset) => dataset.customName === undefined).length;
+    const caseSuffix = customName === undefined
+      ? `with data set #${unnamedIndex}`
+      : `with data set "${sanitizePhpUnitDataSetName(customName)}"`;
+    datasets.push({ label: customName ?? `#${unnamedIndex}`, caseSuffix, customName });
   }
 
-  return found ? names : undefined;
+  if (!found) {
+    return undefined;
+  }
+
+  const customNameCounts = new Map<string, number>();
+  for (const dataset of datasets) {
+    if (dataset.customName !== undefined) {
+      customNameCounts.set(dataset.customName, (customNameCounts.get(dataset.customName) ?? 0) + 1);
+    }
+  }
+
+  return datasets
+    .filter((dataset) => dataset.customName === undefined || customNameCounts.get(dataset.customName) === 1)
+    .map(({ label, caseSuffix }) => ({ label, caseSuffix }));
+}
+
+function splitPhpArguments(source: string, code: string): string[] {
+  const args: string[] = [];
+  let argumentStart = 0;
+  let bracketDepth = 0;
+  let parenthesisDepth = 0;
+  let braceDepth = 0;
+
+  for (let index = 0; index < code.length; index += 1) {
+    switch (code[index]) {
+      case '[': bracketDepth += 1; break;
+      case ']': bracketDepth -= 1; break;
+      case '(': parenthesisDepth += 1; break;
+      case ')': parenthesisDepth -= 1; break;
+      case '{': braceDepth += 1; break;
+      case '}': braceDepth -= 1; break;
+      case ',':
+        if (bracketDepth === 0 && parenthesisDepth === 0 && braceDepth === 0) {
+          args.push(source.slice(argumentStart, index));
+          argumentStart = index + 1;
+        }
+        break;
+    }
+  }
+
+  if (source.slice(argumentStart).trim()) {
+    args.push(source.slice(argumentStart));
+  }
+  return args;
+}
+
+function readPhpStringLiteral(value: string): string | undefined {
+  const literal = value.match(/^(['"])((?:\\.|[^\\])*?)\1$/);
+  if (!literal) {
+    return undefined;
+  }
+
+  const content = literal[2];
+  if (literal[1] === "'") {
+    return content.replace(/\\\\|\\'/g, (escape) => (escape === '\\\\' ? '\\' : "'"));
+  }
+
+  if (readPestStringLiteral(value) === undefined) {
+    return undefined;
+  }
+
+  const simpleEscapes: Record<string, string> = {
+    '\\\\': '\\',
+    '\\"': '"',
+    '\\$': '$',
+    '\\n': '\n',
+    '\\r': '\r',
+    '\\t': '\t',
+    '\\v': '\v',
+    '\\e': '\u001b',
+    '\\f': '\f',
+  };
+  try {
+    return content
+      .replace(/\\([\\"$nrtvef])/g, (escape) => simpleEscapes[escape])
+      .replace(/\\([0-7]{1,3})/g, (_escape, octal: string) => String.fromCodePoint(Number.parseInt(octal, 8)))
+      .replace(/\\x([\da-f]{1,2})/gi, (_escape, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
+      .replace(/\\u\{([\da-f]+)\}/gi, (_escape, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)));
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizePhpUnitDataSetName(name: string): string {
+  return name.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|\r(?!\n)/g, (character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return `\\u{${codePoint.toString(16).toUpperCase().padStart(4, '0')}}`;
+  });
 }
 
 function findTestAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {

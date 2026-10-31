@@ -158,6 +158,50 @@ final class AttributeDataTest {
     ]);
   });
 
+  it('uses literal TestWith custom names for labels and PHPUnit case suffixes', () => {
+    const source = `<?php
+use PHPUnit\\Framework\\Attributes\\TestWith;
+
+class NamedAttributeDataTest {
+    #[TestWith([1, 2], 'positive pair')]
+    #[TestWith([3, 4], "negative pair")]
+    #[TestWith([0, 0])]
+    #[TestWith([5, 6], 'pair "with quotes"')]
+    public function testPairs(int $left, int $right): void {}
+}
+`;
+
+    const methods = parseTestSource('/tmp/NamedAttributeDataTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map(({ name, phpunitDatasetName }) => ({ name, phpunitDatasetName })), [
+      { name: 'testPairs', phpunitDatasetName: undefined },
+      { name: 'positive pair', phpunitDatasetName: 'with data set "positive pair"' },
+      { name: 'negative pair', phpunitDatasetName: 'with data set "negative pair"' },
+      { name: '#0', phpunitDatasetName: 'with data set #0' },
+      { name: 'pair "with quotes"', phpunitDatasetName: 'with data set "pair "with quotes""' },
+    ]);
+  });
+
+  it('skips empty or dynamic TestWith names and suppresses duplicate custom names', () => {
+    const source = `<?php
+use PHPUnit\\Framework\\Attributes\\TestWith;
+
+class AmbiguousNamedAttributeDataTest {
+    #[TestWith([1], 'duplicate')]
+    #[TestWith([2], 'duplicate')]
+    #[TestWith([3], '')]
+    #[TestWith([4], $dynamicName)]
+    #[TestWith([5], 'unique')]
+    public function testNamedCases(int $value): void {}
+}
+`;
+
+    const methods = parseTestSource('/tmp/AmbiguousNamedAttributeDataTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map(({ name, phpunitDatasetName }) => ({ name, phpunitDatasetName })), [
+      { name: 'testNamedCases', phpunitDatasetName: undefined },
+      { name: 'unique', phpunitDatasetName: 'with data set "unique"' },
+    ]);
+  });
+
   it('discovers TestWith through grouped namespace aliases and fully qualified attributes', () => {
     const source = `<?php
 namespace App\\Tests {

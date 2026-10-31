@@ -36,7 +36,10 @@ import {
   type TestCaseIndex,
 } from './resultIndex';
 import { readFailureSourceSnippets as readSourceFailureSnippets } from './sourceSnippets';
-import { findWithGlobs as findWorkspaceFilesWithGlobs } from './workspaceDiscovery';
+import {
+  findAcrossScopes,
+  findWithGlobs as findWorkspaceFilesWithGlobs,
+} from './workspaceDiscovery';
 import type { JUnitTestCase, RunnerConfig, SourceRange, TestTarget } from './types';
 
 type TestItemData = TestTarget & { uri: vscode.Uri; groups?: string[] };
@@ -256,7 +259,7 @@ async function findCandidateTestFiles(): Promise<vscode.Uri[]> {
     return findWithGlobs(configuredIncludes, configuredExcludes, unique);
   }
 
-  for (const folder of folders) {
+  return findAcrossScopes(folders, async (folder) => {
     const xmlPath = await autoDetectConfigurationFile(folder.uri.fsPath);
     const xmlText = xmlPath ? await fs.readFile(xmlPath, 'utf8').catch(() => undefined) : undefined;
     const xmlDirectoryRelative = xmlPath
@@ -268,10 +271,8 @@ async function findCandidateTestFiles(): Promise<vscode.Uri[]> {
       xmlText,
       xmlDirectoryRelative,
     });
-    await findWithGlobs(resolved.includeGlobs, resolved.excludeGlobs, unique, folder);
-  }
-
-  return [...unique.values()];
+    return findWithGlobs(resolved.includeGlobs, resolved.excludeGlobs, new Map(), folder);
+  }, (file) => file.toString());
 }
 
 async function findWithGlobs(
