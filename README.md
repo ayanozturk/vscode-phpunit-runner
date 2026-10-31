@@ -97,6 +97,16 @@ The `testCase` template accepts `{status}`, `{icon}`, `{name}`, and `{duration}`
 
 When a JUnit report is unavailable, the runner keeps the raw process output so diagnostics such as `dd()` remain visible.
 
+VS Code controls when the Test Results view opens. The setting is named `testing.openTesting` in older versions and `testing.automaticallyOpenTestResults` in newer versions; both accept `neverOpen`, `openOnTestStart`, or `openOnTestFailure`. To open results only when a test fails, add this to `.vscode/settings.json`:
+
+```json
+{
+  "testing.automaticallyOpenTestResults": "openOnTestFailure"
+}
+```
+
+This is useful when debugging a failure that prints raw PHP output such as `dd()`: the Test Results view opens on reported failures, and the PHPUnit Runner output channel retains the process output when no readable JUnit report is produced.
+
 The PHPUnit Runner output channel is cleared once at the start of a run by default. Set `phpunitRunner.clearOutputOnRun` to `false` to keep earlier command output visible. In multi-root workspaces, the channel clears when any workspace included in that run has clearing enabled.
 
 ### Local project

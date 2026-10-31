@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   formatTestOutput,
+  formatTestOutputSegments,
   sourceSnippetAtLine,
   sourceSnippetKey,
   type OutputPreset,
@@ -98,6 +99,21 @@ describe('formatTestOutput', () => {
 
     assert.match(output, /^  \/tests\/ExampleTest\.php:24$/m);
     assert.match(output, /^  > 24 \| failing statement$/m);
+  });
+
+  it('returns per-case output locations without changing preset text', () => {
+    for (const preset of ['collision', 'pretty'] as OutputPreset[]) {
+      const segments = formatTestOutputSegments([cases[1]], preset);
+      assert.equal(segments.length, 1);
+      assert.deepEqual(segments[0].location, { file: '/tests/ExampleTest.php', line: 24 });
+      assert.equal(segments.map((segment) => segment.text).join(''), formatTestOutput([cases[1]], preset));
+    }
+
+    const hiddenLocation = formatTestOutputSegments([cases[1]], 'collision', '', new Map(), {
+      failureLocation: '',
+    });
+    assert.equal(hiddenLocation[0].location, undefined);
+    assert.equal(formatTestOutputSegments([cases[1]], 'progress')[0].location, undefined);
   });
 
   it('supports configurable test-line templates, icons, failure details, and plain output', () => {

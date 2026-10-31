@@ -17,7 +17,7 @@ import {
 } from './junit';
 import { classNamesMatch, datasetSuffixFromTestCase, methodNameFromTestCase, parseTestSource } from './parser';
 import {
-  formatTestOutput,
+  formatTestOutputSegments,
   sourceSnippetAtLine,
   sourceSnippetKey,
   type OutputPreset,
@@ -26,6 +26,7 @@ import {
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
 import { parsePhpUnitXml, resolveDiscoveryGlobs, type PhpUnitSuite } from './phpunitXml';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
+import { resolveOutputFilePath } from './outputLocation';
 import { findWithGlobs as findWorkspaceFilesWithGlobs } from './workspaceDiscovery';
 import type { JUnitTestCase, RunnerConfig, SourceRange, TestTarget } from './types';
 
@@ -576,13 +577,15 @@ async function runItem(
     const sourceSnippets = outputPreset === 'progress' || outputFormat.sourceSnippet === false
       ? new Map<string, string>()
       : await readFailureSourceSnippets(result.cases, folder);
-    run.appendOutput(formatTestOutput(
+    await appendStructuredTestOutput(
+      run,
       result.cases,
       outputPreset,
       result.output,
       sourceSnippets,
       outputFormat,
-    ));
+      folder,
+    );
     if (result.reportWarning) {
       run.appendOutput(`${result.reportWarning}\r\n`, undefined, item);
     }
@@ -1078,13 +1081,15 @@ async function runByGroup(groupOverride?: string): Promise<void> {
         const sourceSnippets = outputPreset === 'progress' || outputFormat.sourceSnippet === false
           ? new Map<string, string>()
           : await readFailureSourceSnippets(result.cases, folder);
-        run.appendOutput(formatTestOutput(
+        await appendStructuredTestOutput(
+          run,
           result.cases,
           outputPreset,
           result.output,
           sourceSnippets,
           outputFormat,
-        ));
+          folder,
+        );
         if (result.reportWarning) {
           run.appendOutput(`${result.reportWarning}\r\n`);
         }
@@ -1233,6 +1238,46 @@ async function readFailureSourceSnippets(
   }
 
   return snippets;
+}
+
+async function appendStructuredTestOutput(
+  run: vscode.TestRun,
+  cases: JUnitTestCase[],
+  preset: OutputPreset,
+  fallbackOutput: string,
+  sourceSnippets: ReadonlyMap<string, string>,
+  format: TestOutputFormat,
+  folder?: vscode.WorkspaceFolder,
+): Promise<void> {
+  const segments = formatTestOutputSegments(cases, preset, fallbackOutput, sourceSnippets, format);
+  for (const segment of segments) {
+    const location = await resolveOutputLocation(segment.location, folder);
+    run.appendOutput(segment.text, location);
+  }
+}
+
+async function resolveOutputLocation(
+  failureLocation: { file: string; line: number } | undefined,
+  folder?: vscode.WorkspaceFolder,
+): Promise<vscode.Location | undefined> {
+  if (!failureLocation?.file || !Number.isInteger(failureLocation.line) || failureLocation.line < 1) {
+    return undefined;
+  }
+
+  const { file, line } = failureLocation;
+  const filePath = resolveOutputFilePath(file, line, folder?.uri.fsPath);
+  if (!filePath) {
+    return undefined;
+  }
+
+  try {
+    await fs.access(filePath);
+  } catch {
+    return undefined;
+  }
+
+  const position = new vscode.Position(line - 1, 0);
+  return new vscode.Location(vscode.Uri.file(filePath), new vscode.Range(position, position));
 }
 
 function outputFoldersForRequest(request: vscode.TestRunRequest): Array<vscode.WorkspaceFolder | undefined> {

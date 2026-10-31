@@ -66,7 +66,8 @@ export function isPhpScript(command: string): boolean {
   const normalized = command.toLowerCase();
   return normalized.endsWith('/phpunit')
     || normalized.endsWith('\\phpunit')
-    || normalized.endsWith('.php');
+    || normalized.endsWith('.php')
+    || normalized.endsWith('.phar');
 }
 
 export function escapeRegex(value: string): string {

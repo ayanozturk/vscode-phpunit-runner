@@ -18,7 +18,7 @@ function flatten(items) {
   return [...items].flatMap(([, item]) => [item, ...flatten(item.children)]);
 }
 
-function captureRunEvents(controller, events, coverages = [], outputs = []) {
+function captureRunEvents(controller, events, coverages = [], outputs = [], outputEvents = []) {
   const original = controller.createTestRun;
   controller.createTestRun = function (...args) {
     const run = original.apply(controller, args);
@@ -40,6 +40,7 @@ function captureRunEvents(controller, events, coverages = [], outputs = []) {
         if (property === 'appendOutput') {
           return (output, ...rest) => {
             outputs.push(output);
+            outputEvents.push({ output, location: rest[0] });
             return method.call(target, output, ...rest);
           };
         }
@@ -109,9 +110,19 @@ exports.run = async () => {
         '  if [ "$argument" = "--coverage-clover" ]; then previous="coverage"; fi',
         '  if [ "$argument" = "--filter" ]; then previous="filter"; fi',
         'done',
-        'cat > "$report" <<XML',
+        'if [ "$PHPUNIT_RUNNER_MODE" = "fail" ]; then',
+        '  cat > "$report" <<XML',
+        "<testsuites><testcase name='$testcaseName' classname='" + className + "' file='tests/" + className + ".php' line='2' time='0.01'><failure message='Assertion failed'>Assertion failed</failure></testcase></testsuites>",
+        'XML',
+        'elif [ "$PHPUNIT_RUNNER_MODE" = "fail-no-location" ]; then',
+        '  cat > "$report" <<XML',
+        "<testsuites><testcase name='$testcaseName' classname='" + className + "' time='0.01'><failure message='Assertion failed'>Assertion failed</failure></testcase></testsuites>",
+        'XML',
+        'else',
+        '  cat > "$report" <<XML',
         "<testsuites><testcase name='$testcaseName' classname='" + className + "' time='0.01'/></testsuites>",
         'XML',
+        'fi',
         'if [ -n "$coverage" ]; then',
         '  cat > "$coverage" <<XML',
         '<coverage><file name="' + folder.uri.fsPath + '/tests/' + className + '.php"><line num="1" type="stmt" count="3"/><line num="2" type="stmt" count="0"/><metrics statements="2" coveredstatements="1"/></file></coverage>',
@@ -169,6 +180,41 @@ exports.run = async () => {
     await outputFormatConfig.update('output.format', previousOutputFormat, vscode.ConfigurationTarget.WorkspaceFolder);
     assert.match(customOutput.join(''), /RESULT: PASS \^AlphaTest::testAlpha/);
     assert.doesNotMatch(customOutput.join(''), /\u001b\[/, 'custom plain output contains no ANSI colors');
+
+    const failureOutputEvents = [];
+    const restoreFailureOutputCapture = captureRunEvents(api.controller, [], [], [], failureOutputEvents);
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: 'fail' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreFailureOutputCapture();
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    const linkedFailureOutput = failureOutputEvents.find((event) => event.output.includes('tests/AlphaTest.php:2'));
+    assert.ok(linkedFailureOutput, 'structured failure output contains its source location');
+    assert.equal(linkedFailureOutput.location.uri.fsPath, path.join(workspaceA.uri.fsPath, 'tests', 'AlphaTest.php'));
+    assert.equal(linkedFailureOutput.location.range.start.line, 1, 'failure output links to the one-based JUnit line converted to a VS Code line');
+
+    const missingLocationEvents = [];
+    const restoreMissingLocationCapture = captureRunEvents(api.controller, [], [], [], missingLocationEvents);
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: 'fail-no-location' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreMissingLocationCapture();
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    const unlocatedFailureOutput = missingLocationEvents.find((event) => event.output.includes('Assertion failed'));
+    assert.ok(unlocatedFailureOutput, 'failure text remains visible when its report has no source location');
+    assert.equal(unlocatedFailureOutput.location, undefined, 'no editor location is attached when the report has no file and line');
 
     const initialClears = outputClears.length;
     await testRunProfile.runHandler(

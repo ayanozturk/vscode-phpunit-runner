@@ -39,6 +39,58 @@ const methodTarget: TestTarget = {
   methodName: 'testItWorks',
 };
 
+describe('autoDetectPhpUnit', () => {
+  it('prefers the Composer binary over a project-local PHAR', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit detection precedence '));
+    try {
+      const composerBinary = path.join(workspace, 'vendor', 'bin', 'phpunit');
+      const phar = path.join(workspace, 'phpunit.phar');
+      await fs.mkdir(path.dirname(composerBinary), { recursive: true });
+      await fs.writeFile(composerBinary, '');
+      await fs.writeFile(phar, '');
+
+      assert.equal(await autoDetectPhpUnit(workspace, 'linux'), composerBinary);
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('uses a project-local PHAR when the Composer binary is absent and otherwise falls back to PATH', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit detection phar '));
+    try {
+      const phar = path.join(workspace, 'phpunit.phar');
+      await fs.writeFile(phar, '');
+      assert.equal(await autoDetectPhpUnit(workspace, 'linux'), phar);
+
+      await fs.rm(phar);
+      assert.equal(await autoDetectPhpUnit(workspace, 'linux'), 'phpunit');
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('detects and launches a project-local PHAR on Windows when Composer proxies are absent', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit windows phar '));
+    try {
+      const phar = path.join(workspace, 'phpunit.phar');
+      await fs.writeFile(phar, '');
+      const detected = await autoDetectPhpUnit(workspace, 'win32');
+      assert.equal(detected, phar);
+
+      const invocation = await resolveInvocation({
+        workspacePath: workspace,
+        target: fileTarget,
+        config: { ...config, phpunitCommand: '' },
+        phpunitExecutable: detected,
+      });
+      assert.equal(invocation.command, 'php');
+      assert.equal(invocation.args[0], phar);
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('resolveInvocation', () => {
   it('runs phpunit as a php script with junit logging and auto config', async () => {
     const invocation = await resolveInvocation({

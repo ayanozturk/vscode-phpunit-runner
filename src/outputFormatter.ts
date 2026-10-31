@@ -12,6 +12,11 @@ export type TestOutputFormat = {
   sourceSnippet?: boolean;
 };
 
+export type TestOutputSegment = {
+  text: string;
+  location?: { file: string; line: number };
+};
+
 export function sourceSnippetKey(file: string, line: number): string {
   return `${file}:${line}`;
 }
@@ -40,27 +45,40 @@ export function formatTestOutput(
   sourceSnippets: ReadonlyMap<string, string> = new Map(),
   format: TestOutputFormat = {},
 ): string {
+  return formatTestOutputSegments(cases, preset, fallbackOutput, sourceSnippets, format)
+    .map((segment) => segment.text)
+    .join('');
+}
+
+export function formatTestOutputSegments(
+  cases: JUnitTestCase[],
+  preset: OutputPreset,
+  fallbackOutput = '',
+  sourceSnippets: ReadonlyMap<string, string> = new Map(),
+  format: TestOutputFormat = {},
+): TestOutputSegment[] {
   if (cases.length === 0) {
-    return ensureTrailingNewline(fallbackOutput);
+    const text = ensureTrailingNewline(fallbackOutput);
+    return text ? [{ text }] : [];
   }
 
   switch (preset) {
     case 'progress':
-      return formatProgress(cases, format);
+      return [{ text: formatProgress(cases, format) }];
     case 'pretty':
-      return formatPretty(cases, sourceSnippets, format);
+      return formatPrettySegments(cases, sourceSnippets, format);
     case 'collision':
     default:
-      return formatCollision(cases, sourceSnippets, format);
+      return formatCollisionSegments(cases, sourceSnippets, format);
   }
 }
 
-function formatCollision(
+function formatCollisionSegments(
   cases: JUnitTestCase[],
   sourceSnippets: ReadonlyMap<string, string>,
   format: TestOutputFormat,
-): string {
-  const lines = cases.flatMap((testCase) => {
+): TestOutputSegment[] {
+  return cases.map((testCase) => {
     const failureLocation = isFailure(testCase.status) ? firstFailureLocation([testCase]) : {};
     const file = failureLocation.file ?? testCase.file;
     const line = failureLocation.line ?? testCase.line;
@@ -69,14 +87,17 @@ function formatCollision(
     const snippet = isFailure(testCase.status) && file && line
       ? sourceSnippets.get(sourceSnippetKey(file, line))
       : undefined;
-    return [
+    const lines = [
       formatTestCaseLine(testCase, statusGlyph(testCase.status), format),
       ...(location ? [location] : []),
       ...(snippet && format.sourceSnippet !== false ? [formatSnippet(snippet, format)] : []),
       ...(message ? [message] : []),
     ];
+    return {
+      text: `${lines.join('\n')}\n`,
+      ...(location && file && line ? { location: { file, line } } : {}),
+    };
   });
-  return `${lines.join('\n')}\n`;
 }
 
 function formatProgress(cases: JUnitTestCase[], format: TestOutputFormat): string {
@@ -92,12 +113,12 @@ function formatProgress(cases: JUnitTestCase[], format: TestOutputFormat): strin
   return `${indicators}\n${cases.length} tests: ${passed} passed, ${failed} failed, ${errored} errors, ${skipped} skipped\n`;
 }
 
-function formatPretty(
+function formatPrettySegments(
   cases: JUnitTestCase[],
   sourceSnippets: ReadonlyMap<string, string>,
   format: TestOutputFormat,
-): string {
-  const lines = cases.flatMap((testCase) => {
+): TestOutputSegment[] {
+  return cases.map((testCase) => {
     const result = format.testCase
       ? formatTestCaseLine(testCase, statusLabel(testCase.status), format)
       : `${colorStatusLabel(statusLabel(testCase.status), testCase.status, format.colors !== false)} ${testCase.name}${format.duration === false ? '' : formatDuration(testCase.timeSeconds)}`;
@@ -109,14 +130,17 @@ function formatPretty(
       ? sourceSnippets.get(sourceSnippetKey(file, line))
       : undefined;
     const detail = formatFailureMessage(testCase.message, format);
-    return [
+    const lines = [
       result,
       ...(location ? [location] : []),
       ...(snippet && format.sourceSnippet !== false ? [formatSnippet(snippet, format)] : []),
       ...(detail ? [detail] : []),
     ];
+    return {
+      text: `${lines.join('\n')}\n`,
+      ...(location && file && line ? { location: { file, line } } : {}),
+    };
   });
-  return `${lines.join('\n')}\n`;
 }
 
 function formatTestCaseLine(testCase: JUnitTestCase, defaultStatus: string, format: TestOutputFormat): string {

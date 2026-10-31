@@ -33,8 +33,8 @@ export async function autoDetectPhpUnit(workspacePath: string, platform = proces
   }
 
   const candidates = platform === 'win32'
-    ? ['vendor\\bin\\phpunit', 'vendor\\bin\\phpunit.bat']
-    : ['vendor/bin/phpunit'];
+    ? ['vendor\\bin\\phpunit', 'vendor\\bin\\phpunit.bat', 'phpunit.phar']
+    : ['vendor/bin/phpunit', 'phpunit.phar'];
 
   for (const candidate of candidates) {
     const resolved = path.join(workspacePath, candidate);
