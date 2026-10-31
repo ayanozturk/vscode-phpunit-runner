@@ -21,14 +21,9 @@ export async function autoDetectPhpUnit(workspacePath: string, platform = proces
     const pestCandidates = platform === 'win32'
       ? ['vendor\\bin\\pest', 'vendor\\bin\\pest.bat']
       : ['vendor/bin/pest'];
-    for (const candidate of pestCandidates) {
-      const resolved = path.join(workspacePath, candidate);
-      try {
-        await fs.access(resolved);
-        return resolved;
-      } catch {
-        // Fall back to PHPUnit when Pest is declared but its binary is not installed.
-      }
+    const pestPath = await firstExistingPath(workspacePath, pestCandidates);
+    if (pestPath) {
+      return pestPath;
     }
   }
 
@@ -36,17 +31,7 @@ export async function autoDetectPhpUnit(workspacePath: string, platform = proces
     ? ['vendor\\bin\\phpunit', 'vendor\\bin\\phpunit.bat', 'phpunit.phar']
     : ['vendor/bin/phpunit', 'phpunit.phar'];
 
-  for (const candidate of candidates) {
-    const resolved = path.join(workspacePath, candidate);
-    try {
-      await fs.access(resolved);
-      return resolved;
-    } catch {
-      continue;
-    }
-  }
-
-  return 'phpunit';
+  return await firstExistingPath(workspacePath, candidates) ?? 'phpunit';
 }
 
 async function declaresPest(workspacePath: string): Promise<boolean> {
@@ -62,13 +47,17 @@ async function declaresPest(workspacePath: string): Promise<boolean> {
 }
 
 export async function autoDetectConfigurationFile(workspacePath: string): Promise<string | undefined> {
-  for (const candidate of ['phpunit.xml', 'phpunit.xml.dist']) {
+  return firstExistingPath(workspacePath, ['phpunit.xml', 'phpunit.xml.dist']);
+}
+
+async function firstExistingPath(workspacePath: string, candidates: string[]): Promise<string | undefined> {
+  for (const candidate of candidates) {
     const resolved = path.join(workspacePath, candidate);
     try {
       await fs.access(resolved);
       return resolved;
     } catch {
-      continue;
+      // Continue to the next configured fallback.
     }
   }
 

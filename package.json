@@ -135,7 +135,8 @@
           "enum": [
             "collision",
             "progress",
-            "pretty"
+            "pretty",
+            "summary"
           ],
           "default": "collision",
           "description": "Format structured test results in the Test Results output."

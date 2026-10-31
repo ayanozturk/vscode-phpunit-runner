@@ -618,7 +618,7 @@ async function runItem(
     const folder = vscode.workspace.getWorkspaceFolder(data.uri);
     const outputPreset = getOutputPreset(folder);
     const outputFormat = getOutputFormat(folder);
-    const sourceSnippets = outputPreset === 'progress' || outputFormat.sourceSnippet === false
+    const sourceSnippets = outputPreset === 'progress' || outputPreset === 'summary' || outputFormat.sourceSnippet === false
       ? new Map<string, string>()
       : await readFailureSourceSnippets(result.cases, folder);
     await appendStructuredTestOutput(
@@ -678,7 +678,7 @@ async function runFileScope(
     const folder = vscode.workspace.getWorkspaceFolder(firstFileData.uri);
     const outputPreset = getOutputPreset(folder);
     const outputFormat = getOutputFormat(folder);
-    const sourceSnippets = outputPreset === 'progress' || outputFormat.sourceSnippet === false
+    const sourceSnippets = outputPreset === 'progress' || outputPreset === 'summary' || outputFormat.sourceSnippet === false
       ? new Map<string, string>()
       : await readFailureSourceSnippets(result.cases, folder);
     await appendStructuredTestOutput(
@@ -1221,7 +1221,7 @@ async function runByGroup(groupOverride?: string): Promise<void> {
         );
         const outputPreset = getOutputPreset(folder);
         const outputFormat = getOutputFormat(folder);
-        const sourceSnippets = outputPreset === 'progress' || outputFormat.sourceSnippet === false
+        const sourceSnippets = outputPreset === 'progress' || outputPreset === 'summary' || outputFormat.sourceSnippet === false
           ? new Map<string, string>()
           : await readFailureSourceSnippets(result.cases, folder);
         await appendStructuredTestOutput(
@@ -1315,7 +1315,7 @@ function getConfig(scope?: vscode.ConfigurationScope): vscode.WorkspaceConfigura
 
 function getOutputPreset(folder?: vscode.WorkspaceFolder): OutputPreset {
   const value = getConfig(folder).get<string>('output.preset', 'collision');
-  return value === 'progress' || value === 'pretty' ? value : 'collision';
+  return value === 'progress' || value === 'pretty' || value === 'summary' ? value : 'collision';
 }
 
 function getOutputFormat(folder?: vscode.WorkspaceFolder): TestOutputFormat {

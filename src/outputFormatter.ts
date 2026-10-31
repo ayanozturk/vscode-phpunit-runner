@@ -1,7 +1,7 @@
 import type { JUnitTestCase, JUnitStatus } from './types';
 import { firstFailureLocation } from './junit';
 
-export type OutputPreset = 'collision' | 'progress' | 'pretty';
+export type OutputPreset = 'collision' | 'progress' | 'pretty' | 'summary';
 export type TestOutputFormat = {
   colors?: boolean;
   duration?: boolean;
@@ -65,12 +65,51 @@ export function formatTestOutputSegments(
   switch (preset) {
     case 'progress':
       return [{ text: formatProgress(cases, format) }];
+    case 'summary':
+      return formatSummarySegments(cases, format);
     case 'pretty':
       return formatPrettySegments(cases, sourceSnippets, format);
     case 'collision':
     default:
       return formatCollisionSegments(cases, sourceSnippets, format);
   }
+}
+
+function formatSummarySegments(cases: JUnitTestCase[], format: TestOutputFormat): TestOutputSegment[] {
+  const failedCases = cases.filter((testCase) => isFailure(testCase.status));
+  const passed = countStatus(cases, 'passed');
+  const failed = countStatus(cases, 'failed');
+  const errored = countStatus(cases, 'errored');
+  const skipped = countStatus(cases, 'skipped');
+  const testCount = cases.length === 1 ? '1 test' : `${cases.length} tests`;
+  const errorCount = errored === 1 ? '1 error' : `${errored} errors`;
+  const lines = [`${testCount}: ${passed} passed, ${failed} failed, ${errorCount}, ${skipped} skipped`];
+
+  for (const testCase of failedCases) {
+    const failureLocation = firstFailureLocation([testCase]);
+    const file = failureLocation.file ?? testCase.file;
+    const line = failureLocation.line ?? testCase.line;
+    const location = formatFailureLocation(file, line, format);
+    const message = formatFailureMessage(testCase.message, format)?.split(/\r?\n/, 1)[0];
+    lines.push(formatTestCaseLine(testCase, statusLabel(testCase.status), {
+      ...format,
+      duration: false,
+    }));
+    if (location) {
+      lines.push(location);
+    }
+    if (message) {
+      lines.push(message);
+    }
+  }
+
+  const onlyFailure = failedCases.length === 1 ? firstFailureLocation(failedCases) : undefined;
+  return [{
+    text: `${lines.join('\n')}\n`,
+    ...(format.failureLocation !== '' && onlyFailure?.file && onlyFailure.line
+      ? { location: { file: onlyFailure.file, line: onlyFailure.line } }
+      : {}),
+  }];
 }
 
 function formatCollisionSegments(

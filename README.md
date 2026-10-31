@@ -78,6 +78,7 @@ Set `phpunitRunner.output.preset` to choose how structured PHPUnit results appea
 
 - `collision` (default): a detailed line for each test, with duration and failure details.
 - `progress`: one compact status marker per test followed by a result count.
+- `summary`: aggregate counts plus concise details for failed and errored tests only.
 - `pretty`: plain per-test status lines without status icons.
 
 Use `phpunitRunner.output.format` to tailor status markers and failure details per workspace. For example, to hide colors and durations and shorten failure lines:
@@ -183,6 +184,16 @@ Set `phpunitRunner.docker.command` to `docker` for the Docker CLI or `docker com
 ### Remote reports
 
 JUnit and Clover reports are written under `.phpunit-runner` and read from the workspace on the VS Code host. Remote command and Docker setups must expose that directory through a shared or mounted workspace, or retrieve the generated reports before the command finishes. Without a readable JUnit report, tests are marked skipped as unverified; without a readable Clover report, coverage is unavailable. The output channel reports these cases.
+
+### Troubleshooting
+
+#### A discovered test reports “No tests executed”
+
+Discovery and PHPUnit execution are separate: the Testing view can find a test method that PHPUnit later excludes through its configuration, filters, or bootstrap. Open **PHPUnit Runner: Show Output** and check the exact command and working directory used for the run. Then try that command in a terminal; if PHPUnit also finds no matching test, review the project's `phpunit.xml` filters and test-suite paths, and confirm the selected method belongs to the configured suite. If PHPUnit does run tests but the Testing view cannot show individual outcomes, check the output channel for a JUnit report warning and follow the [remote reports](#remote-reports) setup guidance.
+
+#### A full-suite run looks busy after PHPUnit finishes
+
+Large suites can contain thousands of individual results. Workspace and folder selections run in one PHPUnit process, and the runner indexes the returned JUnit cases before updating each file and test. Choose `summary` to show counts and failure details only, or `progress` to keep one compact marker per test. To avoid opening the Test Results view after every successful run, set `testing.automaticallyOpenTestResults` to `openOnTestFailure` or `neverOpen`.
 
 ## Commands
 

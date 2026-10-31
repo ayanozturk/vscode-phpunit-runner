@@ -56,6 +56,18 @@ describe('formatTestOutput', () => {
     assert.doesNotMatch(output, /[✓✗]/);
   });
 
+  it('summarizes all outcomes and shows concise details only for failures and errors', () => {
+    const output = stripAnsi(formatTestOutput(cases, 'summary'));
+
+    assert.match(output, /^4 tests: 1 passed, 1 failed, 1 error, 1 skipped$/m);
+    assert.match(output, /^FAIL testFailure with data set "edge case"$/m);
+    assert.match(output, /^  \/tests\/ExampleTest\.php:24$/m);
+    assert.match(output, /^  Failed asserting false\.$/m);
+    assert.match(output, /^ERROR testError$/m);
+    assert.match(output, /^  Runtime exception$/m);
+    assert.doesNotMatch(output, /testPass|testSkipped|Expected true\.|Not applicable/);
+  });
+
   it('preserves raw output when no structured report cases are available', () => {
     assert.equal(formatTestOutput([], 'collision', 'dd() output'), 'dd() output\n');
     assert.equal(formatTestOutput([], 'pretty', 'already terminated\n'), 'already terminated\n');
@@ -63,9 +75,9 @@ describe('formatTestOutput', () => {
   });
 
   it('returns distinct, stable content for each supported preset', () => {
-    const outputs = (['collision', 'progress', 'pretty'] as OutputPreset[])
+    const outputs = (['collision', 'progress', 'pretty', 'summary'] as OutputPreset[])
       .map((preset) => formatTestOutput(cases, preset));
-    assert.equal(new Set(outputs).size, 3);
+    assert.equal(new Set(outputs).size, 4);
   });
 
   it('colors outcome markers and keeps remote failure output useful without a local snippet', () => {
@@ -114,6 +126,13 @@ describe('formatTestOutput', () => {
     });
     assert.equal(hiddenLocation[0].location, undefined);
     assert.equal(formatTestOutputSegments([cases[1]], 'progress')[0].location, undefined);
+    assert.deepEqual(formatTestOutputSegments([cases[1]], 'summary')[0].location, {
+      file: '/tests/ExampleTest.php',
+      line: 24,
+    });
+    assert.equal(formatTestOutputSegments([cases[1]], 'summary', '', new Map(), {
+      failureLocation: '',
+    })[0].location, undefined);
   });
 
   it('supports configurable test-line templates, icons, failure details, and plain output', () => {

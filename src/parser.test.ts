@@ -242,6 +242,28 @@ it('adds values', function (int $value) {
     ]);
   });
 
+  it('keeps nested and sibling Pest describe paths while indexing tests in source order', () => {
+    const source = `<?php
+describe('outer', function () {
+    test('first', fn () => true);
+    describe('inner', function () {
+        test('nested', fn () => true);
+    });
+});
+
+describe('sibling', function () {
+    test('last', fn () => true);
+});
+`;
+
+    const methods = parseTestSource('/tmp/DescribePathsTest.php', source).classes.flatMap((testClass) => testClass.methods);
+    assert.deepEqual(methods.map(({ name, pestDescribePath }) => [name, pestDescribePath]), [
+      ['first', ['outer']],
+      ['nested', ['outer', 'inner']],
+      ['last', ['sibling']],
+    ]);
+  });
+
   it('uses Pest dataset keys and computes chained literal dataset combinations', () => {
     const source = `<?php
 test('named values', fn ($value) => expect($value)->not->toBeNull())

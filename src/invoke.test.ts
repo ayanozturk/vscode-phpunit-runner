@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { describe, it } from 'node:test';
-import { autoDetectPhpUnit, resolveDockerInvocation, resolveInvocation } from './invoke';
+import { autoDetectConfigurationFile, autoDetectPhpUnit, resolveDockerInvocation, resolveInvocation } from './invoke';
 import { mapHostPathToContainer } from './paths';
 import type { RunnerConfig, TestTarget } from './types';
 
@@ -85,6 +85,27 @@ describe('autoDetectPhpUnit', () => {
       });
       assert.equal(invocation.command, 'php');
       assert.equal(invocation.args[0], phar);
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('autoDetectConfigurationFile', () => {
+  it('prefers phpunit.xml over the distribution file and returns undefined when neither exists', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit config detection '));
+    try {
+      const standardConfig = path.join(workspace, 'phpunit.xml');
+      const distributionConfig = path.join(workspace, 'phpunit.xml.dist');
+      await fs.writeFile(distributionConfig, '<phpunit/>');
+      assert.equal(await autoDetectConfigurationFile(workspace), distributionConfig);
+
+      await fs.writeFile(standardConfig, '<phpunit/>');
+      assert.equal(await autoDetectConfigurationFile(workspace), standardConfig);
+
+      await fs.rm(standardConfig);
+      await fs.rm(distributionConfig);
+      assert.equal(await autoDetectConfigurationFile(workspace), undefined);
     } finally {
       await fs.rm(workspace, { recursive: true, force: true });
     }

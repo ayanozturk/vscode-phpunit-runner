@@ -85,9 +85,22 @@ function parsePestTests(
   const methods: TestMethod[] = [];
   const occurrences = new Map<string, number>();
   const describeBlocks = parsePestDescribeBlocks(source, code);
+  const activeDescribeBlocks: typeof describeBlocks = [];
+  let nextDescribeBlock = 0;
   const callPattern = /\b(?:test|it)\s*\(/gi;
   for (const match of code.matchAll(callPattern)) {
     const start = match.index ?? 0;
+    while (activeDescribeBlocks.length > 0 && activeDescribeBlocks[activeDescribeBlocks.length - 1].bodyEnd <= start) {
+      activeDescribeBlocks.pop();
+    }
+    while (nextDescribeBlock < describeBlocks.length && describeBlocks[nextDescribeBlock].bodyStart < start) {
+      const block = describeBlocks[nextDescribeBlock];
+      if (block.bodyEnd > start) {
+        activeDescribeBlocks.push(block);
+      }
+      nextDescribeBlock += 1;
+    }
+
     if (/\bfunction\s*$/i.test(code.slice(Math.max(0, start - 32), start))) {
       continue;
     }
@@ -101,10 +114,7 @@ function parsePestTests(
     if (!name) {
       continue;
     }
-    const describePath = describeBlocks
-      .filter((block) => start > block.bodyStart && start < block.bodyEnd)
-      .sort((left, right) => left.bodyStart - right.bodyStart)
-      .map((block) => block.name);
+    const describePath = activeDescribeBlocks.map((block) => block.name);
     const occurrenceKey = `${JSON.stringify(describePath)}:${name}`;
     const occurrence = (occurrences.get(occurrenceKey) ?? 0) + 1;
     occurrences.set(occurrenceKey, occurrence);
