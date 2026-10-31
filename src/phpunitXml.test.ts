@@ -27,6 +27,27 @@ describe('parsePhpUnitXml', () => {
     assert.deepEqual(parsed.suites[1].files, ['tests/Smoke.php']);
   });
 
+  it('preserves directory filename prefixes and suffixes', () => {
+    const parsed = parsePhpUnitXml(`<phpunit><testsuites>
+      <testsuite name="Prefixed">
+        <directory prefix="Integration" suffix="Spec.php">tests</directory>
+      </testsuite>
+    </testsuites></phpunit>`);
+
+    assert.deepEqual(parsed.suites[0].directories, [
+      { path: 'tests', prefix: 'Integration', suffix: 'Spec.php' },
+    ]);
+    assert.deepEqual(resolveDiscoveryGlobs({
+      configuredIncludes: ['**/*Test.php'],
+      configuredExcludes: [],
+      xmlText: `<phpunit><testsuites>
+        <testsuite name="Prefixed">
+          <directory prefix="Integration" suffix="Spec.php">tests</directory>
+        </testsuite>
+      </testsuites></phpunit>`,
+    }).includeGlobs, ['tests/**/Integration*Spec.php']);
+  });
+
   it('ignores markup-looking text in comments and reads CDATA directory paths', () => {
     const parsed = parsePhpUnitXml(`<phpunit>
   <!-- <testsuite name="Commented"><directory>tests/Hidden</directory></testsuite> -->

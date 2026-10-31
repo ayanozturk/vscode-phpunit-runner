@@ -2,7 +2,7 @@ import * as sax from 'sax';
 
 export type PhpUnitSuite = {
   name: string;
-  directories: { path: string; suffix?: string }[];
+  directories: { path: string; prefix?: string; suffix?: string }[];
   files: string[];
   excludes: string[];
 };
@@ -20,6 +20,7 @@ export function parsePhpUnitXml(xml: string): PhpUnitXmlConfig {
   let pathElement: {
     name: 'directory' | 'file' | 'exclude';
     value: string;
+    prefix?: string;
     suffix?: string;
     suite?: PhpUnitSuite;
     isTopLevelExclude: boolean;
@@ -49,6 +50,7 @@ export function parsePhpUnitXml(xml: string): PhpUnitXmlConfig {
       pathElement = {
         name,
         value: '',
+        prefix: name === 'directory' ? readSaxAttribute(tag.attributes, 'prefix') || undefined : undefined,
         suffix: name === 'directory' ? readSaxAttribute(tag.attributes, 'suffix') || undefined : undefined,
         suite: suiteStack.at(-1),
         isTopLevelExclude: name === 'exclude' && suiteStack.length === 0 && testsuitesDepth > 0,
@@ -71,6 +73,7 @@ export function parsePhpUnitXml(xml: string): PhpUnitXmlConfig {
         if (pathElement.name === 'directory') {
           pathElement.suite.directories.push({
             path: value,
+            ...(pathElement.prefix ? { prefix: pathElement.prefix } : {}),
             ...(pathElement.suffix ? { suffix: pathElement.suffix } : {}),
           });
         } else if (pathElement.name === 'file') {
@@ -141,7 +144,7 @@ function discoveryPatternsFromXml(config: PhpUnitXmlConfig): { includeGlobs: str
     for (const directory of suite.directories) {
       const relative = toPosixRelative(directory.path);
       const suffix = directory.suffix?.replace(/^\*/, '') || '.php';
-      includeGlobs.push(`${relative}/**/*${suffix}`);
+      includeGlobs.push(`${relative}/**/${directory.prefix ?? ''}*${suffix}`);
     }
     for (const file of suite.files) {
       includeGlobs.push(toPosixRelative(file));
