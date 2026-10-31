@@ -48,7 +48,26 @@ exports.run = async () => {
   try {
     const extension = vscode.extensions.all.find((item) => item.packageJSON.name === 'aos-phpunit');
     assert.ok(extension, 'PHPUnit Runner extension is loaded');
+    const outputClears = [];
+    const originalCreateOutputChannel = vscode.window.createOutputChannel;
+    vscode.window.createOutputChannel = function (...args) {
+      const channel = originalCreateOutputChannel.apply(this, args);
+      if (args[0] !== 'PHPUnit Runner') return channel;
+      return new Proxy(channel, {
+        get(target, property) {
+          const value = Reflect.get(target, property, target);
+          if (property === 'clear') {
+            return (...clearArgs) => {
+              outputClears.push(clearArgs);
+              return value.apply(target, clearArgs);
+            };
+          }
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    };
     const api = await extension.activate();
+    vscode.window.createOutputChannel = originalCreateOutputChannel;
     assert.ok(api && api.controller, 'test-mode activation exposes the controller');
 
     const commands = new Set(await vscode.commands.getCommands(true));
@@ -85,7 +104,7 @@ exports.run = async () => {
         '  if [ "$argument" = "--filter" ]; then previous="filter"; fi',
         'done',
         'cat > "$report" <<XML',
-        '<testsuites><testcase name="$testcaseName" classname="' + className + '" time="0.01"/></testsuites>',
+        "<testsuites><testcase name='$testcaseName' classname='" + className + "' time='0.01'/></testsuites>",
         'XML',
         'if [ -n "$coverage" ]; then',
         '  cat > "$coverage" <<XML',
@@ -115,16 +134,54 @@ exports.run = async () => {
       'adds values (with data set #0)',
       'adds values (with data set #1)',
     ]);
+    const generatorParent = findMethod('generated values');
+    const generatorDataset = findMethod('generated values (with data set "first")');
+    assert.ok(generatorParent && generatorDataset, 'literal generator yields appear in the test tree');
+    assert.deepEqual([...generatorParent.children].map(([, item]) => item.label), [
+      'generated values (with data set "first")',
+      'generated values (with data set "second")',
+    ]);
     const pestEvents = [];
     const restorePestCapture = captureRunEvents(api.controller, pestEvents);
-    const pestRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
-    assert.ok(pestRunProfile);
-    await pestRunProfile.runHandler(
-      new vscode.TestRunRequest([pestDataset]),
+    const testRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
+    assert.ok(testRunProfile);
+    const initialClears = outputClears.length;
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([generatorDataset]),
       new vscode.CancellationTokenSource().token,
     );
     restorePestCapture();
-    assert.ok(pestEvents.some((event) => event.id === pestDataset.id && event.state === 'passed'), 'a Pest data set can run independently');
+    assert.ok(pestEvents.some((event) => event.id === generatorDataset.id && event.state === 'passed'), 'a Pest generator data set can run independently');
+    assert.equal(outputClears.length, initialClears + 1, 'output is cleared once by default for a run');
+
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'clearOutputOnRun', false, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    const disabledClears = outputClears.length;
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    assert.equal(outputClears.length, disabledClears, 'a workspace can preserve earlier output');
+
+    const workspaceATestsFolder = flatten(api.controller.items).find((item) => (
+      item.label === 'tests'
+      && [...item.children].some(([, child]) => child.uri?.fsPath.startsWith(workspaceA.uri.fsPath))
+    ));
+    assert.ok(workspaceATestsFolder, 'workspace A test folder is available');
+    const disabledFolderClears = outputClears.length;
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([workspaceATestsFolder]),
+      new vscode.CancellationTokenSource().token,
+    );
+    assert.equal(outputClears.length, disabledFolderClears, 'folder selections use descendant workspace settings');
+
+    const mixedMultiRootClears = outputClears.length;
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha'), findMethod('testBeta')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    assert.equal(outputClears.length, mixedMultiRootClears + 1, 'a multi-root run clears once when any included workspace enables it');
 
     const dynamicTestPath = path.join(workspaceA.uri.fsPath, 'tests', 'WatcherTest.php');
     await fs.writeFile(dynamicTestPath, '<?php class WatcherTest { public function testCreated(): void {} }', 'utf8');
@@ -144,11 +201,20 @@ exports.run = async () => {
 
     const groupEvents = [];
     const restoreGroupCapture = captureRunEvents(api.controller, groupEvents);
+    const groupClears = outputClears.length;
     await api.runGroup('integration');
     restoreGroupCapture();
+    assert.equal(outputClears.length, groupClears + 1, 'a group run clears once across its workspaces');
     assert.ok((await fs.readFile(path.join(workspaceA.uri.fsPath, 'runner.log'), 'utf8')).includes('invoked'));
     assert.ok((await fs.readFile(path.join(workspaceB.uri.fsPath, 'runner.log'), 'utf8')).includes('invoked'));
     assert.equal(groupEvents.filter((event) => event.state === 'passed').length, 2, 'each workspace group reports its test passed');
+
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceB).update(
+      'clearOutputOnRun', false, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    const disabledGroupClears = outputClears.length;
+    await api.runGroup('integration');
+    assert.equal(outputClears.length, disabledGroupClears, 'group output stays intact when every included workspace disables clearing');
 
     const cancelItem = findMethod('testAlpha');
     const coverageProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Coverage);
@@ -168,16 +234,15 @@ exports.run = async () => {
     assert.deepEqual(details.map((item) => item.executed), [3, 0]);
     assert.deepEqual(details.map((item) => item.location.line), [0, 1]);
 
-    const runProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
-    assert.ok(cancelItem && runProfile);
+    assert.ok(cancelItem && testRunProfile);
     const events = [];
     const restoreCancellationCapture = captureRunEvents(api.controller, events);
     await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
       'environment', { PHPUNIT_RUNNER_MODE: 'hang' }, vscode.ConfigurationTarget.WorkspaceFolder,
     );
     const cancellation = new vscode.CancellationTokenSource();
-    const request = new vscode.TestRunRequest([cancelItem], undefined, runProfile);
-    const running = Promise.resolve(runProfile.runHandler(request, cancellation.token));
+    const request = new vscode.TestRunRequest([cancelItem], undefined, testRunProfile);
+    const running = Promise.resolve(testRunProfile.runHandler(request, cancellation.token));
     await until(
       () => fs.access(path.join(workspaceA.uri.fsPath, 'runner-ready')).then(() => true, () => false),
       'fake runner starts before cancellation',

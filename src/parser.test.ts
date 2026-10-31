@@ -193,6 +193,81 @@ test('combined values', fn ($left, $right) => expect($left)->not->toBe($right))
     ]);
   });
 
+  it('discovers named and positional Pest datasets yielded by inline generator closures', () => {
+    const source = `<?php
+test('named generator values', fn ($value) => expect($value)->not->toBeNull())
+    ->with(function (): iterable {
+        // This comment must not be mistaken for a yielded case.
+        yield 'first' => ['one'];
+        yield 'second' => ['two'];
+    });
+
+test('positional generator values', fn ($value) => expect($value)->not->toBeNull())
+    ->with(static function () {
+        yield ['one'];
+        yield ['two'];
+    });
+`;
+
+    const methods = parseTestSource('/tmp/GeneratorDatasetsTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.slice(1, 3).map((method) => method.pestTestName), [
+      'named generator values with data set "first"',
+      'named generator values with data set "second"',
+    ]);
+    assert.deepEqual(methods.slice(4).map((method) => method.pestTestName), [
+      'positional generator values with data set #0',
+      'positional generator values with data set #1',
+    ]);
+  });
+
+  it('computes combinations when generator and array dataset dimensions are chained', () => {
+    const source = `<?php
+test('combined generator values', fn ($left, $right) => expect($left)->not->toBe($right))
+    ->with(['first' => 'one', 'second' => 'two'])
+    ->with(function () {
+        yield 'x' => ['x'];
+        yield 'y' => ['y'];
+    });
+`;
+
+    const methods = parseTestSource('/tmp/ChainedGeneratorDatasetsTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.slice(1).map((method) => method.pestTestName), [
+      'combined generator values with data set #0',
+      'combined generator values with data set #1',
+      'combined generator values with data set #2',
+      'combined generator values with data set #3',
+    ]);
+  });
+
+  it('does not enumerate generator datasets with dynamic values, keys, control flow, or malformed yields', () => {
+    const source = `<?php
+test('dynamic value', fn () => null)->with(function () use ($value) {
+    yield 'dynamic' => $value;
+});
+test('dynamic key', fn () => null)->with(function () use ($key) {
+    yield $key => ['value'];
+});
+test('interpolated key', fn () => null)->with(function () use ($key) {
+    yield "\${key}" => ['value'];
+});
+test('conditional yield', fn () => null)->with(function () use ($enabled) {
+    if ($enabled) { yield 'maybe' => ['value']; }
+});
+test('missing semicolon', fn () => null)->with(function () {
+    yield 'malformed' => ['value']
+});
+`;
+
+    const methods = parseTestSource('/tmp/DynamicGeneratorDatasetsTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map((method) => method.name), [
+      'dynamic value',
+      'dynamic key',
+      'interpolated key',
+      'conditional yield',
+      'missing semicolon',
+    ]);
+  });
+
   it('keeps dynamic datasets and malformed or spread entries as a single Pest case', () => {
     const source = `<?php
 test('external set', fn ($value) => expect($value)->toBeTruthy())->with('external_values');

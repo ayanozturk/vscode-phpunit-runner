@@ -124,6 +124,12 @@
           "default": false,
           "description": "Save all dirty editors before running tests."
         },
+        "phpunitRunner.clearOutputOnRun": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": true,
+          "description": "Clear the PHPUnit Runner output channel once when a test run starts."
+        },
         "phpunitRunner.output.preset": {
           "type": "string",
           "enum": [

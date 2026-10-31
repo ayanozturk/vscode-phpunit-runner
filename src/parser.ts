@@ -175,9 +175,9 @@ function readPestTestName(argumentsSource: string): string | undefined {
 }
 
 /**
- * Reads dataset identities when every chained `with()` call uses a literal PHP array.
- * Dynamic dataset references remain represented by the parent Pest test because their
- * cases cannot be known without executing project code.
+ * Reads dataset identities when each chained `with()` call uses a literal PHP array or
+ * a literal-only generator closure. Dynamic dataset references stay represented by the
+ * parent Pest test because their cases cannot be known without executing project code.
  */
 function parsePestDatasetNames(source: string, code: string, chainStart: number): string[] | undefined {
   const dimensions: Array<Array<string | undefined>> = [];
@@ -196,44 +196,23 @@ function parsePestDatasetNames(source: string, code: string, chainStart: number)
       return undefined;
     }
 
-    let arrayOpen = openParen + 1;
-    while (arrayOpen < closeParen && /\s/.test(code[arrayOpen])) {
-      arrayOpen += 1;
+    let argumentStart = openParen + 1;
+    while (argumentStart < closeParen && /\s/.test(code[argumentStart])) {
+      argumentStart += 1;
     }
-    if (code[arrayOpen] !== '[') {
-      return undefined;
-    }
-
-    const arrayClose = findMatchingArrayBracket(code, arrayOpen);
-    if (arrayClose < 0 || arrayClose > closeParen) {
-      return undefined;
-    }
-
-    const entries = splitArrayEntries(source, code, arrayOpen, arrayClose);
-    if (entries.length === 0) {
-      return undefined;
-    }
-    const labels: Array<string | undefined> = [];
-    for (let index = 0; index < entries.length; index += 1) {
-      const entry = entries[index];
-      if (/^\s*\.\.\./.test(entry.code)) {
+    let labels: Array<string | undefined> | undefined;
+    if (code[argumentStart] === '[') {
+      const arrayClose = findMatchingArrayBracket(code, argumentStart);
+      if (arrayClose < 0 || arrayClose > closeParen) {
         return undefined;
       }
-
-      const arrowIndex = findTopLevelArrow(entry.code);
-      if (arrowIndex < 0) {
-        labels.push(undefined);
-        continue;
-      }
-
-      const key = entry.source.slice(0, arrowIndex).trim();
-      const stringKey = readPestStringLiteral(key);
-      if (stringKey === undefined) {
-        return undefined;
-      }
-      labels.push(stringKey);
+      labels = parseArrayDatasetLabels(source, code, argumentStart, arrayClose);
+    } else if (/^(?:static\s+)?function\b/.test(code.slice(argumentStart, closeParen))) {
+      labels = parseGeneratorDatasetLabels(source, code, argumentStart, closeParen);
     }
-
+    if (!labels || labels.length === 0) {
+      return undefined;
+    }
     dimensions.push(labels);
     cursor = closeParen + 1;
   }
@@ -258,6 +237,161 @@ function parsePestDatasetNames(source: string, code: string, chainStart: number)
       return `with data set "${labels[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
     }
     return `with data set #${index}`;
+  });
+}
+
+function parseArrayDatasetLabels(
+  source: string,
+  code: string,
+  arrayOpen: number,
+  arrayClose: number,
+): Array<string | undefined> | undefined {
+  const entries = splitArrayEntries(source, code, arrayOpen, arrayClose);
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const labels: Array<string | undefined> = [];
+  for (const entry of entries) {
+    if (/^\s*\.\.\./.test(entry.code)) {
+      return undefined;
+    }
+
+    const arrowIndex = findTopLevelArrow(entry.code);
+    if (arrowIndex < 0) {
+      labels.push(undefined);
+      continue;
+    }
+
+    const key = entry.source.slice(0, arrowIndex).trim();
+    const stringKey = readPestStringLiteral(key);
+    if (stringKey === undefined) {
+      return undefined;
+    }
+    labels.push(stringKey);
+  }
+  return labels;
+}
+
+function parseGeneratorDatasetLabels(
+  source: string,
+  code: string,
+  closureStart: number,
+  callEnd: number,
+): Array<string | undefined> | undefined {
+  const parametersOpen = code.indexOf('(', closureStart);
+  const parametersClose = parametersOpen >= 0 ? findMatchingParenthesis(code, parametersOpen) : -1;
+  if (parametersClose < 0 || parametersClose >= callEnd) {
+    return undefined;
+  }
+
+  // A closure may have a `use (...)` clause or return type between its parameters and body.
+  const bodyOpen = code.indexOf('{', parametersClose + 1);
+  if (bodyOpen < 0 || bodyOpen >= callEnd) {
+    return undefined;
+  }
+  const bodyClose = findMatchingBrace(code, bodyOpen);
+  if (bodyClose < 0 || bodyClose >= callEnd) {
+    return undefined;
+  }
+  if (code.slice(bodyClose + 1, callEnd).trim()) {
+    return undefined;
+  }
+
+  const labels: Array<string | undefined> = [];
+  let segmentStart = bodyOpen + 1;
+  let bracketDepth = 0;
+  let parenthesisDepth = 0;
+  let braceDepth = 0;
+  for (let index = segmentStart; index <= bodyClose; index += 1) {
+    const character = code[index];
+    if (character === '[') bracketDepth += 1;
+    else if (character === ']') bracketDepth -= 1;
+    else if (character === '(') parenthesisDepth += 1;
+    else if (character === ')') parenthesisDepth -= 1;
+    else if (character === '{') braceDepth += 1;
+    else if (character === '}') braceDepth -= 1;
+
+    if (character === ';' && bracketDepth === 0 && parenthesisDepth === 0 && braceDepth === 0) {
+      const statementStart = segmentStart;
+      const statementCodeSource = code.slice(statementStart, index);
+      const statementCode = statementCodeSource.trim();
+      segmentStart = index + 1;
+      if (!statementCode) {
+        continue;
+      }
+
+      const yieldMatch = statementCode.match(/^yield\b/);
+      if (!yieldMatch || /^yield\s+from\b/.test(statementCode)) {
+        return undefined;
+      }
+      const codeLeadingWhitespace = statementCodeSource.length - statementCodeSource.trimStart().length;
+      const yieldOffset = statementCode.indexOf('yield') + 'yield'.length;
+      const expressionSource = source.slice(statementStart + codeLeadingWhitespace + yieldOffset, index).trim();
+      const expressionCode = maskNonCode(expressionSource);
+      if (!expressionCode || !expressionSource) {
+        return undefined;
+      }
+
+      const arrowIndex = findTopLevelArrow(expressionCode);
+      let label: string | undefined;
+      let valueSource: string;
+      if (arrowIndex >= 0) {
+        label = readPestStringLiteral(expressionSource.slice(0, arrowIndex).trim());
+        if (label === undefined) {
+          return undefined;
+        }
+        valueSource = expressionSource.slice(arrowIndex + 2).trim();
+      } else {
+        valueSource = expressionSource;
+      }
+
+      if (!isStaticPhpLiteral(valueSource)) {
+        return undefined;
+      }
+      labels.push(label);
+    }
+  }
+
+  const trailingCode = code.slice(segmentStart, bodyClose).trim();
+  if (trailingCode || labels.length === 0) {
+    return undefined;
+  }
+  return labels;
+}
+
+function isStaticPhpLiteral(value: string): boolean {
+  const literal = value.trim();
+  if (
+    readPestStringLiteral(literal) !== undefined
+    || /^(?:true|false|null)$/i.test(literal)
+    || /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$/.test(literal)
+  ) {
+    return true;
+  }
+
+  if (!literal.startsWith('[')) {
+    return false;
+  }
+  const masked = maskNonCode(literal);
+  const close = findMatchingArrayBracket(masked, 0);
+  if (close !== masked.length - 1) {
+    return false;
+  }
+  const entries = splitArrayEntries(literal, masked, 0, close);
+  return entries.every((entry) => {
+    if (/^\s*\.\.\./.test(entry.code)) {
+      return false;
+    }
+    const arrowIndex = findTopLevelArrow(entry.code);
+    if (arrowIndex < 0) {
+      return isStaticPhpLiteral(entry.source);
+    }
+    const key = entry.source.slice(0, arrowIndex).trim();
+    const keyIsLiteral = readPestStringLiteral(key) !== undefined
+      || /^[-+]?\d+$/.test(key)
+      || /^(?:true|false|null)$/i.test(key);
+    return keyIsLiteral && isStaticPhpLiteral(entry.source.slice(arrowIndex + 2));
   });
 }
 
@@ -336,6 +470,20 @@ function findTopLevelArrow(code: string): number {
 
 function readPestStringLiteral(value: string): string | undefined {
   const literal = value.match(/^(['"])((?:\\.|[^\\])*?)\1$/);
+  if (literal?.[1] === '"') {
+    for (let index = 0; index < literal[2].length; index += 1) {
+      if (literal[2][index] !== '$') {
+        continue;
+      }
+      let escapes = 0;
+      for (let previous = index - 1; previous >= 0 && literal[2][previous] === '\\'; previous -= 1) {
+        escapes += 1;
+      }
+      if (escapes % 2 === 0) {
+        return undefined;
+      }
+    }
+  }
   return literal?.[2].replace(/\\(['"\\])/g, '$1');
 }
 

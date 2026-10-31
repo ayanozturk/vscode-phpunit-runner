@@ -24,6 +24,10 @@ class ${className} {
     if (name === 'workspace-a') {
       await fs.writeFile(path.join(folder, 'tests', 'ValuesTest.php'), `<?php
 test('adds values', fn ($value) => expect($value)->toBeGreaterThan(0))->with([1, 2]);
+test('generated values', fn ($value) => expect($value)->toBeGreaterThan(0))->with(function () {
+    yield 'first' => [1];
+    yield 'second' => [2];
+});
 `, 'utf8');
     }
     folders.push({ path: name });

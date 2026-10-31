@@ -481,6 +481,7 @@ function findNarrowestTestItem(item: vscode.TestItem, position: vscode.Position)
 }
 
 async function runTests(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
+  clearOutputForRun(outputFoldersForRequest(request));
   await maybeSaveBeforeTest();
   const run = controller.createTestRun(request);
   const cancellation = new vscode.CancellationTokenSource();
@@ -1008,6 +1009,7 @@ async function runByGroup(groupOverride?: string): Promise<void> {
     return;
   }
 
+  clearOutputForRun([...matchingByFolder.keys(), ...(unscoped.length > 0 ? [undefined] : [])]);
   const request = new vscode.TestRunRequest(matching, undefined, runProfile);
   await maybeSaveBeforeTest([...matchingByFolder.keys()]);
   const run = controller.createTestRun(request);
@@ -1115,6 +1117,45 @@ function getConfig(scope?: vscode.ConfigurationScope): vscode.WorkspaceConfigura
 function getOutputPreset(folder?: vscode.WorkspaceFolder): OutputPreset {
   const value = getConfig(folder).get<string>('output.preset', 'collision');
   return value === 'progress' || value === 'pretty' ? value : 'collision';
+}
+
+function outputFoldersForRequest(request: vscode.TestRunRequest): Array<vscode.WorkspaceFolder | undefined> {
+  if (!request.include?.length) {
+    return [...(vscode.workspace.workspaceFolders ?? [undefined])];
+  }
+
+  return request.include.flatMap(workspaceFoldersForItem);
+}
+
+function workspaceFoldersForItem(item: vscode.TestItem): Array<vscode.WorkspaceFolder | undefined> {
+  const folder = item.uri ? vscode.workspace.getWorkspaceFolder(item.uri) : undefined;
+  if (folder) {
+    return [folder];
+  }
+
+  const children = collectTestItems(item.children);
+  return children.length > 0
+    ? children.flatMap(workspaceFoldersForItem)
+    : [undefined];
+}
+
+function clearOutputForRun(folders: Array<vscode.WorkspaceFolder | undefined>): void {
+  const uniqueFolders = new Map<string, vscode.WorkspaceFolder>();
+  for (const folder of folders) {
+    if (folder) {
+      uniqueFolders.set(folder.uri.toString(), folder);
+    }
+  }
+
+  const hasUnscopedItems = folders.some((folder) => !folder);
+  const shouldClear = [...uniqueFolders.values()].some((folder) => (
+    getConfig(folder).get<boolean>('clearOutputOnRun', true)
+  )) || ((hasUnscopedItems || uniqueFolders.size === 0)
+    && getConfig().get<boolean>('clearOutputOnRun', true));
+
+  if (shouldClear) {
+    outputChannel.clear();
+  }
 }
 
 async function maybeSaveBeforeTest(folders = vscode.workspace.workspaceFolders ?? []): Promise<void> {
