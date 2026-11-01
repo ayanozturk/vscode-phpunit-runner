@@ -90,6 +90,8 @@ exports.run = async () => {
     assert.ok(commands.has('phpunitRunner.diagnoseProject'));
     assert.ok(commands.has('phpunitRunner.showTestInsights'));
     assert.ok(commands.has('phpunitRunner.clearTestInsights'));
+    assert.ok(commands.has('phpunitRunner.detectAiTools'));
+    assert.ok(commands.has('phpunitRunner.generateUnitTests'));
 
     const workspaceA = vscode.workspace.workspaceFolders.find((folder) => folder.name === 'workspace-a');
     const workspaceB = vscode.workspace.workspaceFolders.find((folder) => folder.name === 'workspace-b');

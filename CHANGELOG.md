@@ -10,6 +10,8 @@
 - Speed up test discovery by reusing masked PHP class bodies during method and data-provider scanning.
 - Make Test Insights searchable by workspace, source location, and explanatory details.
 - Isolate remote report transfer execution and preserve correct result mapping for identical tests across workspace roots.
+- Detect Codex, GitHub Copilot CLI, and Claude Code and generate reviewed PHPUnit/Pest test files from selected PHP code.
+- Improve extension-host compatibility coverage for the minimum supported VS Code version and add run-history scale benchmarks to CI.
 
 ## 0.5.0 - 2026-11-01
 

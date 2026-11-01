@@ -37,6 +37,44 @@ describe('runProcess', () => {
     assert.equal(chunks.join(''), result.output);
   });
 
+  it('writes an optional stdin payload and closes the stream', async () => {
+    const result = await runProcess({
+      command: process.execPath,
+      args: ['-e', 'let input = ""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => process.stdout.write(input))'],
+      cwd: process.cwd(),
+      stdin: 'selected PHP source',
+      token: new TestCancellationToken(),
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.output, 'selected PHP source');
+  });
+
+  it('closes stdin when no payload is provided', async () => {
+    const result = await runProcess({
+      command: process.execPath,
+      args: ['-e', 'process.stdin.on("end", () => process.stdout.write("stdin closed")); process.stdin.resume()'],
+      cwd: process.cwd(),
+      token: new TestCancellationToken(),
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.output, 'stdin closed');
+  });
+
+  it('preserves fixed argument arrays for shell-backed command shims', { skip: process.platform === 'win32' }, async () => {
+    const result = await runProcess({
+      command: '/bin/echo',
+      args: ['fixed-argument', 'second-argument'],
+      cwd: process.cwd(),
+      shell: true,
+      token: new TestCancellationToken(),
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.output, 'fixed-argument second-argument\n');
+  });
+
   it('terminates a running process when its token is cancelled', async () => {
     const token = new TestCancellationToken();
     const running = runProcess({

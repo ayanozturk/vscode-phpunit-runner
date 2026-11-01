@@ -8,6 +8,7 @@ export type ProcessRunOptions = {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   shell?: boolean;
+  stdin?: string | Buffer;
   token: vscode.CancellationToken;
   onOutput?: (chunk: string) => void;
 };
@@ -17,18 +18,12 @@ export type ProcessRunResult = { output: string; exitCode: number };
 /** Runs a child process with shared output collection and cancellation behavior. */
 export function runProcess(options: ProcessRunOptions): Promise<ProcessRunResult> {
   return new Promise((resolve, reject) => {
-    const child = options.shell
-      ? spawn(options.command, {
-        cwd: options.cwd,
-        env: options.env,
-        shell: true,
-        detached: process.platform !== 'win32',
-      })
-      : spawn(options.command, options.args ?? [], {
-        cwd: options.cwd,
-        env: options.env,
-        detached: process.platform !== 'win32',
-      });
+    const child = spawn(options.command, options.args ?? [], {
+      cwd: options.cwd,
+      env: options.env,
+      ...(options.shell ? { shell: true } : {}),
+      detached: process.platform !== 'win32',
+    });
     let output = '';
     let settled = false;
     let terminationRequested = false;
@@ -65,6 +60,10 @@ export function runProcess(options: ProcessRunOptions): Promise<ProcessRunResult
       subscription.dispose();
       resolve({ output, exitCode: exitCode ?? 1 });
     });
+
+    // Test and AI CLI invocations are non-interactive. Always close stdin so
+    // child processes that optionally read piped input can finish promptly.
+    child.stdin?.end(options.stdin);
 
     if (options.token.isCancellationRequested) {
       terminate();

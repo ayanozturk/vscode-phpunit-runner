@@ -18,6 +18,7 @@ import { runProcess } from './processRunner';
 import { remapJUnitCases } from './junitMapping';
 import { commandAvailable, firstCommandToken } from './commandAvailability';
 import { readFrameworkInfo } from './frameworkInfo';
+import { generateUnitTestsWithAi, showDetectedAiTools } from './aiTestGenerationUi';
 import {
   appendRunHistory,
   findFlakyCandidates,
@@ -191,6 +192,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     }),
     vscode.commands.registerCommand('phpunitRunner.clearTestInsights', async () => {
       await clearTestInsightsHistory();
+    }),
+    vscode.commands.registerCommand('phpunitRunner.detectAiTools', async () => {
+      await showDetectedAiTools(outputChannel);
+    }),
+    vscode.commands.registerCommand('phpunitRunner.generateUnitTests', async () => {
+      await generateUnitTestsWithAi(outputChannel, runCurrentFile);
     }),
     vscode.workspace.onDidSaveTextDocument(async (document) => {
       if (document.languageId !== 'php') {

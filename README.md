@@ -21,6 +21,7 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Fit your environment.** Run locally, through Docker, or with a command template for Laravel Sail, DDEV, SSH, and other remote setups. Host-to-remote path mappings keep results connected to local files across multi-root workspaces.
 - **Diagnose setup and remote results.** Check runner, configuration, PHP, and report readiness without starting tests; retrieve JUnit and coverage files from custom remote commands when they are not on a shared mount.
 - **Act on test insights.** Review clearly labeled slow tests and possible flaky candidates from recent verified runs. The picker previews each test's source location and opens it when the report includes one.
+- **Draft tests with your AI CLI.** Detect Codex, GitHub Copilot CLI, or Claude Code, generate PHPUnit or Pest tests from selected PHP, review the diff, and run the saved test from VS Code.
 - **Keep results current.** Refresh discovery as PHP files, PHPUnit configuration, or Composer dependencies change, or enable continuous testing to rerun a saved file.
 
 ## Get started
@@ -30,6 +31,12 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 3. Open the **Testing** view to browse tests, or use the editor’s Run Test and Run File commands.
 
 The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can also set an explicit executable and configuration file in your workspace settings.
+
+### AI-assisted test generation
+
+Run **PHPUnit Runner: Detect AI CLI Tools** to list supported Codex, GitHub Copilot, and Claude Code executables found on `PATH`. Choose **PHPUnit Runner: Generate Unit Tests with AI** from the Command Palette or a PHP editor context menu to generate a test for the selected code; with no selection, the active PHP file is used. The runner detects PHPUnit or Pest and includes the project test configuration and one existing test example when available.
+
+Before source and project context is sent to the selected CLI, the extension asks for confirmation. The CLI runs from a temporary directory in its read-only or planning mode; Copilot CLI also denies write, shell, and URL tools. Generated PHP is shown in a diff against the chosen file under the workspace `tests` folder; the extension saves it only after you choose **Apply Test File**. You can then run the generated test through PHPUnit Runner. Authentication remains managed by the selected CLI.
 
 ## Features
 
@@ -52,6 +59,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 - Adds PHPUnit data sets to their method after the first run so each data set can be run separately.
 - Supports run, debug, and coverage profiles, plus commands to run all, rerun the last selection, run failed tests, or choose a group.
 - Supports local and Docker execution, custom remote command templates, environment variables, and host-to-remote path mappings.
+- Detects Codex, GitHub Copilot CLI, and Claude Code on `PATH` and can generate reviewed PHPUnit/Pest test files through the selected CLI.
 - Offers an opt-in Parallel Tests profile for supported Pest and ParaTest projects, preserving selected scope and reported JUnit results. Unsupported application and opaque custom commands show an explanatory error.
 - Reports Clover statement and named declaration coverage, including method execution totals when available. Per-test detail is shown only for a selected method or data set with usable coverage data.
 - Adds isolated CLI smoke checks for supported PHPUnit 10–13 and Pest 3–5 releases in CI, covering runtime test listing, JUnit reports, and Pest parallel execution.

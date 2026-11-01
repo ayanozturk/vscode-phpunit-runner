@@ -40,7 +40,8 @@ test('generated values', fn ($value) => expect($value)->toBeGreaterThan(0))->wit
 
   const workspaceFile = path.join(fixtureRoot, 'integration.code-workspace');
   await fs.writeFile(workspaceFile, JSON.stringify({ folders }, null, 2), 'utf8');
-  let vscodeExecutablePath = await downloadAndUnzipVSCode('stable');
+  const vscodeVersion = process.env.VSCODE_VERSION || 'stable';
+  let vscodeExecutablePath = await downloadAndUnzipVSCode(vscodeVersion);
   if (process.platform === 'darwin') {
     const modernExecutablePath = path.join(path.dirname(vscodeExecutablePath), 'Code');
     try {

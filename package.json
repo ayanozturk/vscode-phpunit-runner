@@ -285,6 +285,14 @@
         "title": "PHPUnit Runner: Clear Test Insights History"
       },
       {
+        "command": "phpunitRunner.detectAiTools",
+        "title": "PHPUnit Runner: Detect AI CLI Tools"
+      },
+      {
+        "command": "phpunitRunner.generateUnitTests",
+        "title": "PHPUnit Runner: Generate Unit Tests with AI"
+      },
+      {
         "command": "phpunitRunner.runAll",
         "title": "PHPUnit Runner: Run All Tests"
       },
@@ -325,6 +333,12 @@
           "command": "phpunitRunner.clearTestInsights"
         },
         {
+          "command": "phpunitRunner.detectAiTools"
+        },
+        {
+          "command": "phpunitRunner.generateUnitTests"
+        },
+        {
           "command": "phpunitRunner.runAll"
         },
         {
@@ -354,6 +368,11 @@
           "command": "phpunitRunner.runCurrentFile",
           "when": "resourceLangId == php",
           "group": "phpunitRunner@2"
+        },
+        {
+          "command": "phpunitRunner.generateUnitTests",
+          "when": "resourceLangId == php",
+          "group": "phpunitRunner@3"
         }
       ]
     },
@@ -393,6 +412,7 @@
     "watch": "tsc -watch -p ./tsconfig.json",
     "test": "tsx --test src/*.test.ts",
     "benchmark:discovery": "node --expose-gc --import tsx scripts/benchmark-discovery.ts",
+    "benchmark:history": "node --expose-gc --import tsx scripts/benchmark-history.ts",
     "benchmark:result-index": "node --expose-gc --import tsx scripts/benchmark-result-index.ts",
     "test:vscode": "npm run package && node test/vscode/run.mjs",
     "package": "webpack --mode production --devtool hidden-source-map",

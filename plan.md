@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make PHPUnit Runner a fast, dependable PHPUnit and Pest workflow in VS Code, from initial discovery through local, containerized, and remote execution. This roadmap targets the next 6–12 months and prioritizes trustworthy results, low-latency feedback, and practical diagnostics before adding more surface area.
+Make PHPUnit Runner a fast, dependable PHPUnit and Pest workflow in VS Code, from initial discovery through local, containerized, and remote execution, with optional AI-assisted unit-test authoring. This roadmap targets the next 6–12 months and prioritizes trustworthy results, low-latency feedback, and practical diagnostics before adding more surface area.
 
 Research confirms that machine-readable test listing and result formats are available in PHPUnit, VS Code supports native continuous runs and detailed coverage, and Pest and ParaTest provide parallel execution. PHP testing tools also surface run history, timings, and profiling. ([PHPUnit CLI](https://docs.phpunit.de/en/12.5/cli-options.html), [VS Code Testing API](https://code.visualstudio.com/api/extension-guides/testing), [Pest optimization](https://pestphp.com/docs/optimizing-tests), [ParaTest](https://github.com/paratestphp/paratest), [PHPUnit Test Workbench](https://marketplace.visualstudio.com/items?itemName=chiefmyron.phpunit-test-workbench), [PHP Tools](https://open-vsx.org/extension/DEVSENSE/phptools-vscode))
 
@@ -28,6 +28,10 @@ Research confirms that machine-readable test listing and result formats are avai
 - **Performance:** Parser discovery now reuses the already masked class-body source for method and provider scanning. A 7-iteration local benchmark improved from 18.1 to 11.0 ms at 1k items and 172.3 to 104.2 ms at 10k; the large-heredoc case remained about 20–21 ms.
 - **Delivered:** Host-side remote report transfer now has its own tested module boundary, preserving cancellation, environment merging, and output forwarding. Test Insights Quick Picks can also search descriptions and source details.
 - **Test coverage:** VS Code integration now verifies that identical test names in separate workspace roots map to the right test items and run once in each owning workspace.
+- **Delivered:** AI CLI discovery and test generation support only Codex CLI, GitHub Copilot CLI, and Claude Code. The extension displays executable/version details, asks before sending selected PHP and project test context, runs the CLI from a temporary directory in a read-only/planning mode, and previews generated test files before applying them under `tests/`.
+- **Delivered:** The shared process runner can send and close stdin and preserves fixed argument arrays for shell-backed Windows CLI shims, so non-interactive AI processes can receive long source prompts without shell interpolation.
+- **Performance baseline:** Added a CI benchmark for slow-test and flaky-candidate selection, asserting result counts at up to 1 million stored test outcomes. No algorithm change was justified by the measured roughly 95–100/49–51 ms run at that scale.
+- **Compatibility tests:** VS Code extension-host tests now run against the minimum supported engine (1.89.0) and current stable.
 - **Still planned:** Further module boundaries around discovery and result mapping.
 
 ## Roadmap
@@ -50,7 +54,14 @@ Research confirms that machine-readable test listing and result formats are avai
 - Store bounded run history in VS Code workspace state only, capped at the latest 100 runs per workspace. Show slowest tests and flag a flaky candidate only when both pass and fail outcomes occur in the test’s last 10 completed runs. Do not automatically retry tests or change their reported outcomes.
 - Extend coverage details to declarations and individual tests when supported by the runner and coverage driver; keep current statement coverage as the fallback. Named declarations and single-test attribution are delivered; merged reports still do not provide reliable test-to-declaration attribution.
 
-### 4. Compatibility and maintainability — months 8–12
+### 4. AI-assisted unit-test authoring — months 4–8
+
+- Detect only Codex CLI, GitHub Copilot CLI, and Claude Code when installed on the system, reporting each tool's executable, version, and availability.
+- Add a **Generate Unit Tests** action for a selected PHP file, class, or method. Let the user choose an available tool, then provide the selected code, PHPUnit/Pest framework context, and relevant project conventions to that tool.
+- Show generated test changes as a diff for review before applying them. Keep generation explicit and scoped to test files; never invoke an AI CLI automatically during discovery or test runs.
+- After the user applies generated tests, offer to run the new or selected tests through the existing PHPUnit Runner workflow and show the normal mapped results.
+
+### 5. Compatibility and maintainability — months 8–12
 
 - Keep the CI compatibility matrix current as supported PHPUnit and Pest releases change; automate compile, unit, extension integration, packaging, and dependency-audit checks.
 - Split discovery, invocation/report transport, result mapping, and run insights into focused modules so independent changes remain easy to test and review.
@@ -58,6 +69,7 @@ Research confirms that machine-readable test listing and result formats are avai
 ## Interfaces and acceptance criteria
 
 - Add the Diagnose Project command, optional remote report-transfer setting, and opt-in parallel profile/process-count setting. Parallel execution is off by default. Run history remains local to VS Code workspace state and is capped at 100 runs per workspace.
+- Detect only Codex CLI, GitHub Copilot CLI, and Claude Code; allow explicit tool selection and preview generated test-file changes before applying them. AI test generation is user-initiated and does not modify production PHP files.
 - Dynamic test cases are discoverable and individually runnable where runtime listing is supported; version or runner limitations fall back without blocking static discovery.
 - Missing reports and zero-test results are never presented as verified passes. A successful remote transfer produces mapped test and coverage results; failed transfer explains why details are unavailable.
 - Incremental refresh updates changed files without replacing unchanged test identities. Parallel runs preserve the requested scope and can be cancelled.
