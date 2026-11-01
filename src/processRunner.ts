@@ -36,6 +36,8 @@ export function runProcess(
     let settled = false;
     let terminationRequested = false;
     let stdinError: Error | undefined;
+    let outputCallbackFailed = false;
+    let outputCallbackError: unknown;
     let escalationTimer: ReturnType<typeof setTimeout> | undefined;
     const terminateTree = dependencies.terminate ?? terminateProcessTree;
     const clearTimer = dependencies.clearTimer ?? clearTimeout;
@@ -57,7 +59,16 @@ export function runProcess(
     const append = (chunk: string | Buffer) => {
       const text = chunk.toString();
       output += text;
-      options.onOutput?.(text);
+      if (outputCallbackFailed || !options.onOutput) {
+        return;
+      }
+      try {
+        options.onOutput(text);
+      } catch (error) {
+        outputCallbackFailed = true;
+        outputCallbackError = error;
+        terminate();
+      }
     };
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
@@ -82,6 +93,8 @@ export function runProcess(
       clearEscalationTimer();
       if (stdinError) {
         reject(stdinError);
+      } else if (outputCallbackFailed) {
+        reject(outputCallbackError);
       } else {
         resolve({ output, exitCode: exitCode ?? 1 });
       }

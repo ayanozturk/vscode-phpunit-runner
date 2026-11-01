@@ -6,6 +6,7 @@ export type TestCaseIndex = {
   byClass: Map<string, Map<string, JUnitTestCase[]>>;
   byClassWithoutFile: Map<string, Map<string, JUnitTestCase[]>>;
   byFile: Map<string, JUnitTestCase[]>;
+  byFilePestTrigram: Map<string, Map<string, JUnitTestCase[]>>;
   withoutFile: JUnitTestCase[];
   classNameSuffixes: Map<string, string[]>;
   classNameOrder: Map<string, number>;
@@ -47,10 +48,25 @@ export function indexTestCases(cases: JUnitTestCase[], workspaceRoot?: string): 
     }
   }
 
+  const byFilePestTrigram = new Map<string, Map<string, JUnitTestCase[]>>();
+  let indexedFilePostings = 0;
+  for (const [filePath, fileCases] of byFile) {
+    if (fileCases.length < MIN_PEST_TRIGRAM_CASES) {
+      continue;
+    }
+    const fileIndex = buildPestTrigramIndex(fileCases);
+    const filePostingCount = postingCount(fileIndex);
+    if (indexedFilePostings + filePostingCount <= MAX_TOTAL_PEST_FILE_INDEX_POSTINGS) {
+      byFilePestTrigram.set(filePath, fileIndex);
+      indexedFilePostings += filePostingCount;
+    }
+  }
+
   return {
     byClass,
     byClassWithoutFile,
     byFile,
+    byFilePestTrigram,
     withoutFile,
     classNameSuffixes,
     classNameOrder,
@@ -92,8 +108,11 @@ export function findIndexedPestCases(
   const fileCases = index.byFile.get(expectedPath) ?? [];
   const indexedCases = findPestTrigramCandidates(index.withoutFileByTrigram, testName);
   const casesWithoutFile = indexedCases ?? index.withoutFile;
+  const fileTrigrams = index.byFilePestTrigram.get(expectedPath);
+  const indexedFileCases = fileTrigrams ? findPestTrigramCandidates(fileTrigrams, testName) : undefined;
+  const matchingFileCases = indexedFileCases ?? fileCases;
   const result: JUnitTestCase[] = [];
-  for (const testCase of fileCases) {
+  for (const testCase of matchingFileCases) {
     if (testCase.name.includes(testName)) {
       result.push(testCase);
     }
@@ -179,6 +198,8 @@ function testCaseNamesMatch(actual: string, requested: string): boolean {
 const MIN_PEST_TRIGRAM_CASES = 128;
 const MAX_PEST_TRIGRAM_KEYS = 512;
 const MAX_PEST_TRIGRAM_POSTINGS = 1024;
+// Keep file-backed indexes bounded across large suites; overflowed files still use the exact scan path.
+const MAX_TOTAL_PEST_FILE_INDEX_POSTINGS = 1_048_576;
 
 type RankedTrigram = { value: string; hash: number };
 
@@ -233,6 +254,14 @@ function buildPestTrigramIndex(cases: JUnitTestCase[]): Map<string, JUnitTestCas
   }
 
   return index;
+}
+
+function postingCount(index: Map<string, JUnitTestCase[]>): number {
+  let count = 0;
+  for (const cases of index.values()) {
+    count += cases.length;
+  }
+  return count;
 }
 
 function findPestTrigramCandidates(

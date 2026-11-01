@@ -41,6 +41,29 @@ describe('runProcess', () => {
     assert.equal(chunks.join(''), result.output);
   });
 
+  it('rejects output observer failures and terminates the child safely', async () => {
+    const token = new TestCancellationToken();
+    const callbackError = new Error('output channel is unavailable');
+    let terminated = false;
+
+    await assert.rejects(runProcess({
+      command: process.execPath,
+      args: ['-e', 'process.stdout.write("started"); setInterval(() => {}, 1000)'],
+      cwd: process.cwd(),
+      token,
+      onOutput: () => { throw callbackError; },
+    }, {
+      terminate: (child) => {
+        terminated = true;
+        child.kill();
+        return undefined;
+      },
+    }), (error) => error === callbackError);
+
+    assert.equal(terminated, true);
+    assert.equal(token.listenerCount, 0);
+  });
+
   it('preserves UTF-8 characters split across child output chunks', async () => {
     const chunks: string[] = [];
     const result = await runProcess({

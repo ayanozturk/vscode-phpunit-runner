@@ -155,6 +155,18 @@ describe('JUnit result index', () => {
     assert.deepEqual(findIndexedPestCases(index, target.name, '/workspace/tests/PestTest.php'), [target]);
   });
 
+  it('uses complete trigram postings for large file-backed Pest result sets', () => {
+    const cases = Array.from({ length: 180 }, (_, index) => testCase({
+      name: `sample Pest test ${String(index).padStart(3, '0')}`,
+      file: '/workspace/tests/PestTest.php',
+    }));
+    const index = indexTestCases(cases, '/workspace');
+    const target = cases[37];
+
+    assert.equal(index.byFilePestTrigram.get('/workspace/tests/PestTest.php')?.get('sam')?.length, cases.length);
+    assert.deepEqual(findIndexedPestCases(index, target.name, '/workspace/tests/PestTest.php'), [target]);
+  });
+
   it('falls back to exact substring matching when common Pest trigrams exceed the posting cap', () => {
     const cases = Array.from({ length: 1100 }, (_, index) => testCase({
       name: `case ${index} has shared Pest lookup text`,
@@ -164,6 +176,19 @@ describe('JUnit result index', () => {
     const queryTrigrams = Array.from({ length: query.length - 2 }, (_, offset) => query.slice(offset, offset + 3));
 
     assert.ok(queryTrigrams.every((trigram) => !index.withoutFileByTrigram.has(trigram)));
+    assert.deepEqual(findIndexedPestCases(index, query, '/workspace/tests/PestTest.php'), cases);
+  });
+
+  it('falls back to exact substring matching when a file-backed posting exceeds the cap', () => {
+    const cases = Array.from({ length: 1100 }, (_, index) => testCase({
+      name: `case ${index} has shared Pest lookup text`,
+      file: '/workspace/tests/PestTest.php',
+    }));
+    const index = indexTestCases(cases, '/workspace');
+    const query = 'shared Pest lookup';
+    const queryTrigrams = Array.from({ length: query.length - 2 }, (_, offset) => query.slice(offset, offset + 3));
+    const fileIndex = index.byFilePestTrigram.get('/workspace/tests/PestTest.php');
+    assert.ok(queryTrigrams.every((trigram) => !fileIndex?.has(trigram)));
     assert.deepEqual(findIndexedPestCases(index, query, '/workspace/tests/PestTest.php'), cases);
   });
 

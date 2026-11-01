@@ -115,6 +115,46 @@ function benchmarkPestWithoutFileMetadata(itemCount: number, iterations: number)
     iterations,
     usesTrigramIndex: index.withoutFileByTrigram.size > 0,
   }));
+  benchmarkPestInSingleFile(itemCount, iterations);
+}
+
+/** Exercises Pest lookups when many reported tests share one source file. */
+function benchmarkPestInSingleFile(itemCount: number, iterations: number): void {
+  const filePath = '/benchmark/tests/GeneratedPestTest.php';
+  const cases = Array.from({ length: itemCount }, (_, index): JUnitTestCase => ({
+    name: `Generated Pest behavior ${String(index).padStart(5, '0')} should stay discoverable`,
+    className: 'Pest tests',
+    timeSeconds: 0.001,
+    status: 'passed',
+    message: '',
+    file: filePath,
+  }));
+  const buildStart = performance.now();
+  const index = indexTestCases(cases, '/benchmark');
+  const buildMs = performance.now() - buildStart;
+  const queries = cases.map((testCase) => testCase.name.split(' should stay discoverable')[0]);
+  const lookupDurations: number[] = [];
+  let matchedCases = 0;
+
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const start = performance.now();
+    for (const query of queries) {
+      matchedCases += findIndexedPestCases(index, query, filePath).length;
+    }
+    lookupDurations.push(performance.now() - start);
+  }
+
+  if (matchedCases !== itemCount * iterations) {
+    throw new Error(`Expected ${itemCount * iterations} single-file Pest matches, found ${matchedCases}`);
+  }
+
+  console.log(JSON.stringify({
+    casesInSingleFile: itemCount,
+    trigramIndexBuildMs: round(buildMs, 1),
+    pestLookupMsMedian: round(median(lookupDurations), 1),
+    iterations,
+    usesFileTrigramIndex: index.byFilePestTrigram.has(filePath),
+  }));
 }
 
 function median(values: number[]): number {

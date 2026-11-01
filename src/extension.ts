@@ -55,7 +55,7 @@ import {
   readJUnitReport,
 } from './junit';
 import { normalizeClassName, parseTestSource } from './parser';
-import { datasetCasesForMethod } from './datasetCases';
+import { planDatasetItems } from './datasetItemPlan';
 import {
   formatTestOutputSegments,
   type OutputPreset,
@@ -1340,39 +1340,28 @@ function syncDatasetItems(
   methodData: TestItemData,
   cases: JUnitTestCase[],
 ): void {
-  const datasets = datasetCasesForMethod(methodData.methodName, cases);
-  const datasetIds = new Set<string>();
+  const existingDatasetIds: string[] = [];
+  methodItem.children.forEach((child) => {
+    if (itemData.get(child)?.kind === 'dataset') {
+      existingDatasetIds.push(child.id);
+    }
+  });
+  const plan = planDatasetItems(methodItem.id, methodData, cases, existingDatasetIds);
 
-  for (const { testCase, suffix } of datasets) {
-    const id = `${methodItem.id}::dataset:${suffix}`;
-    datasetIds.add(id);
+  for (const planned of plan.items) {
+    const { id, label, data } = planned;
     let datasetItem = methodItem.children.get(id);
     if (!datasetItem) {
-      const label = suffix.replace(/^with data set\s*/, '');
       datasetItem = controller.createTestItem(id, label, methodData.uri);
       datasetItem.range = methodItem.range;
       methodItem.children.add(datasetItem);
       run.enqueued(datasetItem);
       run.started(datasetItem);
     }
-    itemData.set(datasetItem, {
-      kind: 'dataset',
-      uri: methodData.uri,
-      filePath: methodData.filePath,
-      className: methodData.className,
-      methodName: methodData.methodName,
-      datasetName: testCase.name,
-      groups: methodData.groups,
-    });
+    itemData.set(datasetItem, data);
   }
 
-  const staleItems: string[] = [];
-  methodItem.children.forEach((child) => {
-    if (itemData.get(child)?.kind === 'dataset' && !datasetIds.has(child.id)) {
-      staleItems.push(child.id);
-    }
-  });
-  for (const id of staleItems) {
+  for (const id of plan.staleIds) {
     const staleItem = methodItem.children.get(id);
     if (staleItem) {
       run.skipped(staleItem);

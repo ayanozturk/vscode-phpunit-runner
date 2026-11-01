@@ -887,6 +887,94 @@ class DynamicDataProviderTest
       'clearing insights removes recent history across the active workspace folders',
     );
 
+    if (process.platform !== 'win32') {
+      const sourceDirectory = path.join(workspaceA.uri.fsPath, 'src');
+      await fs.mkdir(sourceDirectory, { recursive: true });
+      const sourcePath = path.join(sourceDirectory, 'Widget.php');
+      await fs.writeFile(sourcePath, '<?php\nclass Widget {}\n', 'utf8');
+      const sourceDocument = await vscode.workspace.openTextDocument(sourcePath);
+      const sourceEditor = await vscode.window.showTextDocument(sourceDocument);
+      sourceEditor.selection = new vscode.Selection(new vscode.Position(1, 0), new vscode.Position(1, 14));
+
+      const cliDirectory = path.join(workspaceA.uri.fsPath, 'fake-ai-bin');
+      await fs.mkdir(cliDirectory, { recursive: true });
+      const cliEventsPath = path.join(workspaceA.uri.fsPath, 'ai-cli-events.log');
+      const fakeCodexPath = path.join(cliDirectory, 'codex');
+      const generatedPhp = ['```php', '<?php', 'class WidgetTest extends \\PHPUnit\\Framework\\TestCase { public function testGenerated(): void {} }', '```', ''].join('\n');
+      const shellQuote = (value) => `'${value.replace(/'/g, "'\\''")}'`;
+      const fakeCodexSource = [
+        '#!/bin/sh',
+        'if [ "$1" = "--version" ]; then echo "codex 1.0.0"; exit 0; fi',
+        `echo cli >> ${shellQuote(cliEventsPath)}`,
+        'cat >/dev/null',
+        `printf %s ${shellQuote(generatedPhp)}`,
+      ].join('\n');
+      await fs.writeFile(fakeCodexPath, fakeCodexSource, { mode: 0o755 });
+      await fs.chmod(fakeCodexPath, 0o755);
+      const originalPath = process.env.PATH;
+      const originalShowWarningMessage = vscode.window.showWarningMessage;
+      const originalShowSaveDialog = vscode.window.showSaveDialog;
+      const originalShowInformationMessage = vscode.window.showInformationMessage;
+      const originalWithProgress = vscode.window.withProgress;
+      const originalExecuteCommand = vscode.commands.executeCommand;
+      const consentMessages = [];
+      const flowEvents = [];
+      const destinationPath = path.join(workspaceA.uri.fsPath, 'tests', 'Unit', 'WidgetTest.php');
+      process.env.PATH = [cliDirectory, path.dirname(process.execPath)].join(path.delimiter);
+      vscode.window.showWarningMessage = async (message, ...args) => {
+        const text = String(message);
+        if (text.startsWith('Send the selected PHP code')) {
+          consentMessages.push({ message: text, detail: args[0]?.detail });
+          flowEvents.push('consent');
+          await fs.appendFile(cliEventsPath, 'consent\n');
+          return 'Continue';
+        }
+        if (text.startsWith('Apply generated tests to ')) {
+          flowEvents.push('apply');
+          return 'Apply Test File';
+        }
+        return originalShowWarningMessage.call(vscode.window, message, ...args);
+      };
+      vscode.window.showSaveDialog = async () => vscode.Uri.file(destinationPath);
+      vscode.window.showInformationMessage = async () => undefined;
+      vscode.window.withProgress = async (_options, task) => task(undefined, new vscode.CancellationTokenSource().token);
+      vscode.commands.executeCommand = async (command, ...args) => {
+        if (command === 'vscode.diff') {
+          flowEvents.push('preview');
+          return undefined;
+        }
+        return originalExecuteCommand.call(vscode.commands, command, ...args);
+      };
+
+      try {
+        await vscode.commands.executeCommand('phpunitRunner.generateUnitTests');
+        assert.equal(consentMessages.length, 1);
+        assert.match(consentMessages[0].message, /src\/Widget\.php/);
+        assert.match(consentMessages[0].message, /selected PHP code/);
+        assert.match(consentMessages[0].detail, /Composer test settings/);
+        assert.deepEqual(flowEvents, ['consent', 'preview', 'apply']);
+        assert.match(await fs.readFile(destinationPath, 'utf8'), /function testGenerated/);
+        assert.deepEqual((await fs.readFile(cliEventsPath, 'utf8')).trim().split(/\r?\n/), ['consent', 'cli']);
+
+        // Declining consent must leave the CLI uninvoked and the destination untouched.
+        await vscode.window.showTextDocument(sourceDocument);
+        vscode.window.showWarningMessage = async (message, ...args) => {
+          if (String(message).startsWith('Send the selected PHP code')) return undefined;
+          return originalShowWarningMessage.call(vscode.window, message, ...args);
+        };
+        await vscode.commands.executeCommand('phpunitRunner.generateUnitTests');
+        assert.deepEqual((await fs.readFile(cliEventsPath, 'utf8')).trim().split(/\r?\n/), ['consent', 'cli']);
+        assert.match(await fs.readFile(destinationPath, 'utf8'), /function testGenerated/);
+      } finally {
+        process.env.PATH = originalPath;
+        vscode.window.showWarningMessage = originalShowWarningMessage;
+        vscode.window.showSaveDialog = originalShowSaveDialog;
+        vscode.window.showInformationMessage = originalShowInformationMessage;
+        vscode.window.withProgress = originalWithProgress;
+        vscode.commands.executeCommand = originalExecuteCommand;
+      }
+    }
+
     console.log('VS Code extension-host tests passed');
     process.exit(0);
   } catch (error) {

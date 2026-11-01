@@ -7,9 +7,9 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 ## Delivered capabilities
 
 - **Discovery and execution:** Static discovery, runtime PHPUnit provider discovery with fallback, incremental refresh, continuous testing, local and Docker execution, custom remote commands and report transfer, and an opt-in parallel profile for supported Pest and ParaTest projects.
-- **Results and insights:** JUnit mapping, Clover coverage, supported exact per-test coverage, bounded local history, slow-test and flaky-candidate views with recent outcome sequences, copyable insight summaries, searchable insight pickers, and configurable output including compact custom failure messages.
-- **AI test authoring:** Detect Codex CLI, GitHub Copilot CLI, and Claude Code only. Generate PHPUnit or Pest tests from selected PHP; identify the source path, source scope, and possible project context before sending; preview a diff; and require confirmation before saving under `tests/`.
-- **Quality and performance:** Adversarial report and process-output tests, focused pure-module coverage, PHP/framework compatibility jobs, VS Code extension-host checks, and result-count-checked scale benchmarks.
+- **Results and insights:** JUnit mapping, pure method and dataset result planning, Clover coverage, supported exact per-test coverage, bounded local history, slow-test and flaky-candidate views with recent outcomes, copyable insight summaries, searchable insight pickers, and compact custom failure output.
+- **AI test authoring:** Detect Codex CLI, GitHub Copilot CLI, and Claude Code only. The confirmation identifies source path and scope plus possible project context; generated PHPUnit/Pest output is previewed, and saving under `tests/` requires confirmation. Extension-host coverage verifies consent, review-before-apply, save, and cancel-before-run.
+- **Quality and performance:** Adversarial report and process-output tests, focused pure-module coverage, PHP/framework compatibility jobs, VS Code extension-host checks, and result-count-checked scale benchmarks. Process output observer failures stop the child and reject with the original error.
 
 ## Roadmap
 
@@ -17,7 +17,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 
 **Status: Active**
 
-- Continue extracting deterministic discovery, suite matching, and result-mapping logic from VS Code orchestration when ownership is clear.
+- Continue extracting deterministic discovery and suite-matching logic from VS Code orchestration when ownership is clear; method and dataset result planning now live in focused pure modules.
 - Keep filesystem, process, and VS Code effects at module edges.
 - Add characterization tests before moving behavior; preserve test identity, cancellation, workspace ownership, and report fallback behavior.
 
@@ -41,7 +41,11 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Assert result counts; compare repeated measurements without machine-dependent CI thresholds.
 - Retain an optimization only when it improves measured workloads without changing results.
 
-**Current evidence:** Node 22.20.0 on darwin/arm64: 10k discovery median 100.7 ms; 10k result-index build 11.9 ms, method query 2.7 ms, and file-backed Pest lookup 13.5 ms. In a separate 10k no-file Pest A/B, raising the trigram posting cap from 256 to 1,024 reduced median lookup from 345.4 ms to 57.8 ms across nine iterations; index build measured 71.1 ms at baseline and 66–68 ms with the new cap. Both configurations returned the expected 90,000 aggregate matches, and fallback scans dropped from 1,418/10,000 to zero. For 1M history records, slowest-test and flaky-candidate queries measured 53.7 ms and 46.9 ms. The completed-window guard previously reduced flaky lookup from 121.4 ms to 47.5 ms in a controlled A/B. A lower posting cap regressed no-file lookup to 1,010.8 ms and was discarded.
+**Current evidence (Node 22.20.0, darwin/arm64):**
+
+- Latest multi-file smoke: 10k discovery 100.7 ms; result-index build 13.9 ms; method lookup 4.5 ms; file-backed Pest lookup 16 ms.
+- Single-file Pest A/B, 7 build samples and 5 lookup sweeps: 1k lookup 25.7→8.3 ms, 5k 616→22.4 ms, 10k 2,418→66 ms. At 10k, build rose 8→63 ms and index memory rose 0.46 MiB.
+- The per-file index retains at most 1,048,576 postings total; overflowed files exact-scan. The no-file Pest lookup cap change measured 345→58 ms at 10k. Benchmarks assert result counts and use no machine-specific timing gate.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
 
@@ -50,7 +54,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 **Status: Active**
 
 - Keep Node, VS Code, PHPUnit, and Pest CI matrices aligned with declared support.
-- Add integration fixtures for runtime listing, remote report retrieval, parallel scope, cancellation, and coverage-driver behavior.
+- Add integration fixtures for remote report retrieval and coverage-driver behavior; runner listing, parallel scope, and cancellation have existing coverage.
 - Keep CLI smoke checks isolated from the extension's own package dependencies.
 
 **Complete when:** supported combinations pass compile, unit, extension-host, package, and dependency-audit checks, and important fallback paths have regression coverage.
@@ -60,9 +64,9 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 **Status: Active**
 
 - Keep insight reruns mapped to the exact discovered method or data set, and show enough recent outcomes to explain flaky candidates.
-- Add extension-level coverage for the consent, output review, destination choice, and confirmed save flow; unit tests now verify the source scope and context disclosure.
+- Add extension-level coverage for insight reruns preserving the exact selected method or data set.
 
-**Complete when:** insight run actions preserve exact discovered scope, and AI tool detection, context consent, output review, destination selection, and explicit save behavior are covered by tests and documented clearly.
+**Complete when:** insight run actions preserve exact discovered scope and recent outcomes remain understandable.
 
 ## Support boundaries and acceptance criteria
 
