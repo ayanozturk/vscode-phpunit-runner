@@ -45,7 +45,7 @@ describe('createTestInsightChoices', () => {
         id: 'flaky:workspace::ExampleTest::testFlaky',
         label: 'Flaky: ExampleTest::testFlaky',
         description: 'api · 1 passed, 1 failed',
-        detail: 'Both pass and fail outcomes appeared within the latest 10 reported runs. Select to open tests/ExampleTest.php:18.',
+        detail: 'Recent outcomes, newest first: passed → failed. Select to open tests/ExampleTest.php:18.',
         filePath: '/workspace/tests/ExampleTest.php',
         line: 18,
       },

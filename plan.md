@@ -7,9 +7,9 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 ## Delivered capabilities
 
 - **Discovery and execution:** Static discovery, runtime PHPUnit provider discovery with fallback, incremental refresh, continuous testing, local and Docker execution, custom remote commands and report transfer, and an opt-in parallel profile for supported Pest and ParaTest projects.
-- **Results and insights:** JUnit mapping, Clover coverage, supported exact per-test coverage, bounded local history, slow-test and flaky-candidate views, searchable insight pickers, and configurable output.
+- **Results and insights:** JUnit mapping, Clover coverage, supported exact per-test coverage, bounded local history, slow-test and flaky-candidate views with recent outcome sequences, searchable insight pickers, and configurable output including compact custom failure messages.
 - **AI test authoring:** Detect Codex CLI, GitHub Copilot CLI, and Claude Code only. Generate PHPUnit or Pest tests from selected PHP, confirm before sending context, preview a diff, and require confirmation before saving under `tests/`.
-- **Quality and performance:** Focused discovery, invocation, report, mapping, history, identity, and coverage tests; PHP/framework compatibility jobs; VS Code extension-host checks; and result-count-checked scale benchmarks.
+- **Quality and performance:** Adversarial report and process-output tests, focused pure-module coverage, PHP/framework compatibility jobs, VS Code extension-host checks, and result-count-checked scale benchmarks.
 
 ## Roadmap
 
@@ -41,7 +41,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Assert result counts; compare repeated measurements without machine-dependent CI thresholds.
 - Retain an optimization only when it improves measured workloads without changing results.
 
-**Current evidence:** Node 22.20.0 on darwin/arm64: 10k discovery median 102.4 ms; 10k no-file Pest lookup 345.7 ms versus 13.7 ms file-backed; 5k-line heredoc parse 20.2 ms. For 1M history records, the flaky-candidate query fell from 121.4 ms without the completed-window guard to 47.5 ms with it in a controlled 9-iteration A/B; slowest-test lookup remained about 54 ms. The guard skips tests whose ten newer outcomes are already collected.
+**Current evidence:** Node 22.20.0 on darwin/arm64: 10k discovery median 99.7 ms; 10k result-index build 13.9 ms, method query 2.9 ms, file-backed Pest lookup 14.0 ms, and no-file Pest lookup 351.9 ms. For 1M history records, slowest-test and flaky-candidate queries measured 54.1 ms and 51.8 ms. A controlled 9-iteration A/B measured 121.4 ms without and 47.5 ms with the completed-window guard; it skips tests whose ten newer outcomes are already collected.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
 
@@ -59,22 +59,10 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 
 **Status: Active**
 
-- Let users run a slow or potentially flaky test directly from its insight when its reported file and line map to a discovered method or data set.
-- Keep failure locations navigable in compact summaries, including when several tests fail.
-- Confirm before clearing insight history across all workspace folders.
-- Expose enough identity in custom output templates to distinguish same-named tests.
-- Detect Codex CLI, GitHub Copilot CLI, and Claude Code only; keep generation user-initiated and context sharing consent-based.
-- Make destination suggestions follow the project's Unit/Feature layout and source folders; never silently overwrite an existing test.
-- Keep generated changes reviewable and require explicit confirmation before writing a PHP file under the workspace `tests/` directory.
+- Keep insight reruns mapped to the exact discovered method or data set, and show enough recent outcomes to explain flaky candidates.
+- Verify AI context consent, output review, destination choice, and confirmed save behavior through extension-level tests.
 
 **Complete when:** insight run actions preserve exact discovered scope, and AI tool detection, context consent, output review, destination selection, and explicit save behavior are covered by tests and documented clearly.
-
-## Latest cycle (2026-11-01)
-
-- **Feature/usability:** Custom result templates support `{message}` as a compact first-line failure summary; insight entries explain missing source information.
-- **Correctness:** Flaky history counts one outcome per test per run, ignores conflicting duplicates, and process output preserves UTF-8 characters split across chunks.
-- **Tech debt:** Workspace-scope and continuous-test target selection are extracted into pure tested modules.
-- **Performance:** A controlled benchmark supports the history-query guard above; no other optimization met the repeatability bar.
 
 ## Support boundaries and acceptance criteria
 

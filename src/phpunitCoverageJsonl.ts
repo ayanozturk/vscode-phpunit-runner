@@ -199,7 +199,11 @@ function parseMetadata(text: string): Pick<PHPUnitJsonlCoverage, 'schemaVersion'
     throw new Error('PHPUnit coverage meta.json is not valid JSON.');
   }
 
-  if (!isRecord(value) || value.schemaVersion !== 1 || typeof value.sourceRoot !== 'string' || !path.isAbsolute(value.sourceRoot)) {
+  if (!isRecord(value)
+    || value.schemaVersion !== 1
+    || typeof value.sourceRoot !== 'string'
+    || value.sourceRoot.includes('\0')
+    || !path.isAbsolute(value.sourceRoot)) {
     throw new Error('PHPUnit coverage meta.json must include schemaVersion 1 and an absolute sourceRoot.');
   }
 

@@ -9,6 +9,7 @@ import { testCodeLensTargets } from './codeLens';
 import { readCloverReport } from './coverage';
 import { expandCoverageLineNumbers } from './coverageLineRanges';
 import { continuousTargetsForUri as selectContinuousTargetsForUri } from './continuousTargets';
+import { findTreeItemById } from './itemLookup';
 import { workspaceFoldersForItems } from './workspaceScope';
 import {
   canRequestLocalPhpUnitJsonlCoverage,
@@ -2037,18 +2038,12 @@ function collectAllMethodItems(): vscode.TestItem[] {
 }
 
 function findItemById(id: string): vscode.TestItem | undefined {
-  const stack = collectTestItems(controller.items);
-  while (stack.length > 0) {
-    const item = stack.pop();
-    if (!item) {
-      continue;
-    }
-    if (item.id === id) {
-      return item;
-    }
-    stack.push(...collectTestItems(item.children));
-  }
-  return undefined;
+  return findTreeItemById(
+    collectTestItems(controller.items),
+    id,
+    (item) => item.id,
+    (item) => collectTestItems(item.children),
+  );
 }
 
 async function diagnoseProject(): Promise<void> {

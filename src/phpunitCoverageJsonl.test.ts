@@ -103,6 +103,10 @@ describe('PHPUnit JSONL coverage integration helpers', () => {
       JSON.stringify({ schemaVersion: 1, sourceRoot: 'src' }),
       '',
     ), /absolute sourceRoot/);
+    assert.throws(() => parsePhpUnitCoverageJsonl(
+      JSON.stringify({ schemaVersion: 1, sourceRoot: '/project\0invalid' }),
+      '',
+    ), /absolute sourceRoot/);
   });
 
   it('maps report-relative paths through remote-to-host path mappings', () => {

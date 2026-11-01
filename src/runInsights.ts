@@ -39,12 +39,15 @@ export function createTestInsightChoices(
   const flaky = findFlakyCandidates(history).map((test): TestInsightChoice => {
     const passes = test.recentOutcomes.filter(({ outcome }) => outcome === 'passed').length;
     const failures = test.recentOutcomes.length - passes;
+    const recentOutcomes = test.recentOutcomes
+      .map(({ outcome }) => outcome === 'passed' ? 'passed' : 'failed')
+      .join(' → ');
     return {
       id: `flaky:${test.testId}`,
       label: `Flaky: ${test.label}`,
       description: `${workspaceName} · ${passes} passed, ${failures} failed`,
       detail: sourceDetail(
-        'Both pass and fail outcomes appeared within the latest 10 reported runs.',
+        `Recent outcomes, newest first: ${recentOutcomes}.`,
         test.filePath,
         test.line,
       ),
