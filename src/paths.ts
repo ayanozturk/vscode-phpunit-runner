@@ -54,7 +54,7 @@ function pathApiFor(...paths: string[]): PathApi {
   return paths.some(isWindowsAbsolutePath) ? path.win32 : path;
 }
 
-function isWindowsAbsolutePath(targetPath: string): boolean {
+export function isWindowsAbsolutePath(targetPath: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(targetPath)
     || /^\\\\[^\\]+\\[^\\]+/.test(targetPath)
     || /^\/\/[^/]+\/[^/]+/.test(targetPath);

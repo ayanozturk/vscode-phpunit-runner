@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { firstFailureLocation } from './junit';
-import { sourceSnippetAtLine, sourceSnippetKey } from './outputFormatter';
+import { sourceSnippetAtLineFromLines, sourceSnippetKey } from './outputFormatter';
 import type { JUnitTestCase } from './types';
 
 export type ReadSourceFile = (filePath: string) => Promise<string>;
@@ -66,6 +66,7 @@ export async function readFailureSourceSnippets(
   }));
 
   const snippets = new Map<string, string>();
+  const linesByPath = new Map<string, string[]>();
   const snippetContextLines = Number.isFinite(contextLines)
     ? Math.min(MAX_SOURCE_SNIPPET_CONTEXT_LINES, Math.max(0, Math.trunc(contextLines)))
     : DEFAULT_SOURCE_SNIPPET_CONTEXT_LINES;
@@ -75,7 +76,12 @@ export async function readFailureSourceSnippets(
       continue;
     }
 
-    const snippet = sourceSnippetAtLine(contents, sourceLine, snippetContextLines);
+    let lines = linesByPath.get(filePath);
+    if (!lines) {
+      lines = contents.split(/\r?\n/);
+      linesByPath.set(filePath, lines);
+    }
+    const snippet = sourceSnippetAtLineFromLines(lines, sourceLine, snippetContextLines);
     if (snippet) {
       snippets.set(key, snippet);
     }

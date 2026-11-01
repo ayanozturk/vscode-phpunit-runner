@@ -29,6 +29,7 @@ describe('resolveOutputFilePath', () => {
   it('does not treat an unmapped Windows path as a local path on POSIX', () => {
     if (process.platform !== 'win32') {
       assert.equal(resolveOutputFilePath('C:\\remote\\tests\\ExampleTest.php', 12, '/work/api'), undefined);
+      assert.equal(resolveOutputFilePath('//server/share/tests/ExampleTest.php', 12, '/work/api'), undefined);
     }
   });
 });

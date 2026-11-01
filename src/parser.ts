@@ -872,17 +872,13 @@ function testDataProviderDatasetNames(
 ): { found: false } | { found: true; datasets?: Array<{ label: string; caseSuffix: string }> } {
   const code = maskNonCode(header);
   const attributePattern = /#\[\s*(\\?[A-Za-z_][A-Za-z0-9_\\]*)/g;
-  const datasets: Array<{ label: string; caseSuffix: string }> = [];
-  const namedKeys = new Set<string>();
-  let unnamedIndex = 0;
-  let found = false;
+  const attributeProviderNames: string[] = [];
 
   for (const match of code.matchAll(attributePattern)) {
     const attributeName = match[1].replace(/^\\/, '').toLowerCase();
     if (attributeName !== 'phpunit\\framework\\attributes\\dataprovider' && !aliases.has(attributeName)) {
       continue;
     }
-    found = true;
 
     let argumentStart = (match.index ?? 0) + match[0].length;
     while (argumentStart < code.length && /\s/.test(code[argumentStart])) {
@@ -910,9 +906,59 @@ function testDataProviderDatasetNames(
       return { found: true };
     }
 
+    attributeProviderNames.push(providerName);
+  }
+
+  const docblockProviders = dataProviderDocblockNames(header);
+  if (!attributeProviderNames.length && !docblockProviders.found) {
+    return { found: false };
+  }
+  if (attributeProviderNames.length && docblockProviders.found) {
+    return { found: true };
+  }
+  if (docblockProviders.found && !docblockProviders.names?.length) {
+    return { found: true };
+  }
+
+  const providerNames = attributeProviderNames.length ? attributeProviderNames : docblockProviders.names ?? [];
+  const datasets = dataProviderDatasets(providerNames, providers);
+  return datasets ? { found: true, datasets } : { found: true };
+}
+
+function dataProviderDocblockNames(header: string): { found: boolean; names?: string[] } {
+  const names: string[] = [];
+  let found = false;
+
+  for (const blockMatch of header.matchAll(/\/\*\*([\s\S]*?)\*\//g)) {
+    for (const line of blockMatch[1].split(/\r?\n/)) {
+      const tagMatch = line.match(/^\s*\*?\s*@dataProvider\b(.*)$/i);
+      if (!tagMatch) {
+        continue;
+      }
+      found = true;
+      const providerName = tagMatch[1].trim().match(/^([A-Za-z_][A-Za-z0-9_]*)$/)?.[1];
+      if (!providerName) {
+        return { found: true };
+      }
+      names.push(providerName);
+    }
+  }
+
+  return { found, names };
+}
+
+function dataProviderDatasets(
+  providerNames: string[],
+  providers: ReadonlyMap<string, Array<string | undefined> | undefined>,
+): Array<{ label: string; caseSuffix: string }> | undefined {
+  const datasets: Array<{ label: string; caseSuffix: string }> = [];
+  const namedKeys = new Set<string>();
+  let unnamedIndex = 0;
+
+  for (const providerName of providerNames) {
     const rows = providers.get(providerName.toLowerCase());
     if (!rows?.length) {
-      return { found: true };
+      return undefined;
     }
     for (const name of rows) {
       if (name === undefined) {
@@ -921,14 +967,14 @@ function testDataProviderDatasetNames(
         continue;
       }
       if (namedKeys.has(name)) {
-        return { found: true };
+        return undefined;
       }
       namedKeys.add(name);
       datasets.push({ label: name, caseSuffix: `with data set "${sanitizePhpUnitDataSetName(name)}"` });
     }
   }
 
-  return found ? { found: true, datasets } : { found: false };
+  return datasets.length ? datasets : undefined;
 }
 
 function testWithDatasetNames(

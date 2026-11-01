@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { unmapWithMappings, type PathMapping } from './commandTemplate';
+import { isWindowsAbsolutePath } from './paths';
 
 export function resolveOutputFilePath(
   file: string | undefined,
@@ -12,9 +13,7 @@ export function resolveOutputFilePath(
   }
 
   const localFile = unmapWithMappings(file, mappings);
-  const isWindowsAbsolute = /^[A-Za-z]:[\\/]/.test(localFile)
-    || /^\\\\[^\\]+\\[^\\]+/.test(localFile);
-  if (isWindowsAbsolute && process.platform !== 'win32') {
+  if (isWindowsAbsolutePath(localFile) && process.platform !== 'win32') {
     return undefined;
   }
 

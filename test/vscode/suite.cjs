@@ -201,11 +201,9 @@ class TestDoxTest
 `, 'utf8');
 
     await fs.writeFile(path.join(workspaceA.uri.fsPath, 'tests', 'DataProviderTest.php'), `<?php
-use PHPUnit\\Framework\\Attributes\\DataProvider;
-
 class DataProviderTest
 {
-    #[DataProvider('providePairs')]
+    /** @dataProvider providePairs */
     public function testPairs(int $left, int $right): void {}
 
     public static function providePairs(): array

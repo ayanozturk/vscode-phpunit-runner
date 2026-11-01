@@ -42,8 +42,14 @@ describe('readFailureSourceSnippets', () => {
     assert.deepEqual(reads.sort(), [one, two].sort());
     assert.equal(maximumConcurrentReads, 2);
     assert.equal(snippets.size, 3);
-    assert.match(snippets.get(sourceSnippetKey('One.php', 1)) ?? '', /one/);
-    assert.match(snippets.get(sourceSnippetKey('One.php', 2)) ?? '', /second line/);
+    assert.equal(
+      stripAnsi(snippets.get(sourceSnippetKey('One.php', 1)) ?? ''),
+      '  > 1 | one\n    2 | second line',
+    );
+    assert.equal(
+      stripAnsi(snippets.get(sourceSnippetKey('One.php', 2)) ?? ''),
+      '    1 | one\n  > 2 | second line',
+    );
     assert.match(snippets.get(sourceSnippetKey('Two.php', 1)) ?? '', /two/);
   });
 

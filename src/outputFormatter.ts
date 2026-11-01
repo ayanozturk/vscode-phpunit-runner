@@ -22,8 +22,19 @@ export function sourceSnippetKey(file: string, line: number): string {
 }
 
 export function sourceSnippetAtLine(source: string, line: number, contextLines = 1): string | undefined {
-  const lines = source.split(/\r?\n/);
-  if (source.length === 0 || line < 1 || line > lines.length) {
+  if (source.length === 0) {
+    return undefined;
+  }
+
+  return sourceSnippetAtLineFromLines(source.split(/\r?\n/), line, contextLines);
+}
+
+export function sourceSnippetAtLineFromLines(
+  lines: readonly string[],
+  line: number,
+  contextLines = 1,
+): string | undefined {
+  if (line < 1 || line > lines.length) {
     return undefined;
   }
 

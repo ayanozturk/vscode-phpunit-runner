@@ -185,6 +185,59 @@ class StaticDataProviderTest {
     ]);
   });
 
+  it('discovers same-class literal array providers referenced by PHPUnit docblocks', () => {
+    const source = `<?php
+class DocblockDataProviderTest {
+    /**
+     * Cases for the test.
+     * @dataProvider providePairs
+     */
+    public function testPairs(int $left, int $right): void {}
+
+    public static function providePairs(): array {
+        return [
+            'positive pair' => [1, 2],
+            [3, 4],
+        ];
+    }
+}
+`;
+
+    const methods = parseTestSource('/tmp/DocblockDataProviderTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map(({ name, phpunitDatasetName }) => ({ name, phpunitDatasetName })), [
+      { name: 'testPairs', phpunitDatasetName: undefined },
+      { name: 'positive pair', phpunitDatasetName: 'with data set "positive pair"' },
+      { name: '#0', phpunitDatasetName: 'with data set #0' },
+    ]);
+  });
+
+  it('does not guess docblock provider rows for external, dynamic, or conflicting annotations', () => {
+    const source = `<?php
+use PHPUnit\\Framework\\Attributes\\DataProvider;
+
+class UnresolvedDocblockDataProviderTest {
+    /** @dataProvider OtherProvider::providePairs */
+    public function testExternal(mixed $value): void {}
+
+    /** @dataProvider $providerName */
+    public function testDynamic(mixed $value): void {}
+
+    /** @dataProvider providePairs */
+    #[DataProvider('providePairs')]
+    public function testConflicting(mixed $value): void {}
+
+    public static function providePairs(): array { return ['pair' => [1]]; }
+}
+`;
+
+    const methods = parseTestSource('/tmp/UnresolvedDocblockDataProviderTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map(({ name, phpunitDatasetName }) => ({ name, phpunitDatasetName })), [
+      { name: 'testExternal', phpunitDatasetName: undefined },
+      { name: 'testDynamic', phpunitDatasetName: undefined },
+      { name: 'testConflicting', phpunitDatasetName: undefined },
+    ]);
+  });
+
   it('does not guess PHPUnit DataProvider rows when the provider is dynamic, missing, or ambiguous', () => {
     const source = `<?php
 use PHPUnit\\Framework\\Attributes\\DataProvider;

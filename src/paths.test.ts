@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   mapCommandForContainer,
   mapHostPathToContainer,
+  isWindowsAbsolutePath,
   normalizePathForComparison,
   resolvePath,
 } from './paths';
@@ -35,6 +36,15 @@ describe('mapHostPathToContainer', () => {
 });
 
 describe('path helpers', () => {
+  it('recognizes Windows drive and UNC absolute paths with either separator style', () => {
+    assert.equal(isWindowsAbsolutePath('C:\\Projects\\App'), true);
+    assert.equal(isWindowsAbsolutePath('C:/Projects/App'), true);
+    assert.equal(isWindowsAbsolutePath('\\\\server\\share\\file.php'), true);
+    assert.equal(isWindowsAbsolutePath('//server/share/file.php'), true);
+    assert.equal(isWindowsAbsolutePath('C:relative\\file.php'), false);
+    assert.equal(isWindowsAbsolutePath('/workspace/file.php'), false);
+  });
+
   it('normalizes Windows paths without resolving them against the current host', () => {
     assert.equal(normalizePathForComparison('C:\\Projects\\App\\..\\Tests'), 'c:/projects/tests');
   });

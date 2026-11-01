@@ -4,6 +4,7 @@ import {
   formatTestOutput,
   formatTestOutputSegments,
   sourceSnippetAtLine,
+  sourceSnippetAtLineFromLines,
   sourceSnippetKey,
   type OutputPreset,
 } from './outputFormatter';
@@ -232,6 +233,17 @@ describe('sourceSnippetAtLine', () => {
     assert.equal(stripAnsi(sourceSnippetAtLine('only', 1, 2) ?? ''), '  > 1 | only');
     assert.equal(sourceSnippetAtLine('first\nsecond', 3), undefined);
     assert.equal(sourceSnippetAtLine('', 1), undefined);
+  });
+
+  it('renders cached source lines identically at multiple locations', () => {
+    const source = 'first\r\nsecond\r\nthird\r\nfourth';
+    const lines = source.split(/\r?\n/);
+    for (const line of [1, 2, 4]) {
+      assert.equal(
+        sourceSnippetAtLineFromLines(lines, line, 1),
+        sourceSnippetAtLine(source, line, 1),
+      );
+    }
   });
 });
 

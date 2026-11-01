@@ -33,6 +33,22 @@ describe('continuous test scheduling', () => {
     }
   });
 
+  it('keeps a new same-key run scheduled while the current task is starting', async () => {
+    const scheduler = createDebouncedTaskScheduler(10);
+    const calls: string[] = [];
+    try {
+      scheduler.schedule('/workspace/tests/ExampleTest.php', () => {
+        calls.push('first');
+        scheduler.schedule('/workspace/tests/ExampleTest.php', () => calls.push('newer'));
+      });
+      await wait(40);
+
+      assert.deepEqual(calls, ['first', 'newer']);
+    } finally {
+      scheduler.dispose();
+    }
+  });
+
   it('cancels pending runs when disposed', async () => {
     const scheduler = createDebouncedTaskScheduler(20);
     const calls: string[] = [];
