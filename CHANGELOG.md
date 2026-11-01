@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.5.1 - 2026-11-01
+
+### Added
+
+- Configure how many slow, flaky, failed, and errored test insights appear per workspace.
+- Rerun the latest mapped failed or errored tests in one command, clear insight history for the active workspace folder, and copy a bounded Markdown insight report.
+
 ### Improved
 
 - Suggest generated PHP test destinations from the project’s existing `Unit` or `Feature` layout and source folders.
@@ -19,6 +26,10 @@
 - Isolate remote report transfer execution and preserve correct result mapping for identical tests across workspace roots.
 - Detect Codex, GitHub Copilot CLI, and Claude Code and generate reviewed PHPUnit/Pest test files from selected PHP code.
 - Improve extension-host compatibility coverage for the minimum supported VS Code version and add run-history scale benchmarks to CI.
+- Resolve insight actions to exact discovered method or data-set identities, and include concise, bounded failure messages in history.
+- Ignore PHP comments and string literals when validating generated unit-test code.
+- Reject truncated per-test coverage reports and avoid attributing coverage to ambiguous class or method identities.
+- Extract PHP non-code masking, failure-message normalization, and test-selection planning into focused, tested modules.
 
 ## 0.5.0 - 2026-11-01
 
