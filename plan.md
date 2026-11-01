@@ -25,7 +25,10 @@ Research confirms that machine-readable test listing and result formats are avai
 - **Delivered:** Parallel runner detection recognizes Composer's extensionless, `.bat`, `.cmd`, and `.exe` shims while preserving Pest-first selection when both supported runners are present. Clover parsing now prefers file-level metrics over nested class metrics and sums class metrics as a fallback for multi-class files.
 - **Delivered:** Composer framework metadata parsing used by project diagnosis now lives in a focused, independently tested module.
 - **Coverage limitation:** Clover reports aggregate line and declaration hit counts without test identities, so those counts cannot be attributed reliably to individual tests in multi-test runs. Keep that attribution out of scope unless a supported report format provides per-test coverage data.
-- **Still planned:** Further module boundaries around invocation and result mapping.
+- **Performance:** Parser discovery now reuses the already masked class-body source for method and provider scanning. A 7-iteration local benchmark improved from 18.1 to 11.0 ms at 1k items and 172.3 to 104.2 ms at 10k; the large-heredoc case remained about 20–21 ms.
+- **Delivered:** Host-side remote report transfer now has its own tested module boundary, preserving cancellation, environment merging, and output forwarding. Test Insights Quick Picks can also search descriptions and source details.
+- **Test coverage:** VS Code integration now verifies that identical test names in separate workspace roots map to the right test items and run once in each owning workspace.
+- **Still planned:** Further module boundaries around discovery and result mapping.
 
 ## Roadmap
 

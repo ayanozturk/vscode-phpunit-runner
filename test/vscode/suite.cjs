@@ -137,7 +137,7 @@ exports.run = async () => {
         '  if [ "$argument" = "--coverage-clover" ]; then previous="coverage"; fi',
         '  if [ "$argument" = "--list-tests-xml" ]; then previous="listing"; fi',
         '  if [ "$argument" = "--filter" ]; then previous="filter"; fi',
-        '  case "$argument" in *ValuesTest.php) testcaseFile="tests/ValuesTest.php"; additionalCase="<testcase name=\'testValues\' classname=\'ValuesTest\' file=\'tests/ValuesTest.php\' time=\'0.02\'/>";; esac',
+        '  case "$argument" in *SharedTest.php) testcaseName="testSameName"; testcaseClass="SharedTest"; testcaseFile="tests/SharedTest.php";; *ValuesTest.php) testcaseFile="tests/ValuesTest.php"; additionalCase="<testcase name=\'testValues\' classname=\'ValuesTest\' file=\'tests/ValuesTest.php\' time=\'0.02\'/>";; esac',
         'done',
         'if [ -n "$listing" ]; then',
         '  if [ "$RUNTIME_DATASET_MODE" = "empty" ]; then',
@@ -314,6 +314,32 @@ class DynamicDataProviderTest
     );
 
     const findMethod = (name) => flatten(api.controller.items).find((item) => item.label === name);
+    const sharedMethods = flatten(api.controller.items).filter((item) => item.label === 'testSameName');
+    assert.equal(sharedMethods.length, 2, 'both workspace roots can contain the same test class and method');
+    assert.notEqual(sharedMethods[0].uri.fsPath, sharedMethods[1].uri.fsPath,
+      'the duplicate test identities remain rooted in distinct files');
+    const sharedRunLogPaths = sharedMethods.map((item) => {
+      const folder = vscode.workspace.getWorkspaceFolder(item.uri);
+      return path.join(folder.uri.fsPath, 'runner.log');
+    });
+    await Promise.all(sharedRunLogPaths.map((logPath) => fs.writeFile(logPath, '', 'utf8')));
+    const sharedMethodEvents = [];
+    const restoreSharedMethodCapture = captureRunEvents(api.controller, sharedMethodEvents);
+    const sharedRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
+    await sharedRunProfile.runHandler(
+      new vscode.TestRunRequest(sharedMethods),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreSharedMethodCapture();
+    for (const item of sharedMethods) {
+      assert.ok(sharedMethodEvents.some((event) => event.id === item.id && event.state === 'passed'),
+        `same-named test is mapped to its owning workspace: ${item.id}`);
+    }
+    for (const logPath of sharedRunLogPaths) {
+      const invocations = (await fs.readFile(logPath, 'utf8')).trim().split('\n').filter(Boolean);
+      assert.equal(invocations.length, 1, 'each workspace runs its same-named test in one scoped invocation');
+    }
+
     assert.ok(findMethod('testAlpha'), 'workspace A test is discovered');
     const alphaBeforeRefresh = findMethod('testAlpha');
     await api.refresh();

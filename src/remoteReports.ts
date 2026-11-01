@@ -1,4 +1,5 @@
 import { quoteTemplateShellArg } from './commandTemplate';
+import { runProcess, type ProcessRunOptions, type ProcessRunResult } from './processRunner';
 
 export type RemoteReportTransferPaths = {
   workspaceFolder: string;
@@ -7,6 +8,25 @@ export type RemoteReportTransferPaths = {
   remoteCoverageReport?: string;
   localCoverageReport?: string;
 };
+
+/** Executes the host-side transfer command using the shared cancellable process runner. */
+export function executeRemoteReportTransfer(
+  command: string,
+  cwd: string,
+  configuredEnvironment: Record<string, string>,
+  token: ProcessRunOptions['token'],
+  onOutput: (chunk: string) => void,
+  executeProcess: (options: ProcessRunOptions) => Promise<ProcessRunResult> = runProcess,
+): Promise<ProcessRunResult> {
+  return executeProcess({
+    command,
+    cwd,
+    env: { ...process.env, ...configuredEnvironment },
+    shell: true,
+    token,
+    onOutput,
+  });
+}
 
 /**
  * Renders the optional command used to copy reports from a remote runner to the

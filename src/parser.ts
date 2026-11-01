@@ -71,8 +71,9 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
       );
       namespaceTestWithJsonAliases.set(namespaceKey, testWithJsonAttributeAliases);
     }
-    const methods = parseTestMethods(
+    const methods = parseTestMethodsFromCode(
       body,
+      code.slice(openBraceIndex + 1, closeBraceIndex),
       openBraceIndex + 1,
       lineStarts,
       testAttributeAliases,
@@ -672,9 +673,32 @@ export function parseTestMethods(
   testWithJsonAttributeAliases: ReadonlySet<string> = new Set(),
   dataProviderAttributeAliases: ReadonlySet<string> = new Set(),
 ): TestMethod[] {
+  return parseTestMethodsFromCode(
+    body,
+    maskNonCode(body),
+    bodyOffset,
+    lineStarts,
+    testAttributeAliases,
+    testDoxAttributeAliases,
+    testWithAttributeAliases,
+    testWithJsonAttributeAliases,
+    dataProviderAttributeAliases,
+  );
+}
+
+function parseTestMethodsFromCode(
+  body: string,
+  code: string,
+  bodyOffset: number,
+  lineStarts: number[],
+  testAttributeAliases: ReadonlySet<string>,
+  testDoxAttributeAliases: ReadonlySet<string>,
+  testWithAttributeAliases: ReadonlySet<string>,
+  testWithJsonAttributeAliases: ReadonlySet<string>,
+  dataProviderAttributeAliases: ReadonlySet<string>,
+): TestMethod[] {
   const methods: TestMethod[] = [];
-  const code = maskNonCode(body);
-  const dataProviders = parseStaticDataProviderMethods(body);
+  const dataProviders = parseStaticDataProviderMethods(body, code);
   const methodPattern = /(?:(?:abstract|final|static)\s+)*(?:public|protected)\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/gi;
 
   for (const match of code.matchAll(methodPattern)) {
@@ -760,8 +784,7 @@ function testDoxDisplayName(header: string, aliases: ReadonlySet<string>): strin
   return displayName;
 }
 
-function parseStaticDataProviderMethods(body: string): Map<string, Array<string | undefined> | undefined> {
-  const code = maskNonCode(body);
+function parseStaticDataProviderMethods(body: string, code: string): Map<string, Array<string | undefined> | undefined> {
   const providers = new Map<string, Array<string | undefined> | undefined>();
   const methodPattern = /((?:(?:public|protected|private|static|final)\s+)*)function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/gi;
 

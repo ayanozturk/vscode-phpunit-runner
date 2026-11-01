@@ -211,6 +211,33 @@ class DocblockDataProviderTest {
     ]);
   });
 
+  it('preserves provider rows, annotations, and source locations when parsing multiple class bodies', () => {
+    const source = `<?php
+class FirstParserTest {
+    /** @dataProvider cases */
+    public function testFirst(string $value): void {}
+
+    public static function cases(): array
+    {
+        return ['named case' => ['first']];
+    }
+}
+
+class SecondParserTest {
+    /** @group integration */
+    public function testSecond(): void {}
+}
+`;
+
+    const parsed = parseTestSource('/tmp/MultipleParserTest.php', source);
+    assert.deepEqual(parsed.classes.map((testClass) => testClass.methods.map((method) => method.name)), [
+      ['testFirst', 'named case'],
+      ['testSecond'],
+    ]);
+    assert.deepEqual(parsed.classes.map((testClass) => testClass.methods[0].range.start.line), [3, 13]);
+    assert.deepEqual(parsed.classes[1].methods[0].groups, ['integration']);
+  });
+
   it('does not guess docblock provider rows for external, dynamic, or conflicting annotations', () => {
     const source = `<?php
 use PHPUnit\\Framework\\Attributes\\DataProvider;

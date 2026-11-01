@@ -11,7 +11,7 @@ import { createDebouncedTaskScheduler } from './continuousTesting';
 import { detectParallelRunner } from './parallelRunner';
 import { buildGroupPickerOptions } from './groupPicker';
 import { autoDetectConfigurationFile, autoDetectPhpUnit, resolveInvocation } from './invoke';
-import { renderRemoteReportTransferCommand } from './remoteReports';
+import { executeRemoteReportTransfer, renderRemoteReportTransferCommand } from './remoteReports';
 import { parseRuntimeTestListing, reconcileRuntimeTestListing } from './runtimeDiscovery';
 import { createTestInsightChoices, type TestInsightChoice } from './runInsights';
 import { runProcess } from './processRunner';
@@ -1517,11 +1517,12 @@ async function executePhpUnit(
     }
     if (transferCommand) {
       try {
-        const transferResult = await executeReportTransfer(
+        const transferResult = await executeRemoteReportTransfer(
           transferCommand,
           workspaceFolder.uri.fsPath,
           invocation.env ?? {},
           token,
+          (chunk) => outputChannel.append(chunk),
         );
         if (transferResult.exitCode !== 0) {
           reportTransferWarning = `Remote report transfer command exited with code ${transferResult.exitCode}. ${transferResult.output.trim()}`.trim();
@@ -1630,6 +1631,8 @@ function showTestInsights(): void {
     const picker = vscode.window.createQuickPick<TestInsightChoice>();
     picker.title = 'PHPUnit Test Insights';
     picker.placeholder = 'Select a slow or possibly flaky test to open its source';
+    picker.matchOnDescription = true;
+    picker.matchOnDetail = true;
     picker.items = choices;
     picker.onDidAccept(() => {
       const selected = picker.selectedItems[0];
@@ -1674,22 +1677,6 @@ async function openInsightLocation(choice: TestInsightChoice): Promise<void> {
   } catch (error) {
     void vscode.window.showWarningMessage(`Could not open test source: ${String(error)}`);
   }
-}
-
-async function executeReportTransfer(
-  command: string,
-  cwd: string,
-  configuredEnvironment: Record<string, string>,
-  token: vscode.CancellationToken,
-): Promise<{ output: string; exitCode: number }> {
-  return runProcess({
-    command,
-    cwd,
-    env: { ...process.env, ...configuredEnvironment },
-    shell: true,
-    token,
-    onOutput: (chunk) => outputChannel.append(chunk),
-  });
 }
 
 async function ensureDebugListen(folder: vscode.WorkspaceFolder, config: RunnerConfig): Promise<void> {

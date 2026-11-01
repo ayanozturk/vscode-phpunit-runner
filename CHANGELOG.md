@@ -7,6 +7,9 @@
 - Detect Pest and ParaTest Composer shims across Windows `.bat`, `.cmd`, and `.exe` forms.
 - Read Clover file totals accurately when files contain multiple classes, with a class-metric fallback when file totals are absent.
 - Isolate and test Composer framework metadata parsing used by project diagnosis.
+- Speed up test discovery by reusing masked PHP class bodies during method and data-provider scanning.
+- Make Test Insights searchable by workspace, source location, and explanatory details.
+- Isolate remote report transfer execution and preserve correct result mapping for identical tests across workspace roots.
 
 ## 0.5.0 - 2026-11-01
 

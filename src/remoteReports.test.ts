@@ -1,6 +1,38 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { renderRemoteReportTransferCommand } from './remoteReports';
+import { executeRemoteReportTransfer, renderRemoteReportTransferCommand } from './remoteReports';
+import type { ProcessRunOptions } from './processRunner';
+
+describe('executeRemoteReportTransfer', () => {
+  it('preserves process, environment, cancellation, and output options', async () => {
+    const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }) } as unknown as ProcessRunOptions['token'];
+    const chunks: string[] = [];
+    let captured: ProcessRunOptions | undefined;
+    const expected = { output: 'transfer output', exitCode: 0 };
+
+    const result = await executeRemoteReportTransfer(
+      'scp remote.xml local.xml',
+      '/workspace',
+      { PHPUNIT_TRANSFER_TEST: 'configured' },
+      token,
+      (chunk) => chunks.push(chunk),
+      async (options) => {
+        captured = options;
+        options.onOutput?.('transfer output');
+        return expected;
+      },
+    );
+
+    assert.deepEqual(result, expected);
+    assert.equal(captured?.command, 'scp remote.xml local.xml');
+    assert.equal(captured?.cwd, '/workspace');
+    assert.equal(captured?.shell, true);
+    assert.equal(captured?.token, token);
+    assert.equal(captured?.env?.PHPUNIT_TRANSFER_TEST, 'configured');
+    assert.equal(captured?.env?.PATH, process.env.PATH);
+    assert.deepEqual(chunks, ['transfer output']);
+  });
+});
 
 describe('remote report transfer command', () => {
   it('leaves an empty template disabled', () => {
