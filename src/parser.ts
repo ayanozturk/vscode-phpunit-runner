@@ -1176,7 +1176,9 @@ function findAttributeAliases(
 ): Set<string> {
   const aliases = new Set<string>();
   const namespaceCode = code.slice(namespaceStart, namespaceEnd);
-  const usePattern = /^\s*use\s+(?!function\b|const\b)([^;]+);/gim;
+  // Restrict indentation to the current line. `\s*` can consume newlines in a
+  // masked heredoc, causing every blank line to rescan the rest of the file.
+  const usePattern = /^[\t ]*use\s+(?!function\b|const\b)([^;]+);/gim;
   const attributeNamespace = attributeClass.slice(0, attributeClass.lastIndexOf('\\'));
   const shortName = attributeClass.slice(attributeClass.lastIndexOf('\\') + 1);
 
@@ -1323,12 +1325,17 @@ function maskNonCode(source: string): string {
     if (heredocLabel) {
       mask(index);
       if (index === 0 || prev === '\n') {
-        const endMarker = source.slice(index).match(new RegExp(`^[\\t ]*${escapeRegex(heredocLabel)}(?![A-Za-z0-9_])`));
-        if (endMarker) {
-          for (let offset = 0; offset < endMarker[0].length; offset += 1) {
+        let markerStart = index;
+        while (source[markerStart] === '\t' || source[markerStart] === ' ') {
+          markerStart += 1;
+        }
+        const markerEnd = markerStart + heredocLabel.length;
+        const nextMarkerChar = source[markerEnd] ?? '';
+        if (source.startsWith(heredocLabel, markerStart) && !/[A-Za-z0-9_]/.test(nextMarkerChar)) {
+          for (let offset = 0; offset < markerEnd - index; offset += 1) {
             mask(index + offset);
           }
-          index += endMarker[0].length - 1;
+          index = markerEnd - 1;
           heredocLabel = undefined;
         }
       }
@@ -1394,10 +1401,6 @@ function maskNonCode(source: string): string {
   }
 
   return chars.join('');
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export function extractGroups(header: string): string[] {

@@ -512,6 +512,43 @@ class RealTest {
     assert.deepEqual(parsed.classes[0].methods.map((method) => method.name), ['testReal']);
   });
 
+  it('only closes an indented heredoc at a complete matching label', () => {
+    const source = `<?php
+$document = <<<END_BODY
+class TextPhantomTest { public function testGhost() {} }
+END_BODY_suffix
+END_BODYExtra
+    END_BODY;
+
+class RealTest { public function testReal(): void {} }
+`;
+
+    const parsed = parseTestSource('/tmp/RealTest.php', source);
+    assert.deepEqual(parsed.classes.map((testClass) => testClass.name), ['RealTest']);
+    assert.deepEqual(parsed.classes[0].methods.map((method) => method.name), ['testReal']);
+  });
+
+  it('resolves attribute aliases after large heredoc blocks without rescanning blank lines', () => {
+    const heredocLines = Array.from({ length: 500 }, (_, index) => (
+      `Text ${index} class HiddenTest { public function testGhost(): void {} }`
+    )).join('\n');
+    const source = `<?php
+use PHPUnit\\Framework\\Attributes\\Test as CaseTest;
+$document = <<<BODY
+${heredocLines}
+BODY;
+
+class RealTest {
+    #[CaseTest]
+    public function runsWithAttribute(): void {}
+}
+`;
+
+    const parsed = parseTestSource('/tmp/RealTest.php', source);
+    assert.deepEqual(parsed.classes.map((testClass) => testClass.name), ['RealTest']);
+    assert.deepEqual(parsed.classes[0].methods.map((method) => method.name), ['runsWithAttribute']);
+  });
+
   it('assigns fully qualified names in multiple bracketed namespaces', () => {
     const source = `<?php
 namespace First\\Tests {

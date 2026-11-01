@@ -111,6 +111,42 @@ function benchmark(scenario: Scenario): void {
   void retainedResults;
 }
 
+function benchmarkHeredocAliasScan(lineCount: number): void {
+  const body = Array.from({ length: lineCount }, (_, index) => (
+    `Large text ${index} contains class HiddenTest { public function testHidden(): void {} }`
+  )).join('\n');
+  const source = `<?php
+use PHPUnit\\Framework\\Attributes\\Test as CaseTest;
+$text = <<<BODY
+${body}
+BODY;
+class HeredocBenchmarkTest {
+    #[CaseTest]
+    public function testVisible(): void {}
+}
+`;
+  const durations: number[] = [];
+  let parsedItems = 0;
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const start = performance.now();
+    const parsed = parseTestSource('/benchmark/HeredocBenchmarkTest.php', source);
+    durations.push(performance.now() - start);
+    parsedItems = parsed.classes.reduce((count, testClass) => count + testClass.methods.length, 0);
+  }
+
+  if (parsedItems !== 1) {
+    throw new Error(`Expected one visible test after the heredoc, found ${parsedItems}`);
+  }
+  const sorted = [...durations].sort((left, right) => left - right);
+  console.log(JSON.stringify({
+    scenario: 'large-heredoc-with-attribute-alias',
+    heredocLines: lineCount,
+    sourceKiB: round(Buffer.byteLength(source) / 1024, 1),
+    iterations,
+    medianMs: round(sorted[Math.floor(sorted.length / 2)], 1),
+  }));
+}
+
 function round(value: number, digits: number): number {
   const scale = 10 ** digits;
   return Math.round(value * scale) / scale;
@@ -122,3 +158,4 @@ console.log(`Each synthetic PHP file contains up to ${methodsPerFile} test metho
 for (const itemCount of [1_000, 10_000]) {
   benchmark(makeScenario(itemCount));
 }
+benchmarkHeredocAliasScan(5_000);

@@ -17,8 +17,8 @@ export function createTestInsightChoices(
 ): TestInsightChoice[] {
   const slowest = getSlowestTests(history, slowestLimit).map((test): TestInsightChoice => ({
     id: `slow:${test.testId}`,
-    label: test.label,
-    description: `${workspaceName} · slow · ${test.durationMs.toFixed(0)} ms · ${test.outcome}`,
+    label: `Slow: ${test.label}`,
+    description: `${workspaceName} · ${test.durationMs.toFixed(0)} ms · ${test.outcome}`,
     detail: sourceDetail(
       'Slowest test in its latest reported run.',
       test.filePath,
@@ -33,8 +33,8 @@ export function createTestInsightChoices(
     const failures = test.recentOutcomes.length - passes;
     return {
       id: `flaky:${test.testId}`,
-      label: test.label,
-      description: `${workspaceName} · possible flaky · ${passes} passed, ${failures} failed`,
+      label: `Flaky: ${test.label}`,
+      description: `${workspaceName} · ${passes} passed, ${failures} failed`,
       detail: sourceDetail(
         'Both pass and fail outcomes appeared within the latest 10 reported runs.',
         test.filePath,

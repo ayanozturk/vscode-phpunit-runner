@@ -572,6 +572,23 @@ describe('resolveInvocation', () => {
     assert.ok(!invocation.command.includes('$HOME'));
   });
 
+  it('maps absolute PHP runtime arguments in remote command templates', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: fileTarget,
+      config: {
+        ...config,
+        phpArgs: ['-c', '/proj/config/php.ini', '-d', 'memory_limit=2G'],
+        command: 'ssh host ${php} ${phpargs} ${phpunit} ${phpunitargs}',
+        paths: { '${workspaceFolder}': '/srv/app' },
+      },
+      phpunitExecutable: '/proj/vendor/bin/phpunit',
+    });
+
+    assert.ok(invocation.command.includes('-c /srv/app/config/php.ini'));
+    assert.ok(invocation.command.includes('-d memory_limit=2G'));
+  });
+
   it('prefers a command template over docker.enable wrapping', async () => {
     const invocation = await resolveInvocation({
       workspacePath: '/proj',

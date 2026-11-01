@@ -35,16 +35,16 @@ describe('createTestInsightChoices', () => {
     assert.deepEqual(createTestInsightChoices(history, 'api'), [
       {
         id: 'slow:workspace::ExampleTest::testFlaky',
-        label: 'ExampleTest::testFlaky',
-        description: 'api · slow · 120 ms · passed',
+        label: 'Slow: ExampleTest::testFlaky',
+        description: 'api · 120 ms · passed',
         detail: 'Slowest test in its latest reported run. Select to open tests/ExampleTest.php:18.',
         filePath: '/workspace/tests/ExampleTest.php',
         line: 18,
       },
       {
         id: 'flaky:workspace::ExampleTest::testFlaky',
-        label: 'ExampleTest::testFlaky',
-        description: 'api · possible flaky · 1 passed, 1 failed',
+        label: 'Flaky: ExampleTest::testFlaky',
+        description: 'api · 1 passed, 1 failed',
         detail: 'Both pass and fail outcomes appeared within the latest 10 reported runs. Select to open tests/ExampleTest.php:18.',
         filePath: '/workspace/tests/ExampleTest.php',
         line: 18,
@@ -70,7 +70,7 @@ describe('createTestInsightChoices', () => {
     }];
 
     const [choice] = createTestInsightChoices(history, 'workspace');
-    assert.match(choice.description, /slow/);
+    assert.match(choice.label, /^Slow:/);
     assert.match(choice.detail, /Source location was not included/);
     assert.doesNotMatch(choice.detail, /Select to open/);
   });

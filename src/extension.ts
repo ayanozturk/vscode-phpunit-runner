@@ -187,6 +187,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     vscode.commands.registerCommand('phpunitRunner.showTestInsights', () => {
       showTestInsights();
     }),
+    vscode.commands.registerCommand('phpunitRunner.clearTestInsights', async () => {
+      await clearTestInsightsHistory();
+    }),
     vscode.workspace.onDidSaveTextDocument(async (document) => {
       if (document.languageId !== 'php') {
         return;
@@ -1636,6 +1639,22 @@ function showTestInsights(): void {
     picker.onDidHide(() => picker.dispose());
     picker.show();
   }
+}
+
+async function clearTestInsightsHistory(): Promise<void> {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folders.length === 0) {
+    void vscode.window.showInformationMessage('No workspace test insight history is available to clear.');
+    return;
+  }
+
+  await Promise.all(folders.map((folder) => extensionContext.workspaceState.update(
+    `phpunitRunner.runHistory:${folder.uri.toString()}`,
+    [],
+  )));
+  void vscode.window.showInformationMessage(
+    `Cleared test insight history for ${folders.length} workspace${folders.length === 1 ? '' : 's'}.`,
+  );
 }
 
 async function openInsightLocation(choice: TestInsightChoice): Promise<void> {

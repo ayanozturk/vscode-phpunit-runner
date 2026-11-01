@@ -399,6 +399,7 @@ function renderRemoteInvocation(options: {
   const php = mapWithMappings(options.phpExecutable, options.mappings);
   const phpunit = mapWithMappings(options.phpunitExecutable, options.mappings);
   const cwd = mapWithMappings(options.cwd, options.mappings);
+  const mappedPhpArgs = options.phpArgs.map((arg) => mapWithMappings(arg, options.mappings));
   const mappedPhpunitArgs = options.phpunitArgs.map((arg) => mapWithMappings(arg, options.mappings));
   const phpunitxmlIndex = mappedPhpunitArgs.indexOf('--configuration');
   const phpunitxml = phpunitxmlIndex >= 0 ? mappedPhpunitArgs[phpunitxmlIndex + 1] ?? '' : '';
@@ -409,7 +410,7 @@ function renderRemoteInvocation(options: {
   const rendered = substituteVariables(options.template, {
     ...quotedVars,
     php: quoteTemplateShellArg(php),
-    phpargs: joinTemplateShellArgs(options.phpArgs),
+    phpargs: joinTemplateShellArgs(mappedPhpArgs),
     phpunit: quoteTemplateShellArg(phpunit),
     phpunitargs: joinTemplateShellArgs(mappedPhpunitArgs),
     phpunitxml: quoteTemplateShellArg(phpunitxml),

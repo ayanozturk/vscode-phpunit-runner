@@ -89,6 +89,7 @@ exports.run = async () => {
     assert.ok(commands.has('phpunitRunner.runByGroup'));
     assert.ok(commands.has('phpunitRunner.diagnoseProject'));
     assert.ok(commands.has('phpunitRunner.showTestInsights'));
+    assert.ok(commands.has('phpunitRunner.clearTestInsights'));
 
     const workspaceA = vscode.workspace.workspaceFolders.find((folder) => folder.name === 'workspace-a');
     const workspaceB = vscode.workspace.workspaceFolders.find((folder) => folder.name === 'workspace-b');
@@ -835,6 +836,13 @@ class DynamicDataProviderTest
     await vscode.commands.executeCommand('phpunitRunner.showTestInsights');
     assert.ok(diagnosticOutput.includes('Slowest tests:'), 'test insights show persisted durations from reported runs');
     assert.ok(diagnosticOutput.includes('Flaky candidates (pass and fail in the latest 10 outcomes):'));
+    await vscode.commands.executeCommand('phpunitRunner.clearTestInsights');
+    diagnosticOutput.length = 0;
+    await vscode.commands.executeCommand('phpunitRunner.showTestInsights');
+    assert.ok(
+      diagnosticOutput.includes('No completed, reported test runs are available yet.'),
+      'clearing insights removes recent history across the active workspace folders',
+    );
 
     console.log('VS Code extension-host tests passed');
     process.exit(0);
