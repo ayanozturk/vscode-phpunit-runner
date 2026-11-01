@@ -41,7 +41,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Assert result counts; compare repeated measurements without machine-dependent CI thresholds.
 - Retain an optimization only when it improves measured workloads without changing results.
 
-**Current evidence:** Node 22 on darwin/arm64: 10k discovery median 119.8 ms; 10k result-index build 17.4 ms, method query 4.5 ms, file-backed Pest lookup 16.7 ms, and no-file Pest lookup 345.5–374.1 ms; 1M history queries 61.1 ms for slowest tests and 42.3 ms for flaky candidates; 5k-line heredoc parse 23.5 ms. No performance change met the repeatability bar.
+**Current evidence:** Node 22.20.0 on darwin/arm64: 10k discovery median 102.4 ms; 10k no-file Pest lookup 345.7 ms versus 13.7 ms file-backed; 5k-line heredoc parse 20.2 ms. For 1M history records, the flaky-candidate query fell from 121.4 ms without the completed-window guard to 47.5 ms with it in a controlled 9-iteration A/B; slowest-test lookup remained about 54 ms. The guard skips tests whose ten newer outcomes are already collected.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
 
@@ -71,10 +71,10 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 
 ## Latest cycle (2026-11-01)
 
-- **Correctness:** Flaky-candidate detection counts one record per test per run and ignores conflicting duplicate outcomes.
-- **Usability:** Insight entries explain when a missing source file prevents opening and when a missing line prevents rerunning.
-- **Tech debt:** Workspace-scope traversal is extracted into a pure tested module.
-- **Performance:** Baselines were repeated; no optimization was retained because trials showed no repeatable improvement.
+- **Feature/usability:** Custom result templates support `{message}` as a compact first-line failure summary; insight entries explain missing source information.
+- **Correctness:** Flaky history counts one outcome per test per run, ignores conflicting duplicates, and process output preserves UTF-8 characters split across chunks.
+- **Tech debt:** Workspace-scope and continuous-test target selection are extracted into pure tested modules.
+- **Performance:** A controlled benchmark supports the history-query guard above; no other optimization met the repeatability bar.
 
 ## Support boundaries and acceptance criteria
 

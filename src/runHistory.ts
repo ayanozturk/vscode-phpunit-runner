@@ -186,6 +186,9 @@ export function findFlakyCandidates(history: readonly RunHistoryRun[]): FlakyCan
       if (testCase.outcome !== 'passed' && testCase.outcome !== 'failed') {
         continue;
       }
+      if ((byTest.get(testCase.testId)?.length ?? 0) >= FLAKY_OUTCOME_WINDOW) {
+        continue;
+      }
       const existing = outcomesInRun.get(testCase.testId);
       if (existing) {
         if (existing.outcome !== testCase.outcome) {

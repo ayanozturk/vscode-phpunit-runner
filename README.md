@@ -124,7 +124,7 @@ Use `phpunitRunner.output.format` to tailor status markers and failure details p
 }
 ```
 
-The `testCase` template accepts `{status}`, `{icon}`, `{class}`, `{name}`, `{duration}`, `{file}`, and `{line}`. For failed or errored tests, `{file}` and `{line}` use the reported failure location when available, then fall back to the test case location. Failure details accept `{file}` and `{line}` for `failureLocation`, and `{message}` for `failureMessage`. Set either failure template to an empty string to hide that detail. Use `icons` to override markers for `passed`, `failed`, `errored`, and `skipped` cases. Setting `colors` to `false` also removes standard ANSI color codes embedded in runner failure messages.
+The `testCase` template accepts `{status}`, `{icon}`, `{class}`, `{name}`, `{duration}`, `{file}`, `{line}`, and `{message}`. `{message}` inserts the first line of the test message, which is useful for compact failure summaries. For failed or errored tests, `{file}` and `{line}` use the reported failure location when available, then fall back to the test case location. Failure details accept `{file}` and `{line}` for `failureLocation`, and `{message}` for `failureMessage`. Set either failure template to an empty string to hide that detail. Use `icons` to override markers for `passed`, `failed`, `errored`, and `skipped` cases. Setting `colors` to `false` also removes standard ANSI color codes embedded in runner failure messages.
 
 Set `phpunitRunner.output.sourceSnippetContextLines` to control how much PHP source appears around a failure location. It defaults to one line above and below; set it to `0` to show only the failing line, or choose up to `5` lines of context on each side.
 

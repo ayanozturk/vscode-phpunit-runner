@@ -197,7 +197,7 @@
             },
             "testCase": {
               "type": "string",
-              "description": "Template for each result line. Variables: {status}, {icon}, {class}, {name}, {duration}, {file}, {line}."
+              "description": "Template for each result line. Variables: {status}, {icon}, {class}, {name}, {duration}, {file}, {line}, {message}."
             },
             "failureLocation": {
               "type": "string",

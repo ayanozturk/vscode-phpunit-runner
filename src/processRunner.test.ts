@@ -41,6 +41,20 @@ describe('runProcess', () => {
     assert.equal(chunks.join(''), result.output);
   });
 
+  it('preserves UTF-8 characters split across child output chunks', async () => {
+    const chunks: string[] = [];
+    const result = await runProcess({
+      command: process.execPath,
+      args: ['-e', "process.stdout.write(Buffer.from([0xe2])); setTimeout(() => process.stdout.write(Buffer.from([0x9c, 0x85])), 10)"],
+      cwd: process.cwd(),
+      token: new TestCancellationToken(),
+      onOutput: (chunk) => chunks.push(chunk),
+    });
+
+    assert.equal(result.output, '✅');
+    assert.equal(chunks.join(''), '✅');
+  });
+
   it('writes an optional stdin payload and closes the stream', async () => {
     const result = await runProcess({
       command: process.execPath,

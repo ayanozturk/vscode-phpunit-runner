@@ -203,6 +203,7 @@ function formatTestCaseLine(testCase: JUnitTestCase, defaultStatus: string, form
     const failureLocation = isFailure(testCase.status) ? firstFailureLocation([testCase]) : {};
     const file = failureLocation.file ?? testCase.file;
     const line = failureLocation.line ?? testCase.line;
+    const message = format.colors === false ? stripAnsiColors(testCase.message ?? '') : (testCase.message ?? '');
     return renderTemplate(format.testCase, {
       status: colorStatusLabel(statusLabel(testCase.status), testCase.status, format.colors !== false),
       icon: colorStatusGlyph(icon, testCase.status, format.colors !== false),
@@ -211,6 +212,7 @@ function formatTestCaseLine(testCase: JUnitTestCase, defaultStatus: string, form
       duration: duration.trim().replace(/^\(|\)$/g, ''),
       file: file ?? '',
       line: line === undefined ? '' : String(line),
+      message: message.split(/\r?\n/, 1)[0]?.trim() ?? '',
     });
   }
   return `${colorStatusGlyph(defaultStatus, testCase.status, format.colors !== false)} ${testCase.name}${duration}`;

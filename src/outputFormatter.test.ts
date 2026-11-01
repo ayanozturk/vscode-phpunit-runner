@@ -210,6 +210,18 @@ describe('formatTestOutput', () => {
     assert.doesNotMatch(output, /\u001b\[|failing line/);
   });
 
+  it('supports a compact first-line failure message in custom test-line templates', () => {
+    const output = stripAnsi(formatTestOutput([cases[1]], 'collision', '', new Map(), {
+      colors: false,
+      duration: false,
+      testCase: '[{status}] {name}: {message}',
+      failureLocation: '',
+      failureMessage: '',
+    }));
+
+    assert.equal(output, '[FAIL] testFailure with data set "edge case": Failed asserting false.\n');
+  });
+
   it('allows suppressing duration, location, and failure details', () => {
     const output = stripAnsi(formatTestOutput([cases[1]], 'pretty', '', new Map(), {
       duration: false,

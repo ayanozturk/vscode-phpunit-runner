@@ -59,6 +59,8 @@ export function runProcess(
       output += text;
       options.onOutput?.(text);
     };
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
     child.stdout.on('data', append);
     child.stderr.on('data', append);
 

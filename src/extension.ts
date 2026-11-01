@@ -8,6 +8,7 @@ import { mapWithMappings, unmapWithMappings, type PathMapping } from './commandT
 import { testCodeLensTargets } from './codeLens';
 import { readCloverReport } from './coverage';
 import { expandCoverageLineNumbers } from './coverageLineRanges';
+import { continuousTargetsForUri as selectContinuousTargetsForUri } from './continuousTargets';
 import { workspaceFoldersForItems } from './workspaceScope';
 import {
   canRequestLocalPhpUnitJsonlCoverage,
@@ -1037,24 +1038,15 @@ async function runContinuousTests(
 }
 
 function continuousTargetsForUri(roots: vscode.TestItem[], uri: vscode.Uri): vscode.TestItem[] {
-  const targets = new Map<string, vscode.TestItem>();
   const uriString = uri.toString();
-
-  for (const root of roots) {
-    if (itemData.get(root)?.uri.toString() === uriString) {
-      targets.set(root.id, root);
-      continue;
-    }
-
-    const matchingFile = collectTestItems(root.children)
-      .flatMap((child) => collectFileItems(child))
-      .find((file) => file.uri?.toString() === uriString);
-    if (matchingFile) {
-      targets.set(matchingFile.id, matchingFile);
-    }
-  }
-
-  return [...targets.values()];
+  return selectContinuousTargetsForUri(
+    roots,
+    uriString,
+    (item) => item.id,
+    (item) => itemData.get(item)?.uri.toString(),
+    (root) => collectTestItems(root.children).flatMap((child) => collectFileItems(child)),
+    (file) => file.uri?.toString(),
+  );
 }
 
 async function runItem(
