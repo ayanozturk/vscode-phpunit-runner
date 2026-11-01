@@ -4,6 +4,10 @@
 
 ### Improved
 
+- Suggest generated PHP test destinations from the project’s existing `Unit` or `Feature` layout and source folders.
+- Add PHPUnit 13.4+ per-test coverage details for uniquely matched local Composer PHPUnit methods, retaining Clover aggregate fallback elsewhere.
+- Clear process termination escalation timers when children exit, and cover spawn/cancellation lifecycle edge cases.
+- Clean up the roadmap into prioritized remaining work and acceptance criteria.
 - Preserve earlier PHPUnit Runner output when listing supported AI CLI tools.
 - Reduce transient allocations when selecting slow tests from large run histories, with regression coverage for out-of-order completion timestamps.
 - Extract stable test hierarchy IDs into a focused module and add parser groundwork for PHPUnit 13.4's test-to-code coverage report.

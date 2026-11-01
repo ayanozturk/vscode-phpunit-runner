@@ -17,6 +17,10 @@ class TestCancellationToken implements vscode.CancellationToken {
     this.isCancellationRequested = true;
     this.emitter.emit('cancel');
   }
+
+  get listenerCount(): number {
+    return this.emitter.listenerCount('cancel');
+  }
 }
 
 describe('runProcess', () => {
@@ -62,6 +66,57 @@ describe('runProcess', () => {
     assert.equal(result.output, 'stdin closed');
   });
 
+  it('rejects spawn errors and disposes the cancellation subscription', async () => {
+    const token = new TestCancellationToken();
+    await assert.rejects(runProcess({
+      command: '__missing_phpunit_runner_executable__',
+      cwd: process.cwd(),
+      token,
+    }), { code: 'ENOENT' });
+
+    assert.equal(token.listenerCount, 0);
+  });
+
+  it('terminates a process when cancellation predates runProcess', async () => {
+    const token = new TestCancellationToken();
+    token.cancel();
+
+    const result = await runProcess({
+      command: process.execPath,
+      args: ['-e', 'setInterval(() => {}, 1000)'],
+      cwd: process.cwd(),
+      token,
+    });
+
+    assert.notEqual(result.exitCode, 0);
+    assert.equal(token.listenerCount, 0);
+  });
+
+  it('clears cancellation escalation when the child exits', async () => {
+    const token = new TestCancellationToken();
+    const escalation = setTimeout(() => assert.fail('stale escalation timer fired'), 10_000);
+    escalation.unref();
+    let cleared = false;
+    const running = runProcess({
+      command: process.execPath,
+      args: ['-e', 'setTimeout(() => process.stdout.write("finished"), 30)'],
+      cwd: process.cwd(),
+      token,
+    }, {
+      terminate: () => escalation,
+      clearTimer: (timer) => {
+        cleared = timer === escalation;
+        clearTimeout(timer);
+      },
+    });
+    setTimeout(() => token.cancel(), 5);
+
+    const result = await running;
+    assert.equal(result.output, 'finished');
+    assert.equal(cleared, true);
+    assert.equal(token.listenerCount, 0);
+  });
+
   it('preserves fixed argument arrays for shell-backed command shims', { skip: process.platform === 'win32' }, async () => {
     const result = await runProcess({
       command: '/bin/echo',
@@ -88,5 +143,8 @@ describe('runProcess', () => {
     const result = await running;
     assert.equal(token.isCancellationRequested, true);
     assert.notEqual(result.exitCode, 0);
+    assert.equal(token.listenerCount, 0);
+    token.cancel();
+    assert.equal(token.listenerCount, 0);
   });
 });

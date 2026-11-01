@@ -9,6 +9,7 @@ import {
   extractGeneratedPhpTest,
   formatDetectedAiTools,
   isTestDestination,
+  suggestTestDestination,
   type AiCliTool,
 } from './aiTestGeneration';
 import { autoDetectConfigurationFile, autoDetectPhpUnit } from './invoke';
@@ -248,11 +249,19 @@ async function chooseTestDestination(
   folder: vscode.WorkspaceFolder,
   sourceFilePath: string,
 ): Promise<vscode.Uri | undefined> {
-  const testRoot = path.join(folder.uri.fsPath, 'tests');
-  const sourceName = path.basename(sourceFilePath, path.extname(sourceFilePath)).replace(/Test$/, '');
+  const existingTestFiles = await vscode.workspace.findFiles(
+    new vscode.RelativePattern(folder, 'tests/**/*.php'),
+    '**/{vendor,node_modules}/**',
+    100,
+  );
+  const suggestedPath = suggestTestDestination(
+    folder.uri.fsPath,
+    sourceFilePath,
+    existingTestFiles.map((uri) => uri.fsPath),
+  );
   const uri = await vscode.window.showSaveDialog({
     title: 'Save Generated PHP Test File',
-    defaultUri: vscode.Uri.file(path.join(testRoot, 'Unit', `${sourceName}Test.php`)),
+    defaultUri: vscode.Uri.file(suggestedPath),
     filters: { PHP: ['php'] },
   });
   if (!uri) {

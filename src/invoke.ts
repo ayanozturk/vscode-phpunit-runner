@@ -71,6 +71,7 @@ export async function resolveInvocation(options: {
   config: RunnerConfig;
   junitLogPath?: string;
   coverageCloverPath?: string;
+  coverageJsonlDirectory?: string;
   testListingXmlPath?: string;
   parallelRunner?: ParallelRunner;
   parallelProcesses?: number;
@@ -120,6 +121,9 @@ export async function resolveInvocation(options: {
 
   if (options.coverageCloverPath) {
     phpunitArgs.push('--coverage-clover', options.coverageCloverPath);
+  }
+  if (options.coverageJsonlDirectory) {
+    phpunitArgs.push('--coverage-jsonl', options.coverageJsonlDirectory);
   }
   if (options.testListingXmlPath) {
     phpunitArgs.push('--list-tests-xml', options.testListingXmlPath);

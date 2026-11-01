@@ -10,6 +10,7 @@ import {
   extractGeneratedPhpTest,
   formatDetectedAiTools,
   isTestDestination,
+  suggestTestDestination,
   type AiCliTool,
 } from './aiTestGeneration';
 
@@ -210,6 +211,57 @@ describe('isTestDestination', () => {
     assert.equal(isTestDestination(root, path.join(root, 'src', 'Foo.php')), false);
     assert.equal(isTestDestination(root, path.join(root, 'tests', '..', 'src', 'FooTest.php')), false);
     assert.equal(isTestDestination(root, path.join(root, 'tests', 'Unit', 'notes.txt')), false);
+  });
+});
+
+describe('suggestTestDestination', () => {
+  const root = path.resolve('/project');
+
+  it('mirrors source folders below common application roots to avoid same-name collisions', () => {
+    assert.equal(
+      suggestTestDestination(root, path.join(root, 'src', 'Billing', 'Invoice.php')),
+      path.join(root, 'tests', 'Unit', 'Billing', 'InvoiceTest.php'),
+    );
+    assert.equal(
+      suggestTestDestination(root, path.join(root, 'app', 'Services', 'InvoiceTest.php')),
+      path.join(root, 'tests', 'Unit', 'Services', 'InvoiceTest.php'),
+    );
+  });
+
+  it('uses the matching Unit or Feature area when both layouts exist', () => {
+    const existing = [
+      path.join(root, 'tests', 'Unit', 'InvoiceTest.php'),
+      path.join(root, 'tests', 'Feature', 'LoginTest.php'),
+    ];
+
+    assert.equal(
+      suggestTestDestination(root, path.join(root, 'app', 'Http', 'Controllers', 'InvoiceController.php'), existing),
+      path.join(root, 'tests', 'Feature', 'Http', 'Controllers', 'InvoiceControllerTest.php'),
+    );
+    assert.equal(
+      suggestTestDestination(root, path.join(root, 'app', 'Services', 'InvoiceService.php'), existing),
+      path.join(root, 'tests', 'Unit', 'Services', 'InvoiceServiceTest.php'),
+    );
+  });
+
+  it('preserves the existing suite folder casing when one layout is established', () => {
+    assert.equal(
+      suggestTestDestination(root, path.join(root, 'src', 'Invoice.php'), [
+        path.join(root, 'tests', 'feature', 'ExistingTest.php'),
+      ]),
+      path.join(root, 'tests', 'feature', 'InvoiceTest.php'),
+    );
+  });
+
+  it('falls back to a safe tests path when the source is outside the workspace', () => {
+    assert.equal(
+      suggestTestDestination(root, path.resolve('/outside', 'SecretService.php')),
+      path.join(root, 'tests', 'Unit', 'SecretServiceTest.php'),
+    );
+    assert.equal(
+      suggestTestDestination(root, path.join(root, '..', 'outside', 'SecretService.php')),
+      path.join(root, 'tests', 'Unit', 'SecretServiceTest.php'),
+    );
   });
 });
 

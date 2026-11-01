@@ -147,6 +147,26 @@ describe('resolveInvocation', () => {
     ]);
   });
 
+  it('adds the optional JSONL coverage directory only when explicitly supported', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: fileTarget,
+      config,
+      phpunitExecutable: '/proj/vendor/bin/phpunit',
+      coverageCloverPath: '/proj/.phpunit-runner/clover.xml',
+      coverageJsonlDirectory: '/proj/.phpunit-runner/coverage-jsonl',
+    });
+
+    const cloverIndex = invocation.args.indexOf('--coverage-clover');
+    const jsonlIndex = invocation.args.indexOf('--coverage-jsonl');
+    assert.ok(cloverIndex >= 0 && jsonlIndex > cloverIndex);
+    assert.deepEqual(invocation.args.slice(jsonlIndex, jsonlIndex + 2), [
+      '--coverage-jsonl',
+      '/proj/.phpunit-runner/coverage-jsonl',
+    ]);
+    assert.equal(invocation.args.at(-1), '/proj/tests/ExampleTest.php');
+  });
+
   it('filters a single method and maps docker exec paths', async () => {
     const invocation = await resolveInvocation({
       workspacePath: '/proj',

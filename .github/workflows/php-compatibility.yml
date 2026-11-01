@@ -30,36 +30,43 @@ jobs:
             package: phpunit/phpunit
             framework-version: 10.5.66
             php: '8.1'
+            coverage: none
             type: phpunit
           - framework: PHPUnit
             package: phpunit/phpunit
             framework-version: 11.5.57
             php: '8.2'
+            coverage: none
             type: phpunit
           - framework: PHPUnit
             package: phpunit/phpunit
             framework-version: 12.5.42
             php: '8.3'
+            coverage: none
             type: phpunit
           - framework: PHPUnit
             package: phpunit/phpunit
             framework-version: 13.4.5
             php: '8.4'
+            coverage: xdebug
             type: phpunit
           - framework: Pest
             package: pestphp/pest
             framework-version: 3.8.7
             php: '8.2'
+            coverage: none
             type: pest
           - framework: Pest
             package: pestphp/pest
             framework-version: 4.7.8
             php: '8.3'
+            coverage: none
             type: pest
           - framework: Pest
             package: pestphp/pest
             framework-version: 5.3.4
             php: '8.4'
+            coverage: none
             type: pest
 
     steps:
@@ -71,7 +78,7 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           extensions: dom, mbstring, xml, xmlwriter, pcntl
-          coverage: none
+          coverage: ${{ matrix.coverage }}
 
       - name: Install the pinned framework version
         working-directory: test/compatibility
@@ -98,3 +105,13 @@ jobs:
           vendor/bin/pest --configuration pest.phpunit.xml --parallel --processes=2 --log-junit "$RUNNER_TEMP/pest-junit.xml"
           test -s "$RUNNER_TEMP/pest-junit.xml"
           grep -q '<testsuite' "$RUNNER_TEMP/pest-junit.xml"
+
+      - name: Smoke test PHPUnit per-test coverage JSONL
+        if: matrix.framework == 'PHPUnit' && matrix.framework-version == '13.4.5'
+        working-directory: test/compatibility
+        run: |
+          vendor/bin/phpunit --configuration phpunit.xml --coverage-jsonl "$RUNNER_TEMP/phpunit-coverage"
+          test -s "$RUNNER_TEMP/phpunit-coverage/meta.json"
+          test -s "$RUNNER_TEMP/phpunit-coverage/coverage.jsonl"
+          test -s "$RUNNER_TEMP/phpunit-coverage/tests.jsonl"
+          grep -q 'RuntimeListingTest::testCoverageJsonlMapping' "$RUNNER_TEMP/phpunit-coverage/tests.jsonl"

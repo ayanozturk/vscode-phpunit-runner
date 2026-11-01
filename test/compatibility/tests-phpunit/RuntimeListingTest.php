@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use CompatibilityFixture\Calculator;
+
+require_once __DIR__ . '/../src/Calculator.php';
 
 final class RuntimeListingTest extends TestCase
 {
@@ -18,5 +21,10 @@ final class RuntimeListingTest extends TestCase
     public function testRuntimeListing(int $value): void
     {
         self::assertGreaterThan(0, $value);
+    }
+
+    public function testCoverageJsonlMapping(): void
+    {
+        self::assertSame(6, Calculator::double(3));
     }
 }

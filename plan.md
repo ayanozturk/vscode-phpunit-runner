@@ -10,7 +10,7 @@ Make PHPUnit Runner a dependable, responsive PHPUnit and Pest workflow in VS Cod
 - **Execution and diagnostics:** Project diagnosis, local and Docker execution, custom remote commands and report transfer, and an opt-in parallel profile for supported Pest and ParaTest projects.
 - **Results and insights:** JUnit result mapping, Clover statement and declaration coverage where reported, bounded workspace-local history, slow-test and flaky-candidate views, and searchable insight pickers.
 - **AI-assisted authoring:** Detect only Codex CLI, GitHub Copilot CLI, and Claude Code. Generate PHPUnit or Pest tests from selected PHP, ask before sharing project context, preview a diff, and require explicit confirmation before saving under `tests/`.
-- **Quality and performance:** Focused modules and tests for discovery, invocation, result mapping, report transfer, history, and coverage; PHPUnit/Pest compatibility checks; VS Code extension-host coverage for the minimum supported and stable versions; scale benchmarks for discovery, mapping, and history.
+- **Quality and performance:** Focused modules and tests for discovery, invocation, result mapping, report transfer, history, test-item identity, and coverage; isolated PHPUnit/Pest compatibility jobs across their supported PHP versions; VS Code extension-host coverage for the minimum supported and stable versions; scale benchmarks for discovery, mapping, and history.
 
 ## Prioritized roadmap
 
@@ -46,13 +46,14 @@ Make PHPUnit Runner a dependable, responsive PHPUnit and Pest workflow in VS Cod
 
 ### P4 — Preserve trustworthy result details
 
-**Status: Integration needed**
+**Status: Partial; broader coverage still needed**
 
 - [PHPUnit 13.4's coverage manual](https://docs.phpunit.de/en/13.4/code-coverage.html) documents `--coverage-jsonl` and a `tests.jsonl` report that maps exact test identifiers to executed source-line ranges; the [12.5 manual](https://docs.phpunit.de/en/12.5/code-coverage.html) does not. A parser and schema-validation tests are in place.
-- Integrate that report for supported PHPUnit versions, including mapping its test IDs and source paths to VS Code test items and handling local or retrieved remote reports.
+- Local per-test details are now available for stable PHPUnit 13.4+ when the locked Composer version and shared local PHPUnit executable are known. Only unique class/method identities are mapped; data sets, Docker/custom commands, and remote report retrieval remain unsupported.
+- Extend identity mapping and remote retrieval only when those paths can preserve exact test IDs and source paths.
 - Keep Clover as the aggregate fallback for older PHPUnit versions and runners without test-level identity; never infer per-test coverage from aggregate counts.
 
-**Done when:** test-level coverage appears only when the report and identity mapping are reliable, while unsupported versions and unavailable reports retain the existing aggregate or unavailable behavior.
+**Done when:** all supported local and remote cases either map exact test-level details or clearly retain aggregate/unavailable behavior without guessing.
 
 ## Interfaces and acceptance criteria
 

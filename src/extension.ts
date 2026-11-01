@@ -7,6 +7,14 @@ import * as vscode from 'vscode';
 import { mapWithMappings, unmapWithMappings, type PathMapping } from './commandTemplate';
 import { testCodeLensTargets } from './codeLens';
 import { readCloverReport } from './coverage';
+import {
+  canRequestLocalPhpUnitJsonlCoverage,
+  createPhpUnitCoverageMethodMatcher,
+  mapPhpUnitCoverageFiles,
+  readPhpUnitCoverageJsonl,
+  supportsPhpUnitJsonlCoverage,
+  type PHPUnitJsonlCoverage,
+} from './phpunitCoverageJsonl';
 import { createDebouncedTaskScheduler } from './continuousTesting';
 import { detectParallelRunner } from './parallelRunner';
 import { buildGroupPickerOptions } from './groupPicker';
@@ -80,6 +88,7 @@ type ExtensionTestApi = {
 const itemData = new WeakMap<vscode.TestItem, TestItemData>();
 const fileItemPaths = new Map<string, vscode.TestItem[]>();
 const coverageDetails = new WeakMap<vscode.FileCoverage, vscode.FileCoverageDetail[]>();
+const coverageLineRangesByTest = new WeakMap<vscode.FileCoverage, Map<string, Array<{ start: number; end: number }>>>();
 const suiteConfigCache = new Map<string, SuiteConfigCache>();
 const runtimeListedWorkspaces = new Set<string>();
 const runtimeDatasetIdsByWorkspace = new Map<string, Set<string>>();
@@ -140,10 +149,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const debugProfile = controller.createRunProfile('Debug Tests', vscode.TestRunProfileKind.Debug, runTests, true);
   const coverageProfile = controller.createRunProfile('Coverage Tests', vscode.TestRunProfileKind.Coverage, runTests, true);
   coverageProfile.loadDetailedCoverage = async (_run, fileCoverage) => coverageDetails.get(fileCoverage) ?? [];
-  coverageProfile.loadDetailedCoverageForTest = async (_run, fileCoverage, testItem) =>
-    fileCoverage.includesTests?.length === 1 && fileCoverage.includesTests[0] === testItem
+  coverageProfile.loadDetailedCoverageForTest = async (_run, fileCoverage, testItem) => {
+    const lineRanges = coverageLineRangesByTest.get(fileCoverage)?.get(testItem.id);
+    if (lineRanges) {
+      return expandCoverageLineRanges(lineRanges);
+    }
+    return fileCoverage.includesTests?.length === 1 && fileCoverage.includesTests[0] === testItem
       ? coverageDetails.get(fileCoverage) ?? []
       : [];
+  };
 
   context.subscriptions.push(
     runProfile,
@@ -1454,8 +1468,24 @@ async function executePhpUnit(
   const stamp = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const junitLogPath = path.join(runnerDir, `junit-${stamp}.xml`);
   const coverageCloverPath = coverage ? path.join(runnerDir, `clover-${stamp}.xml`) : undefined;
+  const coverageJsonlDirectory = coverage ? path.join(runnerDir, `coverage-jsonl-${stamp}`) : undefined;
 
   const config = readRunnerConfig(workspaceFolder);
+  const configuredPhpUnit = config.phpunitCommand.trim()
+    ? firstCommandToken(config.phpunitCommand)
+    : await autoDetectPhpUnit(workspaceFolder.uri.fsPath);
+  const frameworkInfo = coverage && coverageJsonlDirectory
+    ? await readFrameworkInfo(workspaceFolder.uri.fsPath)
+    : undefined;
+  const requestJsonlCoverage = coverageJsonlDirectory !== undefined
+    && frameworkInfo !== undefined
+    && canRequestLocalPhpUnitJsonlCoverage({
+      workspacePath: workspaceFolder.uri.fsPath,
+      phpunitExecutable: configuredPhpUnit,
+      dockerEnabled: config.dockerEnable,
+      commandTemplate: config.command,
+    })
+    && supportsPhpUnitJsonlCoverage(frameworkInfo.versions.get('phpunit/phpunit'));
   const parallelRunner = parallel
     ? await detectParallelRunner({
       workspacePath: workspaceFolder.uri.fsPath,
@@ -1483,6 +1513,7 @@ async function executePhpUnit(
     config,
     junitLogPath,
     coverageCloverPath,
+    ...(requestJsonlCoverage && coverageJsonlDirectory ? { coverageJsonlDirectory } : {}),
     ...(parallelRunner ? { parallelRunner, parallelProcesses, phpunitExecutable: parallelExecutable } : {}),
     debug,
     detectedConfigurationFile: config.configurationFile
@@ -1554,7 +1585,21 @@ async function executePhpUnit(
       }
     }
     if (coverageCloverPath) {
-      await applyCloverCoverage(run, coverageCloverPath, invocation.mappings ?? [], remoteExecution, coverageTests);
+      const jsonlResult = requestJsonlCoverage && coverageJsonlDirectory
+        ? await readPhpUnitCoverageJsonl(coverageJsonlDirectory)
+        : {};
+      if (jsonlResult.warning) {
+        outputChannel.appendLine(`[phpunit-runner] ${jsonlResult.warning}`);
+      }
+      await applyCloverCoverage(
+        run,
+        coverageCloverPath,
+        invocation.mappings ?? [],
+        remoteExecution,
+        workspaceFolder,
+        coverageTests,
+        jsonlResult.report,
+      );
     }
     return {
       ...result,
@@ -1567,6 +1612,9 @@ async function executePhpUnit(
     await fs.rm(junitLogPath, { force: true }).catch(() => undefined);
     if (coverageCloverPath) {
       await fs.rm(coverageCloverPath, { force: true }).catch(() => undefined);
+    }
+    if (coverageJsonlDirectory) {
+      await fs.rm(coverageJsonlDirectory, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 }
@@ -1741,7 +1789,9 @@ async function applyCloverCoverage(
   cloverPath: string,
   mappings: PathMapping[],
   remoteExecution: boolean,
+  workspaceFolder: vscode.WorkspaceFolder,
   coverageTests: vscode.TestItem[] = [],
+  jsonlReport?: PHPUnitJsonlCoverage,
 ): Promise<void> {
   const report = await readCloverReport(cloverPath, mappings);
   if (!report.available) {
@@ -1751,6 +1801,52 @@ async function applyCloverCoverage(
     outputChannel.appendLine(`[phpunit-runner] ${message}`);
     run.appendOutput(`${message}\r\n`);
     return;
+  }
+
+  const jsonlDetailsByPath = new Map<string, Map<string, { item: vscode.TestItem; lines: Array<{ start: number; end: number }> }>>();
+  if (jsonlReport) {
+    const methodCandidates = collectTestItems(controller.items).flatMap((item) => {
+      const data = itemData.get(item);
+      if (data?.kind !== 'method' || data.pestTestName || !data.className || !data.methodName) {
+        return [];
+      }
+      const owner = vscode.workspace.getWorkspaceFolder(data.uri);
+      if (!owner) {
+        return [];
+      }
+      return [{
+        item,
+        itemId: item.id,
+        workspacePath: owner.uri.fsPath,
+        className: data.className,
+        methodName: data.methodName,
+      }];
+    });
+    const matchMethodItem = createPhpUnitCoverageMethodMatcher(methodCandidates);
+    const methodItemsById = new Map(methodCandidates.map(({ item }) => [item.id, item]));
+    for (const file of mapPhpUnitCoverageFiles(jsonlReport, mappings)) {
+      const detailsByTest = new Map<string, { item: vscode.TestItem; lines: Array<{ start: number; end: number }> }>();
+      for (const test of file.tests) {
+        const itemId = matchMethodItem(test.testId, workspaceFolder.uri.fsPath);
+        const item = itemId ? methodItemsById.get(itemId) : undefined;
+        if (!item) {
+          continue;
+        }
+        const lines = test.lines.filter((range) => {
+          const keep = range.end - range.start < 100_000;
+          if (!keep) {
+            outputChannel.appendLine(`[phpunit-runner] Skipped an unusually large per-test coverage range for ${test.testId}.`);
+          }
+          return keep;
+        });
+        if (lines.length > 0) {
+          detailsByTest.set(item.id, { item, lines });
+        }
+      }
+      if (detailsByTest.size > 0) {
+        jsonlDetailsByPath.set(file.path, detailsByTest);
+      }
+    }
   }
 
   for (const file of report.files) {
@@ -1767,7 +1863,10 @@ async function applyCloverCoverage(
       )),
     ];
     const hasExecutedCoverage = file.coveredStatements > 0 || file.declarations.some((declaration) => declaration.count > 0);
-    const includesTests = coverageTests.length === 1 && hasExecutedCoverage ? coverageTests : undefined;
+    const perTestDetails = jsonlDetailsByPath.get(file.path);
+    const includesTests = perTestDetails
+      ? [...perTestDetails.values()].map(({ item }) => item)
+      : coverageTests.length === 1 && hasExecutedCoverage ? coverageTests : undefined;
     const methodTotal = file.methods ?? file.declarations.length;
     const coveredMethodTotal = file.coveredMethods ?? file.declarations.filter((declaration) => declaration.count > 0).length;
     const declarationCoverage = file.methods !== undefined || file.coveredMethods !== undefined || file.declarations.length > 0
@@ -1781,8 +1880,23 @@ async function applyCloverCoverage(
       includesTests,
     );
     coverageDetails.set(coverage, details);
+    if (perTestDetails) {
+      coverageLineRangesByTest.set(coverage, new Map(
+        [...perTestDetails.entries()].map(([testItemId, value]) => [testItemId, value.lines]),
+      ));
+    }
     run.addCoverage(coverage);
   }
+}
+
+function expandCoverageLineRanges(ranges: Array<{ start: number; end: number }>): vscode.FileCoverageDetail[] {
+  const details: vscode.FileCoverageDetail[] = [];
+  for (const range of ranges) {
+    for (let line = range.start; line <= range.end; line += 1) {
+      details.push(new vscode.StatementCoverage(1, new vscode.Position(line - 1, 0)));
+    }
+  }
+  return details;
 }
 
 async function rerunLast(): Promise<void> {

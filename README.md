@@ -36,7 +36,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 
 Run **PHPUnit Runner: Detect AI CLI Tools** to list supported Codex, GitHub Copilot, and Claude Code executables found on `PATH`. Choose **PHPUnit Runner: Generate Unit Tests with AI** from the Command Palette or a PHP editor context menu to generate a test for the selected code; with no selection, the active PHP file is used. The runner detects PHPUnit or Pest and includes the project test configuration and one existing test example when available.
 
-Before source and project context is sent to the selected CLI, the extension asks for confirmation. The CLI runs from a temporary directory in its read-only or planning mode; Copilot CLI also denies write, shell, and URL tools. Generated PHP is shown in a diff against the chosen file under the workspace `tests` folder; the extension saves it only after you choose **Apply Test File**. You can then run the generated test through PHPUnit Runner. Authentication remains managed by the selected CLI.
+Before source and project context is sent to the selected CLI, the extension asks for confirmation. The CLI runs from a temporary directory in its read-only or planning mode; Copilot CLI also denies write, shell, and URL tools. Generated PHP is shown in a diff against the chosen file under the workspace `tests` folder; the save dialog suggests a `Unit` or `Feature` path based on the project’s existing test layout and mirrors source subfolders where possible. The extension saves only after you choose **Apply Test File**. You can then run the generated test through PHPUnit Runner. Authentication remains managed by the selected CLI.
 
 ## Features
 
@@ -61,7 +61,7 @@ Before source and project context is sent to the selected CLI, the extension ask
 - Supports local and Docker execution, custom remote command templates, environment variables, and host-to-remote path mappings.
 - Detects Codex, GitHub Copilot CLI, and Claude Code on `PATH` and can generate reviewed PHPUnit/Pest test files through the selected CLI.
 - Offers an opt-in Parallel Tests profile for supported Pest and ParaTest projects, preserving selected scope and reported JUnit results. Unsupported application and opaque custom commands show an explanatory error.
-- Reports Clover statement and named declaration coverage, including method execution totals when available. Per-test detail is shown only for a selected method or data set with usable coverage data.
+- Reports Clover statement and named declaration coverage, including method execution totals when available. PHPUnit 13.4+ projects using the local Composer runner can also show per-test covered lines when test identities match exactly; aggregate Clover coverage remains available for other runners.
 - Adds isolated CLI smoke checks for supported PHPUnit 10–13 and Pest 3–5 releases in CI, covering runtime test listing, JUnit reports, and Pest parallel execution.
 - Can save dirty editors before a run and automatically rerun a saved PHP file. Rapid saves to the same file are coalesced into one run.
 

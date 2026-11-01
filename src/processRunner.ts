@@ -15,8 +15,16 @@ export type ProcessRunOptions = {
 
 export type ProcessRunResult = { output: string; exitCode: number };
 
+export type ProcessRunnerDependencies = {
+  terminate?: typeof terminateProcessTree;
+  clearTimer?: typeof clearTimeout;
+};
+
 /** Runs a child process with shared output collection and cancellation behavior. */
-export function runProcess(options: ProcessRunOptions): Promise<ProcessRunResult> {
+export function runProcess(
+  options: ProcessRunOptions,
+  dependencies: ProcessRunnerDependencies = {},
+): Promise<ProcessRunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(options.command, options.args ?? [], {
       cwd: options.cwd,
@@ -27,12 +35,21 @@ export function runProcess(options: ProcessRunOptions): Promise<ProcessRunResult
     let output = '';
     let settled = false;
     let terminationRequested = false;
+    let escalationTimer: ReturnType<typeof setTimeout> | undefined;
+    const terminateTree = dependencies.terminate ?? terminateProcessTree;
+    const clearTimer = dependencies.clearTimer ?? clearTimeout;
     const terminate = () => {
       if (terminationRequested) {
         return;
       }
       terminationRequested = true;
-      terminateProcessTree(child);
+      escalationTimer = terminateTree(child);
+    };
+    const clearEscalationTimer = () => {
+      if (escalationTimer !== undefined) {
+        clearTimer(escalationTimer);
+        escalationTimer = undefined;
+      }
     };
     const subscription = options.token.onCancellationRequested(terminate);
 
@@ -50,6 +67,7 @@ export function runProcess(options: ProcessRunOptions): Promise<ProcessRunResult
       }
       settled = true;
       subscription.dispose();
+      clearEscalationTimer();
       reject(error);
     });
     child.on('close', (exitCode) => {
@@ -58,6 +76,7 @@ export function runProcess(options: ProcessRunOptions): Promise<ProcessRunResult
       }
       settled = true;
       subscription.dispose();
+      clearEscalationTimer();
       resolve({ output, exitCode: exitCode ?? 1 });
     });
 

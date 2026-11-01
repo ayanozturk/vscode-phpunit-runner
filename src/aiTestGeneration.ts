@@ -154,6 +154,53 @@ export function isTestDestination(workspaceRoot: string, destination: string): b
     && !path.isAbsolute(relative);
 }
 
+/** Suggests a test path that follows existing suite folders and mirrors source folders. */
+export function suggestTestDestination(
+  workspaceRoot: string,
+  sourceFilePath: string,
+  existingTestFiles: readonly string[] = [],
+): string {
+  const root = path.resolve(workspaceRoot);
+  const sourcePath = path.resolve(root, sourceFilePath);
+  const sourceRelative = path.relative(root, sourcePath);
+  const sourceIsInsideWorkspace = sourceRelative !== ''
+    && sourceRelative !== '..'
+    && !sourceRelative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(sourceRelative);
+  const sourceSegments = sourceIsInsideWorkspace ? sourceRelative.split(path.sep).filter(Boolean) : [];
+  const sourceFile = sourceSegments.pop() ?? path.basename(sourceFilePath);
+  const sourceName = path.basename(sourceFile, path.extname(sourceFile)).replace(/Test$/i, '') || 'Generated';
+
+  while (sourceSegments.length > 0 && /^(?:src|app|lib|source)$/i.test(sourceSegments[0])) {
+    sourceSegments.shift();
+  }
+
+  const testRoot = path.join(root, 'tests');
+  const existingAreas = new Map<string, string>();
+  for (const file of existingTestFiles) {
+    const relative = path.relative(testRoot, path.resolve(file));
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      continue;
+    }
+    const firstSegment = relative.split(path.sep)[0]?.toLowerCase();
+    if (firstSegment === 'unit' || firstSegment === 'feature') {
+      const originalSegment = relative.split(path.sep)[0];
+      if (originalSegment) {
+        existingAreas.set(firstSegment, originalSegment);
+      }
+    }
+  }
+
+  const featureSource = sourceSegments.some((segment) => /^(?:http|controllers?|routes?|features?)$/i.test(segment));
+  const area = existingAreas.size === 1
+    ? [...existingAreas.values()][0]
+    : featureSource
+      ? 'Feature'
+      : 'Unit';
+  const directories = sourceIsInsideWorkspace ? sourceSegments : [];
+  return path.join(testRoot, area, ...directories, `${sourceName}Test.php`);
+}
+
 async function findOnPath(
   command: string,
   pathValue: string,
