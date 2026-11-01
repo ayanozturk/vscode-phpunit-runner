@@ -200,12 +200,17 @@ function formatTestCaseLine(testCase: JUnitTestCase, defaultStatus: string, form
   const duration = format.duration === false ? '' : formatDuration(testCase.timeSeconds);
   const icon = format.icons?.[testCase.status] ?? statusGlyph(testCase.status);
   if (format.testCase) {
+    const failureLocation = isFailure(testCase.status) ? firstFailureLocation([testCase]) : {};
+    const file = failureLocation.file ?? testCase.file;
+    const line = failureLocation.line ?? testCase.line;
     return renderTemplate(format.testCase, {
       status: colorStatusLabel(statusLabel(testCase.status), testCase.status, format.colors !== false),
       icon: colorStatusGlyph(icon, testCase.status, format.colors !== false),
       class: testCase.className,
       name: testCase.name,
       duration: duration.trim().replace(/^\(|\)$/g, ''),
+      file: file ?? '',
+      line: line === undefined ? '' : String(line),
     });
   }
   return `${colorStatusGlyph(defaultStatus, testCase.status, format.colors !== false)} ${testCase.name}${duration}`;

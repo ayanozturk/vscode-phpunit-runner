@@ -171,7 +171,7 @@ export function firstFailureLocation(cases: JUnitTestCase[]): { file?: string; l
 
 export function parseLocationFromMessage(message: string): { file?: string; line?: number } {
   for (const line of message.split(/\r?\n/)) {
-    const match = line.match(/(?:^|\s)([A-Za-z]:\\.+?\.php|\/.+?\.php)(?::(\d+)(?::\d+)?|\((\d+)\))(?::|\s|$)/);
+    const match = line.match(/(?:^|\s)([A-Za-z]:\\.+?\.php|\/.+?\.php|(?:[A-Za-z0-9_.-]+[\\/]).+?\.php)(?::(\d+)(?::\d+)?|\((\d+)\))(?::|\s|$)/);
     if (match) {
       const sourceLine = Number(match[2] ?? match[3]);
       if (Number.isInteger(sourceLine) && sourceLine > 0) {

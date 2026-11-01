@@ -15,43 +15,43 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 
 ### P1 — Keep orchestration modular
 
-**Status: In progress**
+**Status: Active**
 
 - Continue extracting deterministic discovery, suite matching, and result-mapping logic from VS Code orchestration when ownership is clear.
 - Keep filesystem, process, and VS Code effects at module edges.
 - Add characterization tests before moving behavior; preserve test identity, cancellation, workspace ownership, and report fallback behavior.
 
-**Recent progress:** PHPUnit suite ownership matching, cursor-to-test selection, file/method tree traversal, and output-format settings parsing are pure tested modules. Suite matching honors configured directory filename prefixes and suffixes.
+**Recent progress:** PHPUnit suite ownership matching, cursor-to-test selection, file/method tree traversal, output-format settings parsing, and inclusive coverage line-range expansion are pure tested modules. Suite matching honors configured directory filename prefixes and suffixes.
 
 **Complete when:** focused modules have stable interfaces and tests, orchestration is smaller, and behavior remains unchanged except for covered compatibility fixes.
 
 ### P2 — Protect result correctness
 
-**Status: Ongoing**
+**Status: Active**
 
 - Add adversarial cases for malformed reports, duplicate identities, repeated records, missing paths, interrupted processes, and unsupported runner versions.
 - Preserve exact test identities and source paths; never infer per-test coverage from aggregate data.
 - Keep unsupported or unavailable fields visibly unavailable rather than reporting guessed results.
 
-**Recent progress:** repeated PHPUnit per-test coverage records merge line ranges; runtime listing reconciliation drops duplicate exact identities; JSONL coverage rejects unsafe NUL-containing paths; remote transfer rejects blank required JUnit paths; process stdin handles child-close `EPIPE` safely.
+**Recent progress:** repeated PHPUnit per-test coverage records merge line ranges; runtime listing reconciliation drops duplicate exact identities; JSONL coverage rejects unsafe NUL-containing paths; remote transfer rejects blank required JUnit paths; process stdin handles child-close `EPIPE` safely. JUnit failure parsing now recognizes relative PHP paths from stack traces while avoiding path-like prose.
 
 **Complete when:** supported paths map exact results and unsupported or incomplete paths produce a clear, unverified or unavailable outcome.
 
 ### P3 — Measure before optimizing
 
-**Status: Ongoing**
+**Status: Active**
 
 - Maintain discovery, result-index, and run-history benchmarks at representative 1k/10k workloads and larger history sizes.
 - Assert result counts; compare repeated measurements without machine-dependent CI thresholds.
 - Retain an optimization only when it improves measured workloads without changing results.
 
-**Current evidence:** repeated 10k discovery took 101–103 ms; 1M-case history queries took about 53.5 ms (slowest) and 41–44 ms (flaky). No-file Pest lookup varied from 347–371 ms, while file-backed lookup took 14–15 ms. No tested change produced a repeatable improvement.
+**Current evidence:** repeated 10k discovery took 101–103 ms; 1M-case history queries took about 53.5 ms (slowest) and 41–44 ms (flaky). Recent 10k no-file Pest lookups measured 347.4–349.2 ms, versus about 14 ms for file-backed lookup. A trigram-posting intersection trial regressed to 398 ms and was discarded; no performance change is retained.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
 
 ### P4 — Close compatibility and integration gaps
 
-**Status: Ongoing**
+**Status: Active**
 
 - Keep Node, VS Code, PHPUnit, and Pest CI matrices aligned with declared support.
 - Add integration fixtures for runtime listing, remote report retrieval, parallel scope, cancellation, and coverage-driver behavior.
@@ -61,7 +61,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 
 ### P5 — Make test feedback actionable
 
-**Status: In progress**
+**Status: Active**
 
 - Let users run a slow or potentially flaky test directly from its insight when its reported file and line map to a discovered method or data set.
 - Keep failure locations navigable in compact summaries, including when several tests fail.
@@ -71,7 +71,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Make destination suggestions follow the project's Unit/Feature layout and source folders; never silently overwrite an existing test.
 - Keep generated changes reviewable and require explicit confirmation before writing a PHP file under the workspace `tests/` directory.
 
-**Recent progress:** insight items with a usable reported source range have a Run button; summary output retains a clickable location per failure; history clearing names its workspace scope and asks for confirmation. Test output templates now expose the class name to distinguish duplicate method names. AI generation uses a matching test example when available, skips tool selection when exactly one supported CLI is detected, and avoids existing test filenames.
+**Recent progress:** insight items with a usable reported source range have a Run button; summary output retains a clickable location per failure; history clearing names its workspace scope and asks for confirmation. Custom result lines expose class and source location. AI generation uses a matching test example when available, skips tool selection when exactly one supported CLI is detected, and avoids existing test filenames.
 
 **Complete when:** insight run actions preserve exact discovered scope, and AI tool detection, context consent, output review, destination selection, and explicit save behavior are covered by tests and documented clearly.
 

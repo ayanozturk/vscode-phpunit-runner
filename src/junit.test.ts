@@ -75,6 +75,18 @@ describe('parseJUnitXml', () => {
     );
   });
 
+  it('extracts relative PHP paths from stack traces without matching path-like prose', () => {
+    assert.deepEqual(parseLocationFromMessage('at tests/Feature/Login Test.php:42:17'), {
+      file: 'tests/Feature/Login Test.php',
+      line: 42,
+    });
+    assert.deepEqual(parseLocationFromMessage('tests\\Feature\\LoginTest.php(17): assertion failed'), {
+      file: 'tests\\Feature\\LoginTest.php',
+      line: 17,
+    });
+    assert.deepEqual(parseLocationFromMessage('Expected tests/Foo.php to exist, but it does not.'), {});
+  });
+
   it('decodes xml entities in failure bodies', () => {
     const cases = parseJUnitXml(`<testcase name="t" classname="C"><failure>a &lt; b &amp; c</failure></testcase>`);
     assert.equal(cases[0].message, 'a < b & c');

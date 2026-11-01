@@ -200,13 +200,13 @@ describe('formatTestOutput', () => {
       colors: false,
       duration: false,
       icons: { failed: 'NO' },
-      testCase: '[{status}] {class} {icon} {name} ({duration})',
+      testCase: '[{status}] {class} {icon} {name} at {file}:{line} ({duration})',
       failureLocation: 'at {file}#{line}',
       failureMessage: 'details: {message}',
       sourceSnippet: false,
     });
 
-    assert.equal(output, '[FAIL] ExampleTest NO testFailure with data set "edge case" ()\nat /tests/ExampleTest.php#24\ndetails: Failed asserting false.\nExpected true.\n');
+    assert.equal(output, '[FAIL] ExampleTest NO testFailure with data set "edge case" at /tests/ExampleTest.php:24 ()\nat /tests/ExampleTest.php#24\ndetails: Failed asserting false.\nExpected true.\n');
     assert.doesNotMatch(output, /\u001b\[|failing line/);
   });
 

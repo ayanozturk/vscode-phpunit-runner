@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { mapWithMappings, unmapWithMappings, type PathMapping } from './commandTemplate';
 import { testCodeLensTargets } from './codeLens';
 import { readCloverReport } from './coverage';
+import { expandCoverageLineNumbers } from './coverageLineRanges';
 import {
   canRequestLocalPhpUnitJsonlCoverage,
   createPhpUnitCoverageMethodMatcher,
@@ -1909,13 +1910,9 @@ async function applyCloverCoverage(
 }
 
 function expandCoverageLineRanges(ranges: Array<{ start: number; end: number }>): vscode.FileCoverageDetail[] {
-  const details: vscode.FileCoverageDetail[] = [];
-  for (const range of ranges) {
-    for (let line = range.start; line <= range.end; line += 1) {
-      details.push(new vscode.StatementCoverage(1, new vscode.Position(line - 1, 0)));
-    }
-  }
-  return details;
+  return expandCoverageLineNumbers(ranges).map((line) => (
+    new vscode.StatementCoverage(1, new vscode.Position(line - 1, 0))
+  ));
 }
 
 async function rerunLast(): Promise<void> {
