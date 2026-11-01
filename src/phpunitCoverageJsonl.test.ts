@@ -176,4 +176,24 @@ describe('PHPUnit JSONL coverage integration helpers', () => {
       await fs.rm(directory, { recursive: true, force: true });
     }
   });
+
+  it('rejects a truncated optional report as a warning without exposing partial test coverage', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit-jsonl-truncated-'));
+    try {
+      await fs.writeFile(
+        path.join(directory, 'meta.json'),
+        JSON.stringify({ schemaVersion: 1, sourceRoot: '/project/src' }),
+      );
+      await fs.writeFile(path.join(directory, 'tests.jsonl'), [
+        JSON.stringify({ test: 'App\\MoneyTest::testFormat', covers: { 'Money.php': ['10-12'] } }),
+        '{"test":"App\\\\MoneyTest::testOther","covers":',
+      ].join('\n'));
+
+      const result = await readPhpUnitCoverageJsonl(directory);
+      assert.equal(result.report, undefined, 'a partial report cannot be mistaken for complete exact coverage');
+      assert.match(result.warning ?? '', /tests\.jsonl contains invalid JSON on line 2/);
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
 });

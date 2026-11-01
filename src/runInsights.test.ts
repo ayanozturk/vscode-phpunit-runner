@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { canRunTestInsight, createTestInsightChoices, formatTestInsightForClipboard, getLatestTestProblems } from './runInsights';
+import {
+  canRunTestInsight,
+  createTestInsightChoices,
+  formatTestInsightForClipboard,
+  getLatestTestProblems,
+  normalizeInsightLimit,
+} from './runInsights';
 import type { RunHistoryRun } from './runHistory';
 
 describe('createTestInsightChoices', () => {
@@ -116,6 +122,16 @@ describe('canRunTestInsight', () => {
     assert.equal(canRunTestInsight({ id: 'slow:b', label: 'Slow', description: '', detail: '', filePath: '/tests/B.php' }), false);
     assert.equal(canRunTestInsight({ id: 'slow:c', label: 'Slow', description: '', detail: '', filePath: '/tests/C.php', line: 0 }), false);
     assert.equal(canRunTestInsight({ id: 'slow:d', label: 'Slow', description: '', detail: '', line: 12 }), false);
+  });
+});
+
+describe('normalizeInsightLimit', () => {
+  it('uses the default for missing or invalid values and clamps configured limits', () => {
+    assert.equal(normalizeInsightLimit(undefined), 10);
+    assert.equal(normalizeInsightLimit(Number.NaN), 10);
+    assert.equal(normalizeInsightLimit(3.8), 3);
+    assert.equal(normalizeInsightLimit(0), 1);
+    assert.equal(normalizeInsightLimit(500), 100);
   });
 });
 

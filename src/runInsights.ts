@@ -21,9 +21,14 @@ export type LatestTestProblem = {
   failureMessage?: string;
 };
 
+/** Applies safe bounds to the configurable number of choices shown per insight type. */
+export function normalizeInsightLimit(value: number | undefined): number {
+  return Number.isFinite(value) ? Math.min(100, Math.max(1, Math.floor(value!))) : 10;
+}
+
 /** Returns the latest failed or errored reported outcome for each test. */
 export function getLatestTestProblems(history: readonly RunHistoryRun[], limit = 10): LatestTestProblem[] {
-  if (!Number.isFinite(limit) || limit <= 0) {
+  if (!Number.isFinite(limit) || limit < 1) {
     return [];
   }
 
@@ -86,7 +91,8 @@ export function createTestInsightChoices(
   workspaceName: string,
   slowestLimit = 10,
 ): TestInsightChoice[] {
-  const slowest = getSlowestTests(history, slowestLimit).map((test): TestInsightChoice => ({
+  const limit = normalizeInsightLimit(slowestLimit);
+  const slowest = getSlowestTests(history, limit).map((test): TestInsightChoice => ({
     id: `slow:${test.testId}`,
     testIdentity: test.testId,
     label: `Slow: ${test.label}`,
@@ -100,7 +106,7 @@ export function createTestInsightChoices(
     ...(test.line ? { line: test.line } : {}),
   }));
 
-  const flaky = findFlakyCandidates(history).map((test): TestInsightChoice => {
+  const flaky = findFlakyCandidates(history).slice(0, limit).map((test): TestInsightChoice => {
     const passes = test.recentOutcomes.filter(({ outcome }) => outcome === 'passed').length;
     const failures = test.recentOutcomes.length - passes;
     const recentOutcomes = test.recentOutcomes
@@ -122,7 +128,7 @@ export function createTestInsightChoices(
     };
   });
 
-  const problems = getLatestTestProblems(history).map((test): TestInsightChoice => ({
+  const problems = getLatestTestProblems(history, limit).map((test): TestInsightChoice => ({
     id: `problem:${test.testId}`,
     testIdentity: test.testId,
     label: `${test.outcome === 'failed' ? 'Failed' : 'Errored'}: ${test.label}`,

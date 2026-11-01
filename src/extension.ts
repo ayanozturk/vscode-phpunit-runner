@@ -31,6 +31,7 @@ import {
   createTestInsightChoices,
   formatTestInsightForClipboard,
   getLatestTestProblems,
+  normalizeInsightLimit,
   type TestInsightChoice,
 } from './runInsights';
 import { runProcess } from './processRunner';
@@ -1621,10 +1622,11 @@ function showTestInsights(): void {
     }
 
     hasHistory = true;
-    choices.push(...createTestInsightChoices(history, folder.name));
+    const insightLimit = normalizeInsightLimit(getConfig(folder).get<number>('insights.limit', 10));
+    choices.push(...createTestInsightChoices(history, folder.name, insightLimit));
     outputChannel.appendLine(folder.name);
     outputChannel.appendLine('Slowest tests:');
-    const slowest = getSlowestTests(history, 10);
+    const slowest = getSlowestTests(history, insightLimit);
     if (slowest.length === 0) {
       outputChannel.appendLine('  No reported test durations are available yet.');
     } else {
@@ -1634,7 +1636,8 @@ function showTestInsights(): void {
     }
 
     outputChannel.appendLine('Flaky candidates (pass and fail in the latest 10 outcomes):');
-    const flaky = findFlakyCandidates(history);
+    outputChannel.appendLine(`  Showing up to ${insightLimit} per insight type.`);
+    const flaky = findFlakyCandidates(history).slice(0, insightLimit);
     if (flaky.length === 0) {
       outputChannel.appendLine('  None detected.');
     } else {
@@ -1644,7 +1647,7 @@ function showTestInsights(): void {
     }
 
     outputChannel.appendLine('Latest failures and errors:');
-    const problems = getLatestTestProblems(history);
+    const problems = getLatestTestProblems(history, insightLimit);
     if (problems.length === 0) {
       outputChannel.appendLine('  None detected.');
     } else {
