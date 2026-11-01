@@ -652,7 +652,8 @@ class DynamicDataProviderTest
       duration: false,
     }, vscode.ConfigurationTarget.WorkspaceFolder);
     const summaryOutput = [];
-    const restoreSummaryOutputCapture = captureRunEvents(api.controller, [], [], summaryOutput);
+    const summaryOutputEvents = [];
+    const restoreSummaryOutputCapture = captureRunEvents(api.controller, [], [], summaryOutput, summaryOutputEvents);
     await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
       'environment', { PHPUNIT_RUNNER_MODE: 'summary' }, vscode.ConfigurationTarget.WorkspaceFolder,
     );
@@ -671,6 +672,9 @@ class DynamicDataProviderTest
     assert.match(summaryText, /testAlpha with data set #0/);
     assert.match(summaryText, /Summary failure detail/);
     assert.doesNotMatch(summaryText, /PASS testAlpha(?:\r?\n|$)/, 'summary omits passed-case detail lines');
+    const linkedSummaryFailure = summaryOutputEvents.find((event) => event.output.includes('AlphaTest.php:2'));
+    assert.ok(linkedSummaryFailure?.location, 'summary failures retain a source location link');
+    assert.equal(linkedSummaryFailure.location.uri.fsPath, path.join(workspaceA.uri.fsPath, 'tests', 'AlphaTest.php'));
 
     const failureOutputEvents = [];
     const restoreFailureOutputCapture = captureRunEvents(api.controller, [], [], [], failureOutputEvents);
@@ -864,7 +868,18 @@ class DynamicDataProviderTest
     await vscode.commands.executeCommand('phpunitRunner.showTestInsights');
     assert.ok(diagnosticOutput.includes('Slowest tests:'), 'test insights show persisted durations from reported runs');
     assert.ok(diagnosticOutput.includes('Flaky candidates (pass and fail in the latest 10 outcomes):'));
+    const clearHistoryPrompts = [];
+    const originalShowWarningMessage = vscode.window.showWarningMessage;
+    vscode.window.showWarningMessage = async (message, ...args) => {
+      if (String(message).startsWith('Clear test insight history for ')) {
+        clearHistoryPrompts.push(String(message));
+        return 'Clear History';
+      }
+      return originalShowWarningMessage.call(vscode.window, message, ...args);
+    };
     await vscode.commands.executeCommand('phpunitRunner.clearTestInsights');
+    vscode.window.showWarningMessage = originalShowWarningMessage;
+    assert.deepEqual(clearHistoryPrompts, ['Clear test insight history for 2 workspaces?']);
     diagnosticOutput.length = 0;
     await vscode.commands.executeCommand('phpunitRunner.showTestInsights');
     assert.ok(

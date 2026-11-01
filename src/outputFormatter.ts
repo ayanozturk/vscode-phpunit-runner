@@ -90,7 +90,9 @@ function formatSummarySegments(cases: JUnitTestCase[], format: TestOutputFormat)
   const { counts, failedCases } = tallyOutcomes(cases);
   const testCount = cases.length === 1 ? '1 test' : `${cases.length} tests`;
   const errorCount = counts.errored === 1 ? '1 error' : `${counts.errored} errors`;
-  const lines = [`${testCount}: ${counts.passed} passed, ${counts.failed} failed, ${errorCount}, ${counts.skipped} skipped`];
+  const segments: TestOutputSegment[] = [{
+    text: `${testCount}: ${counts.passed} passed, ${counts.failed} failed, ${errorCount}, ${counts.skipped} skipped\n`,
+  }];
 
   for (const testCase of failedCases) {
     const failureLocation = firstFailureLocation([testCase]);
@@ -98,25 +100,24 @@ function formatSummarySegments(cases: JUnitTestCase[], format: TestOutputFormat)
     const line = failureLocation.line ?? testCase.line;
     const location = formatFailureLocation(file, line, format);
     const message = formatFailureMessage(testCase.message, format)?.split(/\r?\n/, 1)[0];
-    lines.push(formatTestCaseLine(testCase, statusLabel(testCase.status), {
+    const lines = [formatTestCaseLine(testCase, statusLabel(testCase.status), {
       ...format,
       duration: false,
-    }));
+    })];
     if (location) {
       lines.push(location);
     }
     if (message) {
       lines.push(message);
     }
+
+    segments.push({
+      text: `${lines.join('\n')}\n`,
+      ...(format.failureLocation !== '' && file && line ? { location: { file, line } } : {}),
+    });
   }
 
-  const onlyFailure = failedCases.length === 1 ? firstFailureLocation(failedCases) : undefined;
-  return [{
-    text: `${lines.join('\n')}\n`,
-    ...(format.failureLocation !== '' && onlyFailure?.file && onlyFailure.line
-      ? { location: { file: onlyFailure.file, line: onlyFailure.line } }
-      : {}),
-  }];
+  return segments;
 }
 
 function formatCollisionSegments(

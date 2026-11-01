@@ -90,7 +90,7 @@ Core settings:
 - `phpunitRunner.debuggerConfig`
 - `phpunitRunner.xdebugPort` (set to `0` to choose an available port automatically)
 
-Run **PHPUnit Runner: Show Test Insights** from the Command Palette to see the ten slowest reported test cases and possible flaky candidates. Select an item to open its reported file and line; use its Run button to execute the matching discovered test when the report location maps to one. History stays in VS Code workspace state, keeps up to 100 runs per workspace, and only includes completed cases from readable JUnit reports. Use **PHPUnit Runner: Clear Test Insights History** to remove history for all folders in the current workspace.
+Run **PHPUnit Runner: Show Test Insights** from the Command Palette to see the ten slowest reported test cases and possible flaky candidates. Select an item to open its reported file and line; use its Run button to execute the matching discovered test when the report location maps to one. History stays in VS Code workspace state, keeps up to 100 runs per workspace, and only includes completed cases from readable JUnit reports. **PHPUnit Runner: Clear Test Insights History** asks you to confirm before clearing history for every folder in the current workspace.
 
 Docker settings:
 
@@ -106,7 +106,7 @@ Set `phpunitRunner.output.preset` to choose how structured PHPUnit results appea
 
 - `collision` (default): a detailed line for each test, with duration and failure details.
 - `progress`: one compact status marker per test followed by a result count.
-- `summary`: aggregate counts plus concise details for failed and errored tests only.
+- `summary`: aggregate counts plus concise details for failed and errored tests only; each reported failure location remains clickable, including when several tests fail.
 - `pretty`: plain per-test status lines without status icons.
 
 Use `phpunitRunner.output.format` to tailor status markers and failure details per workspace. For example, to hide colors and durations and shorten failure lines:

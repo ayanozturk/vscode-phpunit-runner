@@ -171,13 +171,27 @@ describe('formatTestOutput', () => {
     });
     assert.equal(hiddenLocation[0].location, undefined);
     assert.equal(formatTestOutputSegments([cases[1]], 'progress')[0].location, undefined);
-    assert.deepEqual(formatTestOutputSegments([cases[1]], 'summary')[0].location, {
+    assert.deepEqual(formatTestOutputSegments([cases[1]], 'summary').find((segment) => segment.location)?.location, {
       file: '/tests/ExampleTest.php',
       line: 24,
     });
     assert.equal(formatTestOutputSegments([cases[1]], 'summary', '', new Map(), {
       failureLocation: '',
-    })[0].location, undefined);
+    }).some((segment) => segment.location), false);
+  });
+
+  it('keeps each failure location clickable in the summary preset', () => {
+    const failures = [
+      { ...cases[1], file: '/tests/FirstTest.php', line: 12 },
+      { ...cases[2], status: 'errored' as const, file: '/tests/SecondTest.php', line: 29 },
+    ];
+    const segments = formatTestOutputSegments(failures, 'summary');
+
+    assert.deepEqual(segments.filter((segment) => segment.location).map((segment) => segment.location), [
+      { file: '/tests/FirstTest.php', line: 12 },
+      { file: '/tests/SecondTest.php', line: 29 },
+    ]);
+    assert.equal(segments.map((segment) => segment.text).join(''), formatTestOutput(failures, 'summary'));
   });
 
   it('supports configurable test-line templates, icons, failure details, and plain output', () => {

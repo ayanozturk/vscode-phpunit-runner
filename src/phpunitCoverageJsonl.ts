@@ -145,10 +145,10 @@ export function createPhpUnitCoverageMethodMatcher(
   }
 
   return (testId, workspacePath) => {
-  const identity = parsePhpUnitCoverageTestMethodId(testId);
-  if (!identity) {
-    return undefined;
-  }
+    const identity = parsePhpUnitCoverageTestMethodId(testId);
+    if (!identity) {
+      return undefined;
+    }
     const matching = index.get(methodIdentityKey(workspacePath, identity.className, identity.methodName));
     return matching?.length === 1 ? matching[0] : undefined;
   };
@@ -242,7 +242,7 @@ function parseLineRange(value: unknown): CoverageLineRange | undefined {
 }
 
 function isSafeRelativePath(value: string): boolean {
-  if (!value || value.startsWith('/') || value.includes('\\') || /^[a-zA-Z]:/.test(value)) {
+  if (!value || value.includes('\0') || value.startsWith('/') || value.includes('\\') || /^[a-zA-Z]:/.test(value)) {
     return false;
   }
   return value.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..');

@@ -31,9 +31,11 @@ import {
   appendRunHistory,
   findFlakyCandidates,
   getSlowestTests,
+  historyClearConfirmationMessage,
   type RunHistoryRun,
 } from './runHistory';
 import { groupItemsBy, runGroupsSequentially } from './grouping';
+import { collectFileTreeItems } from './fileTree';
 import { collectMethodTreeItems } from './methodTree';
 import { terminateProcessTree } from './processTree';
 import { expandIncludedScopes } from './testScopes';
@@ -1206,11 +1208,11 @@ async function runFileScope(
 }
 
 function collectFileItems(item: vscode.TestItem): vscode.TestItem[] {
-  const data = itemData.get(item);
-  if (data?.kind === 'file') {
-    return [item];
-  }
-  return collectTestItems(item.children).flatMap((child) => collectFileItems(child));
+  return collectFileTreeItems(
+    item,
+    (candidate) => itemData.get(candidate)?.kind,
+    (candidate) => collectTestItems(candidate.children),
+  );
 }
 
 function casesForFile(index: TestCaseIndex, file: vscode.TestItem): JUnitTestCase[] {
@@ -1713,6 +1715,15 @@ async function clearTestInsightsHistory(): Promise<void> {
   const folders = vscode.workspace.workspaceFolders ?? [];
   if (folders.length === 0) {
     void vscode.window.showInformationMessage('No workspace test insight history is available to clear.');
+    return;
+  }
+
+  const confirmation = await vscode.window.showWarningMessage(
+    historyClearConfirmationMessage(folders.length),
+    { modal: true },
+    'Clear History',
+  );
+  if (confirmation !== 'Clear History') {
     return;
   }
 
@@ -2233,6 +2244,14 @@ async function appendStructuredTestOutput(
   const segments = formatTestOutputSegments(cases, preset, fallbackOutput, sourceSnippets, format);
   const output = segments.map((segment) => segment.text).join('');
   if (!output) {
+    return;
+  }
+
+  if (preset === 'summary' && segments.length > 1) {
+    for (const segment of segments) {
+      const location = await resolveOutputLocation(segment.location, folder);
+      run.appendOutput(segment.text, location);
+    }
     return;
   }
 

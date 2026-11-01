@@ -4,6 +4,12 @@ export const MAX_RUN_HISTORY = 100;
 /** Number of recent completed outcomes used to identify a flaky candidate. */
 export const FLAKY_OUTCOME_WINDOW = 10;
 
+/** Creates the confirmation prompt for clearing local history across workspaces. */
+export function historyClearConfirmationMessage(workspaceCount: number): string {
+  const count = Math.max(0, Math.floor(workspaceCount));
+  return `Clear test insight history for ${count} workspace${count === 1 ? '' : 's'}?`;
+}
+
 export type RunCaseOutcome = 'passed' | 'failed' | 'skipped' | 'errored' | 'cancelled';
 
 /** Raw case data from a VS Code run and its PHPUnit/Pest result report. */

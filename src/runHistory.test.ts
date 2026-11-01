@@ -4,6 +4,7 @@ import {
   appendRunHistory,
   createRunHistoryRecord,
   findFlakyCandidates,
+  historyClearConfirmationMessage,
   getSlowestTests,
   MAX_RUN_HISTORY,
   type RunHistoryRun,
@@ -28,6 +29,11 @@ function run(id: string, outcomes: Array<{
 }
 
 describe('run history', () => {
+  it('describes the scope when confirming a history clear', () => {
+    assert.equal(historyClearConfirmationMessage(1), 'Clear test insight history for 1 workspace?');
+    assert.equal(historyClearConfirmationMessage(3), 'Clear test insight history for 3 workspaces?');
+  });
+
   it('persists only completed cases confirmed by a result report', () => {
     const record = createRunHistoryRecord({
       id: 'run-1',

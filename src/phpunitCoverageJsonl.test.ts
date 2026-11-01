@@ -47,7 +47,7 @@ describe('parsePhpUnitCoverageJsonl', () => {
     const result = parsePhpUnitCoverageJsonl(
       JSON.stringify({ schemaVersion: 1, sourceRoot: '/project/src' }),
       [
-        JSON.stringify({ test: 'App\\Test::testBad', covers: { '../outside.php': ['1'], '/absolute.php': ['2'], 'Bad.php': ['x', '0', '9-4', 12] } }),
+        JSON.stringify({ test: 'App\\Test::testBad', covers: { '../outside.php': ['1'], '/absolute.php': ['2'], 'Bad.php': ['x', '0', '9-4', 12], 'Bad\0.php': ['4'] } }),
         JSON.stringify({ test: 'App\\Test::testGood', covers: { 'Good.php': ['2-4'] } }),
         JSON.stringify({ test: 'App\\Test::testEmpty', covers: {} }),
         JSON.stringify({ test: 'App\\Test::testWindows', covers: { 'C:/outside.php': ['1'], 'folder\\Bad.php': ['2'] } }),
