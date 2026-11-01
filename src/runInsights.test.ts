@@ -140,7 +140,7 @@ describe('getLatestTestProblems', () => {
           },
           {
             testId: 'still-failing', label: 'Test::stillFailing', outcome: 'failed',
-            filePath: '/workspace/tests/Test.php', line: 30,
+            filePath: '/workspace/tests/Test.php', line: 30, failureMessage: 'Expected true but got false',
           },
           { testId: 'errored', label: 'Test::errored', outcome: 'errored' },
           { testId: 'skipped', label: 'Test::skipped', outcome: 'skipped' },
@@ -152,6 +152,7 @@ describe('getLatestTestProblems', () => {
       {
         testId: 'still-failing', label: 'Test::stillFailing', outcome: 'failed',
         completedAt: '2026-01-02T00:00:00.000Z', filePath: '/workspace/tests/Test.php', line: 30,
+        failureMessage: 'Expected true but got false',
       },
       { testId: 'errored', label: 'Test::errored', outcome: 'errored', completedAt: '2026-01-02T00:00:00.000Z' },
     ]);
@@ -162,6 +163,7 @@ describe('getLatestTestProblems', () => {
     ]);
     assert.equal(problemChoices[0].testIdentity, 'still-failing');
     assert.equal(problemChoices[0].line, 30);
+    assert.match(problemChoices[0].detail, /Expected true but got false/);
   });
 
   it('limits results and rejects invalid limits', () => {

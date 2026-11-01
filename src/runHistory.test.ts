@@ -52,6 +52,33 @@ describe('run history', () => {
     }]);
   });
 
+  it('stores only a short normalized first-line summary for failed and errored cases', () => {
+    const record = createRunHistoryRecord({
+      id: 'run-errors',
+      completedAt: '2026-01-01T00:00:00.000Z',
+      cases: [
+        {
+          testId: 'failed', label: 'failed', outcome: 'failed',
+          failureMessage: '\u001b[31mExpected 2, got 1\u001b[0m\nStack trace omitted', completed: true, reported: true,
+        },
+        {
+          testId: 'errored', label: 'errored', outcome: 'errored',
+          failureMessage: '  ' + 'x'.repeat(250), completed: true, reported: true,
+        },
+        {
+          testId: 'passed', label: 'passed', outcome: 'passed',
+          failureMessage: 'ignored', completed: true, reported: true,
+        },
+      ],
+    });
+
+    assert.deepEqual(record.cases.map(({ failureMessage }) => failureMessage), [
+      'Expected 2, got 1',
+      `${'x'.repeat(199)}…`,
+      undefined,
+    ]);
+  });
+
   it('caps history at the newest 100 records', () => {
     const history = Array.from({ length: MAX_RUN_HISTORY + 5 }, (_, index) => run(String(index + 1), []));
     const result = appendRunHistory(history, {

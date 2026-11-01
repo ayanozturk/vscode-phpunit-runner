@@ -1596,6 +1596,9 @@ async function recordRunHistory(folder: vscode.WorkspaceFolder, cases: JUnitTest
       label: `${testCase.className}::${testCase.name}`,
       outcome: testCase.status,
       durationMs: testCase.timeSeconds * 1000,
+      ...((testCase.status === 'failed' || testCase.status === 'errored') && testCase.message
+        ? { failureMessage: testCase.message }
+        : {}),
       ...(testCase.file ? { filePath: resolvePath(folder.uri.fsPath, testCase.file) } : {}),
       ...(testCase.line ? { line: testCase.line } : {}),
       completed: true,
@@ -1646,7 +1649,7 @@ function showTestInsights(): void {
       outputChannel.appendLine('  None detected.');
     } else {
       for (const test of problems) {
-        outputChannel.appendLine(`  ${test.outcome}: ${test.label}`);
+        outputChannel.appendLine(`  ${test.outcome}: ${test.label}${test.failureMessage ? ` — ${test.failureMessage}` : ''}`);
       }
     }
     outputChannel.appendLine('');

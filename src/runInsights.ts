@@ -18,6 +18,7 @@ export type LatestTestProblem = {
   completedAt: string;
   filePath?: string;
   line?: number;
+  failureMessage?: string;
 };
 
 /** Returns the latest failed or errored reported outcome for each test. */
@@ -50,6 +51,7 @@ export function getLatestTestProblems(history: readonly RunHistoryRun[], limit =
         completedAt: run.completedAt,
         ...(test.filePath ? { filePath: test.filePath } : {}),
         ...(test.line ? { line: test.line } : {}),
+        ...(test.failureMessage ? { failureMessage: test.failureMessage } : {}),
       });
       if (problems.length >= Math.floor(limit)) {
         return problems;
@@ -126,7 +128,7 @@ export function createTestInsightChoices(
     label: `${test.outcome === 'failed' ? 'Failed' : 'Errored'}: ${test.label}`,
     description: `${workspaceName} · latest ${test.outcome}${dateSuffix(test.completedAt)}`,
     detail: sourceDetail(
-      `Most recent reported outcome was ${test.outcome}.`,
+      `Most recent reported outcome was ${test.outcome}.${test.failureMessage ? ` ${test.failureMessage}` : ''}`,
       test.filePath,
       test.line,
     ),

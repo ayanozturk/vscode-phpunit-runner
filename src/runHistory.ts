@@ -21,6 +21,8 @@ export type RunHistoryCaseInput = {
   durationMs?: number;
   filePath?: string;
   line?: number;
+  /** Optional concise failure summary; callers should omit stack traces. */
+  failureMessage?: string;
   /** False when VS Code cancelled or failed to start this case. */
   completed: boolean;
   /** True only when the outcome came from a parsed test result report. */
@@ -34,6 +36,7 @@ export type RunHistoryCase = {
   durationMs?: number;
   filePath?: string;
   line?: number;
+  failureMessage?: string;
 };
 
 export type RunHistoryRunInput = {
@@ -82,9 +85,23 @@ export function createRunHistoryRecord(run: RunHistoryRunInput): RunHistoryRun {
       ...(isValidDuration(testCase.durationMs) ? { durationMs: testCase.durationMs } : {}),
       ...(testCase.filePath?.trim() ? { filePath: testCase.filePath.trim() } : {}),
       ...(isValidLine(testCase.line) ? { line: testCase.line } : {}),
+      ...((testCase.outcome === 'failed' || testCase.outcome === 'errored')
+        && testCase.failureMessage?.trim()
+        ? { failureMessage: normalizeFailureMessage(testCase.failureMessage) }
+        : {}),
     }));
 
   return { id: run.id, completedAt: run.completedAt, cases };
+}
+
+function normalizeFailureMessage(message: string): string {
+  const firstLine = message.split(/\r?\n/).find((line) => line.trim().length > 0) ?? '';
+  const normalized = firstLine
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized.length > 200 ? `${normalized.slice(0, 199).trimEnd()}…` : normalized;
 }
 
 /** Appends one completed run and retains only the newest MAX_RUN_HISTORY records. */

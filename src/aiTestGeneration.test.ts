@@ -249,6 +249,27 @@ describe('extractGeneratedPhpTest', () => {
     assert.match(generated, /it\("works"/);
   });
 
+  it('accepts PHPUnit attribute-based tests whose method name does not start with test', () => {
+    const generated = extractGeneratedPhpTest([
+      '```php',
+      '<?php',
+      'use PHPUnit\\Framework\\Attributes\\Test;',
+      '',
+      'final class InvoiceTest extends TestCase',
+      '{',
+      '    #[Test]',
+      '    public function calculatesTheInvoiceTotal(): void',
+      '    {',
+      '        self::assertSame(42, 42);',
+      '    }',
+      '}',
+      '```',
+    ].join('\n'));
+
+    assert.match(generated, /#\[Test\]/);
+    assert.match(generated, /function calculatesTheInvoiceTotal/);
+  });
+
   it('accepts raw PHP test code and rejects malformed or non-test output', () => {
     assert.equal(extractGeneratedPhpTest('<?php\ntest("works", fn () => expect(true)->toBeTrue());'), '<?php\ntest("works", fn () => expect(true)->toBeTrue());\n');
     assert.throws(() => extractGeneratedPhpTest('The test is ready.'), /did not contain a complete PHP unit-test file/);

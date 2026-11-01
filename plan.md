@@ -7,7 +7,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 ## Delivered capabilities
 
 - **Discovery and execution:** Static discovery, runtime PHPUnit provider discovery with fallback, incremental refresh, continuous testing, local and Docker execution, custom remote commands and report transfer, and an opt-in parallel profile for supported Pest and ParaTest projects.
-- **Results and insights:** JUnit mapping, pure method and dataset result planning, Clover coverage, supported exact per-test coverage, bounded local history, stable-identity insight reruns, slow-test and flaky-candidate views, latest failure and error summaries, copyable insight summaries, searchable insight pickers, and compact custom failure output.
+- **Results and insights:** JUnit mapping, pure method and dataset result planning, Clover coverage, supported exact per-test coverage, bounded local history, stable-identity insight reruns, slow-test and flaky-candidate views, latest failure and error summaries with bounded first-line messages, copyable insight summaries, searchable insight pickers, and compact custom failure output.
 - **AI test authoring:** Detect Codex CLI, GitHub Copilot CLI, and Claude Code only. The confirmation identifies source path and scope plus possible project context; generated PHPUnit/Pest output is previewed, and saving under `tests/` requires confirmation. Extension-host coverage verifies consent, review-before-apply, save, and cancel-before-run.
 - **Quality and performance:** Adversarial report and process-output tests, focused pure-module coverage, PHP/framework compatibility jobs, VS Code extension-host checks, and result-count-checked scale benchmarks. Process output observer failures stop the child and reject with the original error.
 
@@ -50,6 +50,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - A top-K heap prototype for slowest-test selection did not yield consistent gains (63.9 ms then 71.2 ms versus a 68.3 ms baseline) and was discarded.
 - A seven-iteration history benchmark measured slowest/flaky medians of 3.5/6.5 ms at 20k cases and 74.4/89.2 ms at 1M; result counts passed and no consistent optimization was identified.
 - Repeated discovery and result-index benchmarks passed all result counts but showed run-to-run timing variance; no safe optimization was retained.
+- A further seven-iteration discovery/result-index sweep also passed counts but showed similar timing variance, so no additional performance change was justified.
 - Composer metadata decoding is now isolated from filesystem reads; the unit tests cover valid, missing, malformed, and incomplete metadata.
 - Docker mapping fallback, normalization, and longest-prefix precedence now live in a tested pure helper.
 
@@ -72,6 +73,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 
 - Insight actions resolve persisted report identity to the exact discovered method or data set, fall back to the method when a reported row is unavailable, and use source location when identity is stale.
 - Slow-test entries show their latest reported date; flaky entries retain the newest-first pass/fail sequence and latest date.
+- Latest failed or errored entries include a normalized, first-line failure summary capped at 200 characters; stack traces are not persisted in history.
 - Unit coverage exercises method and data-set identity resolution; extension-host coverage verifies the action runs the selected method without widening to its data sets.
 
 **Complete when:** insight run actions preserve exact discovered scope and recent outcomes remain understandable.

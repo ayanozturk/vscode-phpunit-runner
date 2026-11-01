@@ -90,7 +90,7 @@ Core settings:
 - `phpunitRunner.debuggerConfig`
 - `phpunitRunner.xdebugPort` (set to `0` to choose an available port automatically)
 
-Run **PHPUnit Runner: Show Test Insights** from the Command Palette to see the ten slowest reported test cases, possible flaky candidates, and the latest failed or errored outcome for each test. Flaky entries show the recent pass/fail sequence, newest first. Select an item to open its reported file and line; use its Run button to execute the matching discovered test when the report identity maps to one, or its Copy button to copy the summary and full source location. History stays in VS Code workspace state, keeps up to 100 runs per workspace, and only includes completed cases from readable JUnit reports. **PHPUnit Runner: Clear Test Insights History** asks you to confirm before clearing history for every folder in the current workspace.
+Run **PHPUnit Runner: Show Test Insights** from the Command Palette to see the ten slowest reported test cases, possible flaky candidates, and the latest failed or errored outcome for each test. Failure entries include a short first-line message when PHPUnit provides one. Flaky entries show the recent pass/fail sequence, newest first. Select an item to open its reported file and line; use its Run button to execute the matching discovered test when the report identity maps to one, or its Copy button to copy the summary and full source location. History stays in VS Code workspace state, keeps up to 100 runs per workspace, and only includes completed cases from readable JUnit reports. **PHPUnit Runner: Clear Test Insights History** asks you to confirm before clearing history for every folder in the current workspace.
 
 Docker settings:
 
