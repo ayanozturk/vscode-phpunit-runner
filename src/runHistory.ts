@@ -13,6 +13,8 @@ export type RunHistoryCaseInput = {
   label: string;
   outcome: RunCaseOutcome;
   durationMs?: number;
+  filePath?: string;
+  line?: number;
   /** False when VS Code cancelled or failed to start this case. */
   completed: boolean;
   /** True only when the outcome came from a parsed test result report. */
@@ -24,6 +26,8 @@ export type RunHistoryCase = {
   label: string;
   outcome: RunCaseOutcome;
   durationMs?: number;
+  filePath?: string;
+  line?: number;
 };
 
 export type RunHistoryRunInput = {
@@ -45,11 +49,15 @@ export type SlowTestOccurrence = {
   durationMs: number;
   runId: string;
   completedAt: string;
+  filePath?: string;
+  line?: number;
 };
 
 export type FlakyCandidate = {
   testId: string;
   label: string;
+  filePath?: string;
+  line?: number;
   /** Recent pass/fail outcomes, newest first, at most FLAKY_OUTCOME_WINDOW entries. */
   recentOutcomes: Array<{ outcome: 'passed' | 'failed'; runId: string; completedAt: string }>;
 };
@@ -66,6 +74,8 @@ export function createRunHistoryRecord(run: RunHistoryRunInput): RunHistoryRun {
       label: testCase.label,
       outcome: testCase.outcome,
       ...(isValidDuration(testCase.durationMs) ? { durationMs: testCase.durationMs } : {}),
+      ...(testCase.filePath?.trim() ? { filePath: testCase.filePath.trim() } : {}),
+      ...(isValidLine(testCase.line) ? { line: testCase.line } : {}),
     }));
 
   return { id: run.id, completedAt: run.completedAt, cases };
@@ -106,6 +116,8 @@ export function getSlowestTests(
         durationMs: testCase.durationMs,
         runId: run.id,
         completedAt: run.completedAt,
+        ...(testCase.filePath ? { filePath: testCase.filePath } : {}),
+        ...(isValidLine(testCase.line) ? { line: testCase.line } : {}),
       };
       const previous = latestByTest.get(testCase.testId);
       const previousHasTimestamp = previous !== undefined && Number.isFinite(previous.timestamp);
@@ -144,6 +156,7 @@ export function getSlowestTests(
 export function findFlakyCandidates(history: readonly RunHistoryRun[]): FlakyCandidate[] {
   const byTest = new Map<string, FlakyCandidate['recentOutcomes']>();
   const labels = new Map<string, string>();
+  const locations = new Map<string, { filePath?: string; line?: number }>();
   const newestFirst = history
     .map((run, index) => ({ run, index, time: Date.parse(run.completedAt) }))
     .sort((left, right) => {
@@ -164,7 +177,13 @@ export function findFlakyCandidates(history: readonly RunHistoryRun[]): FlakyCan
       }
       outcomes.push({ outcome: testCase.outcome, runId: run.id, completedAt: run.completedAt });
       byTest.set(testCase.testId, outcomes);
-      labels.set(testCase.testId, testCase.label);
+      if (!labels.has(testCase.testId)) {
+        labels.set(testCase.testId, testCase.label);
+        locations.set(testCase.testId, {
+          ...(testCase.filePath ? { filePath: testCase.filePath } : {}),
+          ...(isValidLine(testCase.line) ? { line: testCase.line } : {}),
+        });
+      }
     }
   }
 
@@ -173,9 +192,18 @@ export function findFlakyCandidates(history: readonly RunHistoryRun[]): FlakyCan
       outcomes.some((entry) => entry.outcome === 'passed')
       && outcomes.some((entry) => entry.outcome === 'failed')
     ))
-    .map(([testId, recentOutcomes]) => ({ testId, label: labels.get(testId) ?? testId, recentOutcomes }));
+    .map(([testId, recentOutcomes]) => ({
+      testId,
+      label: labels.get(testId) ?? testId,
+      ...locations.get(testId),
+      recentOutcomes,
+    }));
 }
 
 function isValidDuration(durationMs: number | undefined): durationMs is number {
   return durationMs !== undefined && Number.isFinite(durationMs) && durationMs >= 0;
+}
+
+function isValidLine(line: number | undefined): line is number {
+  return line !== undefined && Number.isInteger(line) && line > 0;
 }

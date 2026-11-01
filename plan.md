@@ -9,10 +9,12 @@ Research confirms that machine-readable test listing and result formats are avai
 ## Progress
 
 - **Delivered:** Dynamic PHPUnit provider listing with static fallback, project diagnostics, remote report transfer, incremental discovery, VS Code native continuous runs, saved-file continuous runs, and workspace-local history/slow-test/flaky-candidate insights.
+- **Delivered:** Test insight choices can open the latest reported source location. Clover coverage now includes named method declarations, available method totals, and per-test detail for a single selected method or data set while preserving statement coverage.
 - **Delivered:** An opt-in Parallel Tests profile for detected Pest and ParaTest installations, with configurable workers, scoped execution, JUnit mapping, and cancellation; unsupported Artisan and opaque remote commands are reported clearly.
-- **Delivered:** A Node 22/24 GitHub Actions quality matrix and focused modules for run history and excluded test scopes. Result mapping now avoids intermediate nested-array allocations in its lookup paths.
+- **Delivered:** Node 22/24 quality and PHPUnit 10–13/Pest 3–5 CLI compatibility GitHub Actions matrices, plus focused modules for run history and excluded test scopes. Compatibility fixtures exercise PHPUnit runtime listing, JUnit output, and Pest parallel runs. Result mapping avoids intermediate nested-array allocations in its lookup paths.
 - **Baselines added:** `npm run benchmark:discovery` and `npm run benchmark:result-index` measure synthetic 1k/10k test workloads without machine-dependent thresholds. On this local machine, initial discovery medians were about 19/180 ms; result mapping improved from 5.8 to 3.9 ms for 10k method lookups and 258 to 221 ms for Pest lookups.
-- **Still planned:** A PHPUnit/Pest version matrix, richer coverage, and further module boundaries around invocation and result mapping.
+- **Performance note:** A measured alternative to the parser's comment/string masking was slower on both benchmark sizes, so it was discarded without changing parser behavior.
+- **Still planned:** Further module boundaries around invocation and result mapping, plus coverage attribution for multi-test runs if the report format can support it safely.
 
 ## Roadmap
 
@@ -32,11 +34,11 @@ Research confirms that machine-readable test listing and result formats are avai
 
 - Add an opt-in **Parallel Tests** profile. Use one top-level runner invocation per selected scope and delegate to detected Pest or ParaTest support. Keep serial execution as the default; preserve filters, cancellation, result mapping, and debug behavior.
 - Store bounded run history in VS Code workspace state only, capped at the latest 100 runs per workspace. Show slowest tests and flag a flaky candidate only when both pass and fail outcomes occur in the test’s last 10 completed runs. Do not automatically retry tests or change their reported outcomes.
-- Extend coverage details to declarations and individual tests when supported by the runner and coverage driver; keep current statement coverage as the fallback.
+- Extend coverage details to declarations and individual tests when supported by the runner and coverage driver; keep current statement coverage as the fallback. Named declarations and single-test attribution are delivered; merged reports still do not provide reliable test-to-declaration attribution.
 
 ### 4. Compatibility and maintainability — months 8–12
 
-- Add a CI compatibility matrix for supported PHPUnit and Pest versions and automate compile, unit, extension integration, packaging, and dependency-audit checks.
+- Keep the CI compatibility matrix current as supported PHPUnit and Pest releases change; automate compile, unit, extension integration, packaging, and dependency-audit checks.
 - Split discovery, invocation/report transport, result mapping, and run insights into focused modules so independent changes remain easy to test and review.
 
 ## Interfaces and acceptance criteria

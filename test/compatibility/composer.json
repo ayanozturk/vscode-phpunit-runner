@@ -1,0 +1,16 @@
+{
+  "name": "phpunit-runner/compatibility-fixture",
+  "description": "Isolated PHPUnit and Pest CLI compatibility smoke fixture",
+  "type": "project",
+  "require-dev": {
+    "pestphp/pest": "5.3.4"
+  },
+  "config": {
+    "allow-plugins": {
+      "pestphp/pest-plugin": true
+    },
+    "sort-packages": true
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

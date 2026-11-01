@@ -17,10 +17,10 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Run Pest data sets individually.** Literal arrays and inline generators with literal `yield` values passed to Pest’s `->with()` appear under their test, including chained data sets.
 - **Understand failures quickly.** See colored outcomes, assertion messages, source locations, and a short PHP code frame for readable local failure files in VS Code’s Test Results panel.
 - **Choose your test output.** Switch between detailed per-test results, a compact progress summary, or plain per-test lines.
-- **Debug and measure coverage.** Start an Xdebug session for a selected test and inspect Clover coverage in the editor.
+- **Debug and measure coverage.** Start an Xdebug session for a selected test and inspect statement and named method coverage in the editor; supported single-test coverage can also be inspected per test.
 - **Fit your environment.** Run locally, through Docker, or with a command template for Laravel Sail, DDEV, SSH, and other remote setups. Host-to-remote path mappings keep results connected to local files across multi-root workspaces.
 - **Diagnose setup and remote results.** Check runner, configuration, PHP, and report readiness without starting tests; retrieve JUnit and coverage files from custom remote commands when they are not on a shared mount.
-- **Review test insights.** Use VS Code's continuous run controls or save-triggered reruns, then inspect the slowest tests and possible flaky candidates from recent verified runs.
+- **Act on test insights.** Review the slowest tests and possible flaky candidates from recent verified runs, then select one to open its reported source location.
 - **Keep results current.** Refresh discovery as PHP files, PHPUnit configuration, or Composer dependencies change, or enable continuous testing to rerun a saved file.
 
 ## Get started
@@ -52,6 +52,8 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 - Supports run, debug, and coverage profiles, plus commands to run all, rerun the last selection, run failed tests, or choose a group.
 - Supports local and Docker execution, custom remote command templates, environment variables, and host-to-remote path mappings.
 - Offers an opt-in Parallel Tests profile for supported Pest and ParaTest projects, preserving selected scope and reported JUnit results. Unsupported application and opaque custom commands show an explanatory error.
+- Reports Clover statement and named declaration coverage, including method execution totals when available. Per-test detail is shown only for a selected method or data set with usable coverage data.
+- Adds isolated CLI smoke checks for supported PHPUnit 10–13 and Pest 3–5 releases in CI, covering runtime test listing, JUnit reports, and Pest parallel execution.
 - Can save dirty editors before a run and automatically rerun a saved PHP file. Rapid saves to the same file are coalesced into one run.
 
 ## Configuration

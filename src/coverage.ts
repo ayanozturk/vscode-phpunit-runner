@@ -7,6 +7,9 @@ export type MappedCoverage = {
   statements: number;
   coveredStatements: number;
   details: Array<{ line: number; count: number }>;
+  declarations: Array<{ name: string; line: number; count: number }>;
+  methods?: number;
+  coveredMethods?: number;
 };
 
 export async function readCloverReport(reportPath: string, mappings: PathMapping[] = []): Promise<{
@@ -30,5 +33,8 @@ export function mapCloverCoverage(xml: string, mappings: PathMapping[]): MappedC
     details: file.lines
       .filter((line) => line.type === 'stmt')
       .map((line) => ({ line: line.line, count: line.count })),
+    declarations: file.declarations,
+    ...(file.methods === undefined ? {} : { methods: file.methods }),
+    ...(file.coveredMethods === undefined ? {} : { coveredMethods: file.coveredMethods }),
   }));
 }

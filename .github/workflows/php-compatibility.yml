@@ -1,0 +1,100 @@
+name: PHP framework compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: php-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cli-compatibility:
+    name: ${{ matrix.framework }} ${{ matrix.framework-version }} on PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # PHPUnit 10–13 are covered at their documented minimum PHP versions.
+        # Pest 3–5 use the minimums in Pest's official support policy. Older
+        # framework majors and unsupported PHP/framework pairings are omitted.
+        # PHPUnit has no built-in parallel runner flag, so the parallel command
+        # smoke covers Pest only.
+        include:
+          - framework: PHPUnit
+            package: phpunit/phpunit
+            framework-version: 10.5.66
+            php: '8.1'
+            type: phpunit
+          - framework: PHPUnit
+            package: phpunit/phpunit
+            framework-version: 11.5.57
+            php: '8.2'
+            type: phpunit
+          - framework: PHPUnit
+            package: phpunit/phpunit
+            framework-version: 12.5.42
+            php: '8.3'
+            type: phpunit
+          - framework: PHPUnit
+            package: phpunit/phpunit
+            framework-version: 13.4.5
+            php: '8.4'
+            type: phpunit
+          - framework: Pest
+            package: pestphp/pest
+            framework-version: 3.8.7
+            php: '8.2'
+            type: pest
+          - framework: Pest
+            package: pestphp/pest
+            framework-version: 4.7.8
+            php: '8.3'
+            type: pest
+          - framework: Pest
+            package: pestphp/pest
+            framework-version: 5.3.4
+            php: '8.4'
+            type: pest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, mbstring, xml, xmlwriter, pcntl
+          coverage: none
+
+      - name: Install the pinned framework version
+        working-directory: test/compatibility
+        env:
+          FRAMEWORK_PACKAGE: ${{ matrix.package }}
+          FRAMEWORK_VERSION: ${{ matrix.framework-version }}
+        run: composer require --dev --no-interaction --prefer-dist --with-all-dependencies "$FRAMEWORK_PACKAGE:$FRAMEWORK_VERSION"
+
+      - name: Smoke test PHPUnit runtime listing and JUnit output
+        if: matrix.type == 'phpunit'
+        working-directory: test/compatibility
+        run: |
+          vendor/bin/phpunit --configuration phpunit.xml --list-tests-xml "$RUNNER_TEMP/phpunit-tests.xml"
+          test -s "$RUNNER_TEMP/phpunit-tests.xml"
+          grep -q 'testRuntimeListing' "$RUNNER_TEMP/phpunit-tests.xml"
+          vendor/bin/phpunit --configuration phpunit.xml --log-junit "$RUNNER_TEMP/phpunit-junit.xml"
+          test -s "$RUNNER_TEMP/phpunit-junit.xml"
+          grep -q '<testsuite' "$RUNNER_TEMP/phpunit-junit.xml"
+
+      - name: Smoke test Pest JUnit output and parallel execution
+        if: matrix.type == 'pest'
+        working-directory: test/compatibility
+        run: |
+          vendor/bin/pest --configuration pest.phpunit.xml --parallel --processes=2 --log-junit "$RUNNER_TEMP/pest-junit.xml"
+          test -s "$RUNNER_TEMP/pest-junit.xml"
+          grep -q '<testsuite' "$RUNNER_TEMP/pest-junit.xml"

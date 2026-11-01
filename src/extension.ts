@@ -13,6 +13,7 @@ import { buildGroupPickerOptions } from './groupPicker';
 import { autoDetectConfigurationFile, autoDetectPhpUnit, resolveInvocation } from './invoke';
 import { renderRemoteReportTransferCommand } from './remoteReports';
 import { parseRuntimeTestListing, reconcileRuntimeTestListing } from './runtimeDiscovery';
+import { createTestInsightChoices, type TestInsightChoice } from './runInsights';
 import {
   appendRunHistory,
   findFlakyCandidates,
@@ -132,6 +133,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const debugProfile = controller.createRunProfile('Debug Tests', vscode.TestRunProfileKind.Debug, runTests, true);
   const coverageProfile = controller.createRunProfile('Coverage Tests', vscode.TestRunProfileKind.Coverage, runTests, true);
   coverageProfile.loadDetailedCoverage = async (_run, fileCoverage) => coverageDetails.get(fileCoverage) ?? [];
+  coverageProfile.loadDetailedCoverageForTest = async (_run, fileCoverage, testItem) =>
+    fileCoverage.includesTests?.length === 1 && fileCoverage.includesTests[0] === testItem
+      ? coverageDetails.get(fileCoverage) ?? []
+      : [];
 
   context.subscriptions.push(
     runProfile,
@@ -1056,7 +1061,8 @@ async function runItem(
   run.started(item);
 
   try {
-    const result = await executePhpUnit(data, token, kind, run, parallel);
+    const coverageTest = data.kind === 'method' || data.kind === 'dataset' ? item : undefined;
+    const result = await executePhpUnit(data, token, kind, run, parallel, coverageTest ? [coverageTest] : []);
     const folder = vscode.workspace.getWorkspaceFolder(data.uri);
     const outputPreset = getOutputPreset(folder);
     const outputFormat = getOutputFormat(folder);
@@ -1396,6 +1402,7 @@ async function executePhpUnit(
   kind: vscode.TestRunProfileKind,
   run: vscode.TestRun,
   parallel = false,
+  coverageTests: vscode.TestItem[] = [],
 ): Promise<{
   output: string;
   exitCode: number;
@@ -1554,7 +1561,7 @@ async function executePhpUnit(
       }
     }
     if (coverageCloverPath) {
-      await applyCloverCoverage(run, coverageCloverPath, invocation.mappings ?? [], remoteExecution);
+      await applyCloverCoverage(run, coverageCloverPath, invocation.mappings ?? [], remoteExecution, coverageTests);
     }
     return {
       ...result,
@@ -1584,6 +1591,8 @@ async function recordRunHistory(folder: vscode.WorkspaceFolder, cases: JUnitTest
       label: `${testCase.className}::${testCase.name}`,
       outcome: testCase.status,
       durationMs: testCase.timeSeconds * 1000,
+      ...(testCase.file ? { filePath: resolvePath(folder.uri.fsPath, testCase.file) } : {}),
+      ...(testCase.line ? { line: testCase.line } : {}),
       completed: true,
       reported: true,
     })),
@@ -1594,6 +1603,7 @@ async function recordRunHistory(folder: vscode.WorkspaceFolder, cases: JUnitTest
 function showTestInsights(): void {
   outputChannel.clear();
   const folders = vscode.workspace.workspaceFolders ?? [];
+  const choices: TestInsightChoice[] = [];
   let hasHistory = false;
   for (const folder of folders) {
     const key = `phpunitRunner.runHistory:${folder.uri.toString()}`;
@@ -1603,6 +1613,7 @@ function showTestInsights(): void {
     }
 
     hasHistory = true;
+    choices.push(...createTestInsightChoices(history, folder.name));
     outputChannel.appendLine(folder.name);
     outputChannel.appendLine('Slowest tests:');
     const slowest = getSlowestTests(history, 10);
@@ -1630,6 +1641,39 @@ function showTestInsights(): void {
     outputChannel.appendLine('No completed, reported test runs are available yet.');
   }
   outputChannel.show(true);
+
+  if (choices.length > 0) {
+    const picker = vscode.window.createQuickPick<TestInsightChoice>();
+    picker.title = 'PHPUnit Test Insights';
+    picker.placeholder = 'Select a slow or possibly flaky test to open its source';
+    picker.items = choices;
+    picker.onDidAccept(() => {
+      const selected = picker.selectedItems[0];
+      picker.hide();
+      if (selected?.filePath) {
+        void openInsightLocation(selected);
+      }
+    });
+    picker.onDidHide(() => picker.dispose());
+    picker.show();
+  }
+}
+
+async function openInsightLocation(choice: TestInsightChoice): Promise<void> {
+  if (!choice.filePath) {
+    return;
+  }
+  try {
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(choice.filePath));
+    const editor = await vscode.window.showTextDocument(document, { preview: true });
+    if (choice.line && choice.line > 0) {
+      const position = new vscode.Position(choice.line - 1, 0);
+      editor.selection = new vscode.Selection(position, position);
+      editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
+  } catch (error) {
+    void vscode.window.showWarningMessage(`Could not open test source: ${String(error)}`);
+  }
 }
 
 async function executeReportTransfer(
@@ -1724,6 +1768,7 @@ async function applyCloverCoverage(
   cloverPath: string,
   mappings: PathMapping[],
   remoteExecution: boolean,
+  coverageTests: vscode.TestItem[] = [],
 ): Promise<void> {
   const report = await readCloverReport(cloverPath, mappings);
   if (!report.available) {
@@ -1737,16 +1782,31 @@ async function applyCloverCoverage(
 
   for (const file of report.files) {
     const uri = vscode.Uri.file(file.path);
-    const details = file.details.map((line) => new vscode.StatementCoverage(
-      line.count,
-      new vscode.Position(Math.max(line.line - 1, 0), 0),
-    ));
-    const coverage = details.length > 0
-      ? vscode.FileCoverage.fromDetails(uri, details)
-      : new vscode.FileCoverage(
-        uri,
-        new vscode.TestCoverageCount(file.coveredStatements, file.statements),
-      );
+    const details: vscode.FileCoverageDetail[] = [
+      ...file.details.map((line) => new vscode.StatementCoverage(
+        line.count,
+        new vscode.Position(Math.max(line.line - 1, 0), 0),
+      )),
+      ...file.declarations.map((declaration) => new vscode.DeclarationCoverage(
+        declaration.name,
+        declaration.count,
+        new vscode.Position(Math.max(declaration.line - 1, 0), 0),
+      )),
+    ];
+    const hasExecutedCoverage = file.coveredStatements > 0 || file.declarations.some((declaration) => declaration.count > 0);
+    const includesTests = coverageTests.length === 1 && hasExecutedCoverage ? coverageTests : undefined;
+    const methodTotal = file.methods ?? file.declarations.length;
+    const coveredMethodTotal = file.coveredMethods ?? file.declarations.filter((declaration) => declaration.count > 0).length;
+    const declarationCoverage = file.methods !== undefined || file.coveredMethods !== undefined || file.declarations.length > 0
+      ? new vscode.TestCoverageCount(coveredMethodTotal, methodTotal)
+      : undefined;
+    const coverage = new vscode.FileCoverage(
+      uri,
+      new vscode.TestCoverageCount(file.coveredStatements, file.statements),
+      undefined,
+      declarationCoverage,
+      includesTests,
+    );
     coverageDetails.set(coverage, details);
     run.addCoverage(coverage);
   }

@@ -8,8 +8,8 @@ import { mapCloverCoverage, readCloverReport } from './coverage';
 const xml = `<coverage><file name="/remote/app/src/Thing.php">
   <line num="1" type="stmt" count="3"/>
   <line num="2" type="stmt" count="0"/>
-  <line num="3" type="method" count="1"/>
-  <metrics statements="2" coveredstatements="1"/>
+  <line num="3" type="method" count="1" signature="run(): void"/>
+  <metrics statements="2" coveredstatements="1" methods="1" coveredmethods="1"/>
 </file></coverage>`;
 
 describe('Clover coverage mapping', () => {
@@ -19,7 +19,21 @@ describe('Clover coverage mapping', () => {
       statements: 2,
       coveredStatements: 1,
       details: [{ line: 1, count: 3 }, { line: 2, count: 0 }],
+      declarations: [{ name: 'run', line: 3, count: 1 }],
+      methods: 1,
+      coveredMethods: 1,
     }]);
+  });
+
+  it('keeps statement details when Clover has no declaration data', () => {
+    const [file] = mapCloverCoverage(`<coverage><file name="/app/OnlyStatements.php">
+      <line num="7" type="stmt" count="2"/>
+      <metrics statements="1" coveredstatements="1"/>
+    </file></coverage>`, []);
+
+    assert.deepEqual(file.details, [{ line: 7, count: 2 }]);
+    assert.deepEqual(file.declarations, []);
+    assert.equal(file.methods, undefined);
   });
 
   it('does not apply a remote path mapping to a sibling path with the same prefix', () => {
