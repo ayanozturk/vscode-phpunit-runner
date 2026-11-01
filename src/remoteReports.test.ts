@@ -80,6 +80,25 @@ describe('remote report transfer command', () => {
     );
   });
 
+  it('rejects empty JUnit path values rather than rendering a transfer that cannot retrieve results', () => {
+    assert.throws(
+      () => renderRemoteReportTransferCommand('scp ${remoteJunitReport} ${localJunitReport}', {
+        workspaceFolder: '/workspace',
+        remoteJunitReport: '  ',
+        localJunitReport: '/workspace/.phpunit-runner/junit.xml',
+      }),
+      /requires non-empty remote and local JUnit report paths/,
+    );
+    assert.throws(
+      () => renderRemoteReportTransferCommand('scp ${remoteJunitReport} ${localJunitReport}', {
+        workspaceFolder: '/workspace',
+        remoteJunitReport: '/remote/junit.xml',
+        localJunitReport: '',
+      }),
+      /requires non-empty remote and local JUnit report paths/,
+    );
+  });
+
   it('rejects unrecognized placeholders rather than executing an incomplete command', () => {
     assert.throws(
       () => renderRemoteReportTransferCommand('scp ${remoteJunitReport} ${localJunitReport} ${missing}', {

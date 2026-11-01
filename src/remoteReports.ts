@@ -46,6 +46,11 @@ export function renderRemoteReportTransferCommand(
       'phpunitRunner.remote.reportTransferCommand must use ${remoteJunitReport} and ${localJunitReport}.',
     );
   }
+  if (!paths.remoteJunitReport.trim() || !paths.localJunitReport.trim()) {
+    throw new Error(
+      'phpunitRunner.remote.reportTransferCommand requires non-empty remote and local JUnit report paths.',
+    );
+  }
 
   const values = Object.fromEntries(
     Object.entries({

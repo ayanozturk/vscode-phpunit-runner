@@ -9,6 +9,14 @@ export type TestInsightChoice = {
   line?: number;
 };
 
+/** A report location is runnable when it can be mapped to a source range. */
+export function canRunTestInsight(choice: TestInsightChoice): boolean {
+  return Boolean(choice.filePath?.trim())
+    && choice.line !== undefined
+    && Number.isInteger(choice.line)
+    && choice.line > 0;
+}
+
 /** Builds navigable choices for the recent performance and reliability insights. */
 export function createTestInsightChoices(
   history: readonly RunHistoryRun[],

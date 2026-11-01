@@ -21,7 +21,7 @@ import { buildGroupPickerOptions } from './groupPicker';
 import { autoDetectConfigurationFile, autoDetectPhpUnit, resolveInvocation } from './invoke';
 import { executeRemoteReportTransfer, renderRemoteReportTransferCommand } from './remoteReports';
 import { parseRuntimeTestListing, reconcileRuntimeTestListing } from './runtimeDiscovery';
-import { createTestInsightChoices, type TestInsightChoice } from './runInsights';
+import { canRunTestInsight, createTestInsightChoices, type TestInsightChoice } from './runInsights';
 import { runProcess } from './processRunner';
 import { remapJUnitCases } from './junitMapping';
 import { commandAvailable, firstCommandToken } from './commandAvailability';
@@ -49,6 +49,7 @@ import {
   type TestOutputFormat,
 } from './outputFormatter';
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS, isPhpScript, resolvePath } from './paths';
+import { findNarrowestContainingItem } from './cursorTestTarget';
 import { parsePhpUnitXml, resolveDiscoveryGlobs, type PhpUnitSuite } from './phpunitXml';
 import { findSuiteForFile as matchSuiteForFile } from './suiteMatcher';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
@@ -885,14 +886,12 @@ async function runTestAtCursor(): Promise<void> {
 }
 
 function findNarrowestTestItem(item: vscode.TestItem, position: vscode.Position): vscode.TestItem | undefined {
-  for (const child of collectTestItems(item.children)) {
-    if (child.range?.contains(position)) {
-      const nested = findNarrowestTestItem(child, position);
-      return nested ?? child;
-    }
-  }
-
-  return item.range?.contains(position) ? item : undefined;
+  return findNarrowestContainingItem(
+    item,
+    position,
+    (candidate) => collectTestItems(candidate.children),
+    (candidate, targetPosition) => candidate.range?.contains(targetPosition) ?? false,
+  );
 }
 
 async function runTests(
@@ -1657,12 +1656,19 @@ function showTestInsights(): void {
   outputChannel.show(true);
 
   if (choices.length > 0) {
-    const picker = vscode.window.createQuickPick<TestInsightChoice>();
+    const runInsightButton: vscode.QuickInputButton = {
+      iconPath: new vscode.ThemeIcon('play'),
+      tooltip: 'Run this test',
+    };
+    const picker = vscode.window.createQuickPick<TestInsightChoice & { buttons?: vscode.QuickInputButton[] }>();
     picker.title = 'PHPUnit Test Insights';
     picker.placeholder = 'Select a slow or possibly flaky test to open its source';
     picker.matchOnDescription = true;
     picker.matchOnDetail = true;
-    picker.items = choices;
+    picker.items = choices.map((choice) => ({
+      ...choice,
+      ...(canRunTestInsight(choice) ? { buttons: [runInsightButton] } : {}),
+    }));
     picker.onDidAccept(() => {
       const selected = picker.selectedItems[0];
       picker.hide();
@@ -1670,9 +1676,36 @@ function showTestInsights(): void {
         void openInsightLocation(selected);
       }
     });
+    picker.onDidTriggerItemButton(({ item, button }) => {
+      if (button !== runInsightButton) {
+        return;
+      }
+      picker.hide();
+      void runInsightTest(item);
+    });
     picker.onDidHide(() => picker.dispose());
     picker.show();
   }
+}
+
+async function runInsightTest(choice: TestInsightChoice): Promise<void> {
+  if (!choice.filePath || !choice.line || choice.line < 1) {
+    return;
+  }
+
+  const uri = vscode.Uri.file(choice.filePath);
+  await refreshUri(uri);
+  const fileItem = findFileItem(uri);
+  const target = fileItem
+    ? findNarrowestTestItem(fileItem, new vscode.Position(choice.line - 1, 0))
+    : undefined;
+  if (!target || (itemData.get(target)?.kind !== 'method' && itemData.get(target)?.kind !== 'dataset')) {
+    void vscode.window.showWarningMessage('Could not map this insight to a discovered test. Open its source to choose a test manually.');
+    await openInsightLocation(choice);
+    return;
+  }
+
+  await runTests(new vscode.TestRunRequest([target]), new vscode.CancellationTokenSource().token);
 }
 
 async function clearTestInsightsHistory(): Promise<void> {

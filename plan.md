@@ -21,7 +21,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Keep filesystem, process, and VS Code effects at module edges.
 - Add characterization tests before moving behavior; preserve test identity, cancellation, workspace ownership, and report fallback behavior.
 
-**Recent progress:** PHPUnit suite ownership matching is now a pure tested module and honors configured directory filename prefixes and suffixes.
+**Recent progress:** PHPUnit suite ownership matching and cursor-to-test selection are now pure tested modules. Suite matching honors configured directory filename prefixes and suffixes.
 
 **Complete when:** focused modules have stable interfaces and tests, orchestration is smaller, and behavior remains unchanged except for covered compatibility fixes.
 
@@ -33,7 +33,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Preserve exact test identities and source paths; never infer per-test coverage from aggregate data.
 - Keep unsupported or unavailable fields visibly unavailable rather than reporting guessed results.
 
-**Recent progress:** repeated PHPUnit per-test coverage records for one test and source file now merge and normalize line ranges instead of replacing earlier ranges.
+**Recent progress:** repeated PHPUnit per-test coverage records for one test and source file merge and normalize line ranges. Remote report transfer rejects blank required JUnit paths before building a command.
 
 **Complete when:** supported paths map exact results and unsupported or incomplete paths produce a clear, unverified or unavailable outcome.
 
@@ -45,7 +45,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Assert result counts; compare repeated measurements without machine-dependent CI thresholds.
 - Retain an optimization only when it improves measured workloads without changing results.
 
-**Current evidence:** recent repeated runs were stable for discovery and history. No-file Pest mapping has the clearest large-workload cost; prior optimization experiments regressed or fell within noise, so no change was retained.
+**Current evidence:** repeated 10k no-file Pest lookups took 344–351 ms; an inline-loop experiment took 347–371 ms and was reverted. File-backed Pest lookup was 13.9–14.2 ms. No repeatable improvement justified retaining a change.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
 
@@ -59,17 +59,18 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 
 **Complete when:** supported combinations pass compile, unit, extension-host, package, and dependency-audit checks, and important fallback paths have regression coverage.
 
-### P5 — Make AI test authoring predictable
+### P5 — Make test insights and AI authoring actionable
 
 **Status: In progress**
 
+- Let users run a slow or potentially flaky test directly from its insight when its reported file and line map to a discovered method or data set.
 - Detect Codex CLI, GitHub Copilot CLI, and Claude Code only; keep generation user-initiated and context sharing consent-based.
 - Make destination suggestions follow the project's Unit/Feature layout and source folders; never silently overwrite an existing test.
 - Keep generated changes reviewable and require explicit confirmation before writing a PHP file under the workspace `tests/` directory.
 
-**Recent progress:** when the suggested filename already exists, the save dialog now selects the next unused conventional `Name2Test.php`, `Name3Test.php`, and so on.
+**Recent progress:** insight items with a usable reported source range now have a Run button. When the suggested AI test filename already exists, the save dialog selects the next unused conventional `Name2Test.php`, `Name3Test.php`, and so on.
 
-**Complete when:** tool detection, context consent, generated output review, destination selection, and explicit save behavior are covered by tests and documented clearly.
+**Complete when:** insight run actions preserve exact discovered scope, and AI tool detection, context consent, output review, destination selection, and explicit save behavior are covered by tests and documented clearly.
 
 ## Support boundaries and acceptance criteria
 

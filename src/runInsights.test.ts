@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { createTestInsightChoices } from './runInsights';
+import { canRunTestInsight, createTestInsightChoices } from './runInsights';
 import type { RunHistoryRun } from './runHistory';
 
 describe('createTestInsightChoices', () => {
@@ -91,5 +91,14 @@ describe('createTestInsightChoices', () => {
     const [choice] = createTestInsightChoices(history, 'workspace');
     assert.match(choice.detail, /tests\/ExampleTest\.php/);
     assert.doesNotMatch(choice.detail, /:0/);
+  });
+});
+
+describe('canRunTestInsight', () => {
+  it('requires a source file and positive integer line to map a test action', () => {
+    assert.equal(canRunTestInsight({ id: 'slow:a', label: 'Slow', description: '', detail: '', filePath: '/tests/A.php', line: 12 }), true);
+    assert.equal(canRunTestInsight({ id: 'slow:b', label: 'Slow', description: '', detail: '', filePath: '/tests/B.php' }), false);
+    assert.equal(canRunTestInsight({ id: 'slow:c', label: 'Slow', description: '', detail: '', filePath: '/tests/C.php', line: 0 }), false);
+    assert.equal(canRunTestInsight({ id: 'slow:d', label: 'Slow', description: '', detail: '', line: 12 }), false);
   });
 });
