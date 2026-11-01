@@ -289,6 +289,10 @@
         "title": "PHPUnit Runner: Show Test Insights"
       },
       {
+        "command": "phpunitRunner.copyTestInsights",
+        "title": "PHPUnit Runner: Copy Test Insights Report"
+      },
+      {
         "command": "phpunitRunner.runLatestTestProblems",
         "title": "PHPUnit Runner: Run Latest Test Problems"
       },
@@ -344,6 +348,9 @@
         },
         {
           "command": "phpunitRunner.showTestInsights"
+        },
+        {
+          "command": "phpunitRunner.copyTestInsights"
         },
         {
           "command": "phpunitRunner.runLatestTestProblems"

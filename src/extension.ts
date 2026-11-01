@@ -34,6 +34,7 @@ import {
   normalizeInsightLimit,
   type TestInsightChoice,
 } from './runInsights';
+import { formatTestInsightsReport } from './insightReport';
 import { runProcess } from './processRunner';
 import { remapJUnitCases } from './junitMapping';
 import { commandAvailable, firstCommandToken } from './commandAvailability';
@@ -230,6 +231,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     }),
     vscode.commands.registerCommand('phpunitRunner.clearCurrentTestInsightsHistory', async () => {
       await clearCurrentTestInsightsHistory();
+    }),
+    vscode.commands.registerCommand('phpunitRunner.copyTestInsights', async () => {
+      await copyTestInsightsReport();
     }),
     vscode.commands.registerCommand('phpunitRunner.detectAiTools', async () => {
       await showDetectedAiTools(outputChannel);
@@ -1713,6 +1717,24 @@ function showTestInsights(): void {
     });
     picker.onDidHide(() => picker.dispose());
     picker.show();
+  }
+}
+
+async function copyTestInsightsReport(): Promise<void> {
+  const workspaces = (vscode.workspace.workspaceFolders ?? []).map((folder) => ({
+    name: folder.name,
+    limit: normalizeInsightLimit(getConfig(folder).get<number>('insights.limit', 10)),
+    history: extensionContext.workspaceState.get<RunHistoryRun[]>(
+      `phpunitRunner.runHistory:${folder.uri.toString()}`,
+      [],
+    ),
+  }));
+  const report = formatTestInsightsReport(workspaces);
+  try {
+    await vscode.env.clipboard.writeText(report);
+    void vscode.window.setStatusBarMessage('Test insights report copied to clipboard.', 3000);
+  } catch {
+    void vscode.window.showErrorMessage('Could not copy the test insights report.');
   }
 }
 

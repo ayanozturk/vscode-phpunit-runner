@@ -89,6 +89,7 @@ exports.run = async () => {
     assert.ok(commands.has('phpunitRunner.runByGroup'));
     assert.ok(commands.has('phpunitRunner.diagnoseProject'));
     assert.ok(commands.has('phpunitRunner.showTestInsights'));
+    assert.ok(commands.has('phpunitRunner.copyTestInsights'));
     assert.ok(commands.has('phpunitRunner.runLatestTestProblems'));
     assert.ok(commands.has('phpunitRunner.clearTestInsights'));
     assert.ok(commands.has('phpunitRunner.clearCurrentTestInsightsHistory'));

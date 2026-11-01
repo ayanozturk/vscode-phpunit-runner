@@ -27,6 +27,15 @@ describe('JUnit path remapping', () => {
     assert.equal(mapped.message, 'See /remote/application/src/Service.php and prefix/remote/app/file.php');
   });
 
+  it('treats regex metacharacters in mapped roots as literal path characters', () => {
+    const [mapped] = remapJUnitCases([
+      testCase('At /remote/app (test)+[1]/src/Service.php:42 and /remote/app (test)X[1]/src/Service.php'),
+    ], [{ from: '/Users/dev/app (test)+[1]', to: '/remote/app (test)+[1]' }]);
+
+    assert.equal(mapped.message,
+      'At /Users/dev/app (test)+[1]/src/Service.php:42 and /remote/app (test)X[1]/src/Service.php');
+  });
+
   it('matches Windows separators and prefers the longest configured root', () => {
     const [mapped] = remapJUnitCases([
       testCase('Error at C:\\work\\app\\src\\Thing.php:9', 'C:\\work\\app\\tests\\ExampleTest.php'),
