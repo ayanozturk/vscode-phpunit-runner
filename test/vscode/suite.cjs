@@ -91,6 +91,7 @@ exports.run = async () => {
     assert.ok(commands.has('phpunitRunner.showTestInsights'));
     assert.ok(commands.has('phpunitRunner.runLatestTestProblems'));
     assert.ok(commands.has('phpunitRunner.clearTestInsights'));
+    assert.ok(commands.has('phpunitRunner.clearCurrentTestInsightsHistory'));
     assert.ok(commands.has('phpunitRunner.detectAiTools'));
     assert.ok(commands.has('phpunitRunner.generateUnitTests'));
 
@@ -978,6 +979,25 @@ class DynamicDataProviderTest
       vscode.window.createQuickPick = originalCreateQuickPick;
       await fs.writeFile(path.join(workspaceA.uri.fsPath, 'runner.log'), '', 'utf8');
     }
+
+    const betaDocument = await vscode.workspace.openTextDocument(path.join(workspaceB.uri.fsPath, 'tests', 'BetaTest.php'));
+    await vscode.window.showTextDocument(betaDocument);
+    const currentClearPrompts = [];
+    const originalCurrentClearWarning = vscode.window.showWarningMessage;
+    vscode.window.showWarningMessage = async (message, ...args) => {
+      if (String(message).includes('workspace-b')) {
+        currentClearPrompts.push(String(message));
+        return 'Clear History';
+      }
+      return originalCurrentClearWarning.call(vscode.window, message, ...args);
+    };
+    await vscode.commands.executeCommand('phpunitRunner.clearCurrentTestInsightsHistory');
+    vscode.window.showWarningMessage = originalCurrentClearWarning;
+    assert.deepEqual(currentClearPrompts, ['Clear test insight history for "workspace-b"?']);
+    diagnosticOutput.length = 0;
+    await vscode.commands.executeCommand('phpunitRunner.showTestInsights');
+    assert.ok(diagnosticOutput.includes('workspace-a'), 'clearing one folder preserves other workspace history');
+    assert.ok(!diagnosticOutput.includes('workspace-b'), 'clearing the active folder removes only its history');
 
     const clearHistoryPrompts = [];
     const originalShowWarningMessage = vscode.window.showWarningMessage;

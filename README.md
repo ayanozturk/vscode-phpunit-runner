@@ -90,7 +90,7 @@ Core settings:
 - `phpunitRunner.debuggerConfig`
 - `phpunitRunner.xdebugPort` (set to `0` to choose an available port automatically)
 
-Run **PHPUnit Runner: Show Test Insights** from the Command Palette to see the slowest reported test cases, possible flaky candidates, and the latest failed or errored outcome for each test. Set `phpunitRunner.insights.limit` (1–100, default 10) to change how many entries appear for each insight type. Failure entries include a short first-line message when PHPUnit provides one. Flaky entries show the recent pass/fail sequence, newest first. Select an item to open its reported file and line; use its Run button to execute the matching discovered test when the report identity maps to one, or its Copy button to copy the summary and full source location. **PHPUnit Runner: Run Latest Test Problems** reruns the mapped failed or errored tests from each workspace folder. History stays in VS Code workspace state, keeps up to 100 runs per workspace, and only includes completed cases from readable JUnit reports. **PHPUnit Runner: Clear Test Insights History** asks you to confirm before clearing history for every folder in the current workspace.
+Run **PHPUnit Runner: Show Test Insights** from the Command Palette to see the slowest reported test cases, possible flaky candidates, and the latest failed or errored outcome for each test. Set `phpunitRunner.insights.limit` (1–100, default 10) to change how many entries appear for each insight type. Failure entries include a short first-line message when PHPUnit provides one. Flaky entries show the recent pass/fail sequence, newest first. Select an item to open its reported file and line; use its Run button to execute the matching discovered test when the report identity maps to one, or its Copy button to copy the summary and full source location. **PHPUnit Runner: Run Latest Test Problems** reruns the mapped failed or errored tests from each workspace folder. History stays in VS Code workspace state, keeps up to 100 runs per workspace, and only includes completed cases from readable JUnit reports. **PHPUnit Runner: Clear Current Workspace Test Insights** clears only the folder containing the active editor after confirmation. **PHPUnit Runner: Clear Test Insights History** asks you to confirm before clearing history for every folder in the current workspace.
 
 Docker settings:
 
@@ -254,6 +254,7 @@ Large suites can contain thousands of individual results. Workspace and folder s
 - `PHPUnit Runner: Run By Group`
 - `PHPUnit Runner: Show Test Insights`
 - `PHPUnit Runner: Run Latest Test Problems`
+- `PHPUnit Runner: Clear Current Workspace Test Insights`
 - `PHPUnit Runner: Show Output`
 
 ## Repository

@@ -302,6 +302,17 @@ describe('extractGeneratedPhpTest', () => {
     assert.throws(() => extractGeneratedPhpTest('The test is ready.'), /did not contain a complete PHP unit-test file/);
     assert.throws(() => extractGeneratedPhpTest('<?php class Helper {}'), /did not contain a complete PHP unit-test file/);
   });
+
+  it('does not accept test-looking text inside comments or string literals', () => {
+    assert.throws(
+      () => extractGeneratedPhpTest('<?php\n// function testNotReal() {}\nfinal class Helper {}'),
+      /did not contain a complete PHP unit-test file/,
+    );
+    assert.throws(
+      () => extractGeneratedPhpTest('<?php\n$example = "test(\\\"looks real\\\")";\nfinal class Helper {}'),
+      /did not contain a complete PHP unit-test file/,
+    );
+  });
 });
 
 describe('isTestDestination', () => {

@@ -228,6 +228,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     vscode.commands.registerCommand('phpunitRunner.clearTestInsights', async () => {
       await clearTestInsightsHistory();
     }),
+    vscode.commands.registerCommand('phpunitRunner.clearCurrentTestInsightsHistory', async () => {
+      await clearCurrentTestInsightsHistory();
+    }),
     vscode.commands.registerCommand('phpunitRunner.detectAiTools', async () => {
       await showDetectedAiTools(outputChannel);
     }),
@@ -1821,6 +1824,27 @@ async function clearTestInsightsHistory(): Promise<void> {
   void vscode.window.showInformationMessage(
     `Cleared test insight history for ${folders.length} workspace${folders.length === 1 ? '' : 's'}.`,
   );
+}
+
+async function clearCurrentTestInsightsHistory(): Promise<void> {
+  const activeUri = vscode.window.activeTextEditor?.document.uri;
+  const folder = activeUri ? vscode.workspace.getWorkspaceFolder(activeUri) : undefined;
+  if (!folder) {
+    void vscode.window.showInformationMessage('Open a file in the workspace folder whose test insight history you want to clear.');
+    return;
+  }
+
+  const confirmation = await vscode.window.showWarningMessage(
+    `Clear test insight history for "${folder.name}"?`,
+    { modal: true },
+    'Clear History',
+  );
+  if (confirmation !== 'Clear History') {
+    return;
+  }
+
+  await extensionContext.workspaceState.update(`phpunitRunner.runHistory:${folder.uri.toString()}`, []);
+  void vscode.window.showInformationMessage(`Cleared test insight history for "${folder.name}".`);
 }
 
 async function openInsightLocation(choice: TestInsightChoice): Promise<void> {

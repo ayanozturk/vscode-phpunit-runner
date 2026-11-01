@@ -297,6 +297,10 @@
         "title": "PHPUnit Runner: Clear Test Insights History"
       },
       {
+        "command": "phpunitRunner.clearCurrentTestInsightsHistory",
+        "title": "PHPUnit Runner: Clear Current Workspace Test Insights"
+      },
+      {
         "command": "phpunitRunner.detectAiTools",
         "title": "PHPUnit Runner: Detect AI CLI Tools"
       },
@@ -346,6 +350,9 @@
         },
         {
           "command": "phpunitRunner.clearTestInsights"
+        },
+        {
+          "command": "phpunitRunner.clearCurrentTestInsightsHistory"
         },
         {
           "command": "phpunitRunner.detectAiTools"

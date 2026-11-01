@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import * as fs from 'fs/promises';
 import { constants as fsConstants } from 'fs';
 import * as path from 'path';
+import { maskPhpNonCode } from './phpSourceMask';
 
 export type AiCliToolId = 'codex' | 'copilot' | 'claude';
 
@@ -308,5 +309,5 @@ function firstLine(value: string): string | undefined {
 
 function looksLikePhpTest(value: string): boolean {
   return /^\s*<\?php\b/i.test(value)
-    && /(?:function\s+test[A-Za-z0-9_]*\s*\(|#\[\s*Test\b|\b(?:it|test|describe)\s*\()/i.test(value);
+    && /(?:function\s+test[A-Za-z0-9_]*\s*\(|#\[\s*Test\b|\b(?:it|test|describe)\s*\()/i.test(maskPhpNonCode(value));
 }
