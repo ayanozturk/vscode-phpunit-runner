@@ -16,6 +16,7 @@ import { parseRuntimeTestListing, reconcileRuntimeTestListing } from './runtimeD
 import { createTestInsightChoices, type TestInsightChoice } from './runInsights';
 import { runProcess } from './processRunner';
 import { remapJUnitCases } from './junitMapping';
+import { commandAvailable, firstCommandToken } from './commandAvailability';
 import {
   appendRunHistory,
   findFlakyCandidates,
@@ -2049,45 +2050,6 @@ async function readFrameworkInfo(root: string): Promise<{ pestDeclared: boolean;
   }
 
   return { pestDeclared, versions };
-}
-
-function firstCommandToken(command: string): string {
-  const match = command.trim().match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/);
-  return match?.[1] ?? match?.[2] ?? match?.[3] ?? '';
-}
-
-async function commandAvailable(command: string, cwd: string): Promise<boolean> {
-  if (!command) {
-    return false;
-  }
-
-  const hasPathSeparator = command.includes('/') || command.includes('\\');
-  if (path.isAbsolute(command) || hasPathSeparator) {
-    const candidate = path.isAbsolute(command) ? command : path.resolve(cwd, command);
-    return pathIsExecutable(candidate);
-  }
-
-  const pathEntries = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
-  const extensions = process.platform === 'win32'
-    ? ['', ...(process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').filter(Boolean)]
-    : [''];
-  for (const entry of pathEntries) {
-    for (const extension of extensions) {
-      if (await pathIsExecutable(path.join(entry, `${command}${extension}`))) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-async function pathIsExecutable(targetPath: string): Promise<boolean> {
-  try {
-    await fs.access(targetPath, fsConstants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {

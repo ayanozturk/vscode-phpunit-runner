@@ -31,6 +31,7 @@ describe('parseCloverXml', () => {
       <class name="Example"><metrics methods="3" coveredmethods="2"/></class>
       <line num="10" type="method" count="4" signature="find(string $value): bool"/>
       <line num="22" type="method" name="reset" count="0"/>
+      <line num="25" type="method" count="2" signature="&amp;findByReference()"/>
       <line num="31" type="method" count="1" signature="invalid signature"/>
       <line num="11" type="stmt" count="1"/>
     </file></coverage>`);
@@ -38,6 +39,7 @@ describe('parseCloverXml', () => {
     assert.deepEqual(file.declarations, [
       { name: 'find', line: 10, count: 4 },
       { name: 'reset', line: 22, count: 0 },
+      { name: 'findByReference', line: 25, count: 2 },
     ]);
     assert.equal(file.methods, 3);
     assert.equal(file.coveredMethods, 2);

@@ -26,31 +26,41 @@ function benchmark(itemCount: number, iterations: number): void {
   const buildStart = performance.now();
   const index = indexTestCases(cases, '/benchmark');
   const buildMs = performance.now() - buildStart;
+  const methodQueries = cases.map((_, indexInCases) => {
+    const file = Math.floor(indexInCases / 50);
+    return {
+      className: `Benchmark\\Suite${String(file).padStart(4, '0')}\\GeneratedTest`,
+      methodName: `testCase${String(indexInCases % 50).padStart(2, '0')}`,
+    };
+  });
+  const pestQueries = cases.map((_, indexInCases) => {
+    const file = Math.floor(indexInCases / 50);
+    return {
+      testName: `testCase${String(indexInCases % 50).padStart(2, '0')}`,
+      filePath: `/benchmark/tests/Suite${String(file).padStart(4, '0')}/GeneratedTest.php`,
+    };
+  });
   const methodDurations: number[] = [];
   const pestDurations: number[] = [];
+  let matchedMethodCases = 0;
+  let matchedPestCases = 0;
 
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     let start = performance.now();
-    for (let indexInCases = 0; indexInCases < itemCount; indexInCases += 1) {
-      const file = Math.floor(indexInCases / 50);
-      findIndexedMethodCases(
-        index,
-        `Benchmark\\Suite${String(file).padStart(4, '0')}\\GeneratedTest`,
-        `testCase${String(indexInCases % 50).padStart(2, '0')}`,
-      );
+    for (const query of methodQueries) {
+      matchedMethodCases += findIndexedMethodCases(index, query.className, query.methodName).length;
     }
     methodDurations.push(performance.now() - start);
 
     start = performance.now();
-    for (let indexInCases = 0; indexInCases < itemCount; indexInCases += 1) {
-      const file = Math.floor(indexInCases / 50);
-      findIndexedPestCases(
-        index,
-        `testCase${String(indexInCases % 50).padStart(2, '0')}`,
-        `/benchmark/tests/Suite${String(file).padStart(4, '0')}/GeneratedTest.php`,
-      );
+    for (const query of pestQueries) {
+      matchedPestCases += findIndexedPestCases(index, query.testName, query.filePath).length;
     }
     pestDurations.push(performance.now() - start);
+  }
+
+  if (matchedMethodCases !== itemCount * iterations || matchedPestCases !== itemCount * iterations) {
+    throw new Error(`Lookup benchmark mismatch: methods=${matchedMethodCases}, Pest=${matchedPestCases}`);
   }
 
   collectGarbage?.();
@@ -79,18 +89,23 @@ function benchmarkPestWithoutFileMetadata(itemCount: number, iterations: number)
   const buildStart = performance.now();
   const index = indexTestCases(cases, '/benchmark');
   const buildMs = performance.now() - buildStart;
+  const queries = cases.map((testCase) => ({
+    testName: testCase.name.split(' should stay discoverable')[0],
+    filePath: '/benchmark/tests/GeneratedPestTest.php',
+  }));
   const lookupDurations: number[] = [];
+  let matchedCases = 0;
 
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     const start = performance.now();
-    for (let caseIndex = 0; caseIndex < itemCount; caseIndex += 1) {
-      findIndexedPestCases(
-        index,
-        `Generated Pest behavior ${String(caseIndex).padStart(5, '0')}`,
-        '/benchmark/tests/GeneratedPestTest.php',
-      );
+    for (const query of queries) {
+      matchedCases += findIndexedPestCases(index, query.testName, query.filePath).length;
     }
     lookupDurations.push(performance.now() - start);
+  }
+
+  if (matchedCases !== itemCount * iterations) {
+    throw new Error(`Expected ${itemCount * iterations} no-file Pest matches, found ${matchedCases}`);
   }
 
   console.log(JSON.stringify({

@@ -99,7 +99,7 @@ function getDeclarationName(attributes: string): string {
   // leading identifier in a `signature` attribute. Keep only signatures whose
   // leading identifier is explicit; do not guess from source lines or paths.
   const signature = decodeXml(readAttribute(attributes, 'signature')).trim();
-  return signature.match(/^([\\A-Za-z_][\\A-Za-z0-9_]*)\s*\(/)?.[1] ?? '';
+  return signature.match(/^&?\s*([\\A-Za-z_][\\A-Za-z0-9_]*)\s*\(/)?.[1] ?? '';
 }
 
 function readNonnegativeIntegerAttribute(source: string, name: string): number | undefined {

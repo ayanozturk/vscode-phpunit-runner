@@ -35,13 +35,15 @@ export async function detectParallelRunner(options: {
     return 'pest';
   }
 
+  // On Windows Composer installs the Pest shim as `.bat`; keep the same
+  // Pest-first selection as the extensionless executable path above.
+  if (!configuredRunner && composerDeclaresPest && await exists(path.join(options.workspacePath, 'vendor', 'bin', 'pest.bat'))) {
+    return 'pest';
+  }
+
   if (await exists(path.join(options.workspacePath, 'vendor', 'bin', 'paratest'))
     || await exists(path.join(options.workspacePath, 'vendor', 'bin', 'paratest.bat'))) {
     return 'paratest';
-  }
-
-  if (!configuredRunner && composerDeclaresPest && await exists(path.join(options.workspacePath, 'vendor', 'bin', 'pest.bat'))) {
-    return 'pest';
   }
   return undefined;
 }

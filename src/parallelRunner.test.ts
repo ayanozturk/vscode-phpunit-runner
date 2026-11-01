@@ -18,6 +18,20 @@ describe('parallel runner detection', () => {
     }
   });
 
+  it('prefers a declared Windows Pest shim over ParaTest when both are installed', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit parallel pest windows '));
+    try {
+      await fs.mkdir(path.join(workspace, 'vendor', 'bin'), { recursive: true });
+      await fs.writeFile(path.join(workspace, 'composer.json'), '{"require":{"pestphp/pest":"^5"}}');
+      await fs.writeFile(path.join(workspace, 'vendor', 'bin', 'pest.bat'), '');
+      await fs.writeFile(path.join(workspace, 'vendor', 'bin', 'paratest'), '');
+
+      assert.equal(await detectParallelRunner({ workspacePath: workspace, configuredRunner: '' }), 'pest');
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it('detects ParaTest beside an explicitly configured PHPUnit runner', async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit parallel paratest '));
     try {
