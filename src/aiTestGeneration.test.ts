@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, it } from 'node:test';
 import {
+  buildAiContextConsentPrompt,
   buildAiTestGenerationInvocation,
   buildTestGenerationPrompt,
   detectAiCliTools,
@@ -17,6 +18,26 @@ import {
 } from './aiTestGeneration';
 
 const temporaryDirectories: string[] = [];
+
+describe('buildAiContextConsentPrompt', () => {
+  it('identifies selected code, its source path, and possible project context', () => {
+    const prompt = buildAiContextConsentPrompt('Codex CLI', 'src/Service/User.php', 'selection');
+
+    assert.match(prompt.message, /selected PHP code/);
+    assert.match(prompt.message, /src\/Service\/User\.php/);
+    assert.match(prompt.message, /Codex CLI/);
+    assert.match(prompt.detail, /Composer test settings/);
+    assert.match(prompt.detail, /PHPUnit configuration excerpt/);
+    assert.match(prompt.detail, /existing test example/);
+  });
+
+  it('makes clear that the whole file is sent when there is no selection', () => {
+    const prompt = buildAiContextConsentPrompt('Claude Code', 'src/Service/User.php', 'file');
+
+    assert.match(prompt.message, /entire PHP file/);
+    assert.match(prompt.message, /src\/Service\/User\.php/);
+  });
+});
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((directory) => (

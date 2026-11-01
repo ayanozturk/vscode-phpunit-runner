@@ -156,7 +156,7 @@ describe('JUnit result index', () => {
   });
 
   it('falls back to exact substring matching when common Pest trigrams exceed the posting cap', () => {
-    const cases = Array.from({ length: 300 }, (_, index) => testCase({
+    const cases = Array.from({ length: 1100 }, (_, index) => testCase({
       name: `case ${index} has shared Pest lookup text`,
     }));
     const index = indexTestCases(cases, '/workspace');

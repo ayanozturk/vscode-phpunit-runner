@@ -75,6 +75,13 @@ describe('parseJUnitXml', () => {
     );
   });
 
+  it('extracts source locations when the PHP file extension uses uppercase letters', () => {
+    assert.deepEqual(parseLocationFromMessage('Assertion failed in /workspace/tests/LoginTest.PHP:42:8'), {
+      file: '/workspace/tests/LoginTest.PHP',
+      line: 42,
+    });
+  });
+
   it('extracts relative PHP paths from stack traces without matching path-like prose', () => {
     assert.deepEqual(parseLocationFromMessage('at tests/Feature/Login Test.php:42:17'), {
       file: 'tests/Feature/Login Test.php',

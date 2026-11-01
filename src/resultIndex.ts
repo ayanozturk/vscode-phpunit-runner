@@ -178,7 +178,7 @@ function testCaseNamesMatch(actual: string, requested: string): boolean {
 
 const MIN_PEST_TRIGRAM_CASES = 128;
 const MAX_PEST_TRIGRAM_KEYS = 512;
-const MAX_PEST_TRIGRAM_POSTINGS = 256;
+const MAX_PEST_TRIGRAM_POSTINGS = 1024;
 
 type RankedTrigram = { value: string; hash: number };
 

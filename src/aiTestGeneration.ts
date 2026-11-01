@@ -27,6 +27,21 @@ export type AiGenerationRequest = {
   projectGuidance?: string;
 };
 
+export type AiSourceScope = 'selection' | 'file';
+
+/** Builds the disclosure shown before source and project context are sent to an AI CLI. */
+export function buildAiContextConsentPrompt(
+  toolLabel: string,
+  sourcePath: string,
+  sourceScope: AiSourceScope,
+): { message: string; detail: string } {
+  const sourceDescription = sourceScope === 'selection' ? 'the selected PHP code' : 'the entire PHP file';
+  return {
+    message: `Send ${sourceDescription} from “${sourcePath}” and project test context to ${toolLabel}?`,
+    detail: 'Project context may include Composer test settings, a PHPUnit configuration excerpt, and one existing test example when available. The selected local CLI may send this context to its configured AI provider. It runs from a temporary folder in read-only or planning mode; Copilot CLI also denies write, shell, and URL tools. You will review a diff before a test file is saved.',
+  };
+}
+
 export type AiTestGenerationInvocation = {
   command: string;
   args: string[];

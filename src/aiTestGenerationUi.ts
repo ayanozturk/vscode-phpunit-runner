@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
+  buildAiContextConsentPrompt,
   buildAiTestGenerationInvocation,
   buildTestGenerationPrompt,
   detectAiCliTools,
@@ -77,11 +78,16 @@ export async function generateUnitTestsWithAi(
 
   const sourcePath = path.relative(workspaceFolder.uri.fsPath, editor.document.uri.fsPath) || path.basename(editor.document.uri.fsPath);
   const context = await buildProjectContext(workspaceFolder, sourcePath);
+  const consentPrompt = buildAiContextConsentPrompt(
+    choice.tool.label,
+    sourcePath,
+    editor.selection.isEmpty ? 'file' : 'selection',
+  );
   const consent = await vscode.window.showWarningMessage(
-    `Send PHP source and test conventions to ${choice.tool.label}?`,
+    consentPrompt.message,
     {
       modal: true,
-      detail: 'The selected local CLI may send this context to its configured AI provider. It runs from a temporary folder in read-only or planning mode; Copilot CLI also denies write, shell, and URL tools. You will review a diff before a test file is saved.',
+      detail: consentPrompt.detail,
     },
     'Continue',
   );

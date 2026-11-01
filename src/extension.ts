@@ -50,7 +50,6 @@ import { collectMethodTreeItems } from './methodTree';
 import { terminateProcessTree } from './processTree';
 import { expandIncludedScopes } from './testScopes';
 import {
-  aggregateMethodStatus,
   firstFailureLocation,
   firstFailureMessage,
   readJUnitReport,
@@ -69,13 +68,12 @@ import { findSuiteForFile as matchSuiteForFile } from './suiteMatcher';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
 import { resolveOutputFilePath } from './outputLocation';
 import {
-  findIndexedDatasetCases,
   findIndexedFileCases,
   findIndexedMethodCases,
-  findIndexedPestCases,
   indexTestCases,
   type TestCaseIndex,
 } from './resultIndex';
+import { planMethodResult } from './methodResultPlan';
 import { readFailureSourceSnippets as readSourceFailureSnippets } from './sourceSnippets';
 import { makeFolderItemId, makeSuiteItemId, makeWorkspaceItemId } from './testItemIds';
 import {
@@ -1293,18 +1291,21 @@ function applyExecutionResult(
       continue;
     }
 
-    const cases = data.kind === 'dataset' && datasetName
-      ? findIndexedDatasetCases(caseIndex, className, datasetName)
-      : data.pestTestName
-        ? findIndexedPestCases(caseIndex, data.pestTestName, data.uri.fsPath)
-        : findIndexedMethodCases(caseIndex, className, methodName);
+    const plan = planMethodResult(caseIndex, {
+      kind: data.kind,
+      className,
+      methodName,
+      datasetName,
+      pestTestName: data.pestTestName,
+      filePath: data.uri.fsPath,
+    });
+    const { cases } = plan;
     if (!cases || cases.length === 0) {
       run.skipped(methodItem);
       continue;
     }
 
-    const status = aggregateMethodStatus(cases);
-    const duration = Math.round(cases.reduce((sum, testCase) => sum + testCase.timeSeconds, 0) * 1000);
+    const { status, duration } = plan;
     if (status === 'passed') {
       run.passed(methodItem, duration);
       continue;

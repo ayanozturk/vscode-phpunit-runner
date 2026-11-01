@@ -8,7 +8,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 
 - **Discovery and execution:** Static discovery, runtime PHPUnit provider discovery with fallback, incremental refresh, continuous testing, local and Docker execution, custom remote commands and report transfer, and an opt-in parallel profile for supported Pest and ParaTest projects.
 - **Results and insights:** JUnit mapping, Clover coverage, supported exact per-test coverage, bounded local history, slow-test and flaky-candidate views with recent outcome sequences, copyable insight summaries, searchable insight pickers, and configurable output including compact custom failure messages.
-- **AI test authoring:** Detect Codex CLI, GitHub Copilot CLI, and Claude Code only. Generate PHPUnit or Pest tests from selected PHP, confirm before sending context, preview a diff, and require confirmation before saving under `tests/`.
+- **AI test authoring:** Detect Codex CLI, GitHub Copilot CLI, and Claude Code only. Generate PHPUnit or Pest tests from selected PHP; identify the source path, source scope, and possible project context before sending; preview a diff; and require confirmation before saving under `tests/`.
 - **Quality and performance:** Adversarial report and process-output tests, focused pure-module coverage, PHP/framework compatibility jobs, VS Code extension-host checks, and result-count-checked scale benchmarks.
 
 ## Roadmap
@@ -41,7 +41,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Assert result counts; compare repeated measurements without machine-dependent CI thresholds.
 - Retain an optimization only when it improves measured workloads without changing results.
 
-**Current evidence:** Node 22.20.0 on darwin/arm64: 10k discovery median 100.7 ms; 10k result-index build 11.9 ms, method query 2.7 ms, file-backed Pest lookup 13.5 ms, and no-file Pest lookup 346.1 ms. For 1M history records, slowest-test and flaky-candidate queries measured 53.7 ms and 46.9 ms. The completed-window guard previously reduced flaky lookup from 121.4 ms to 47.5 ms in a controlled A/B. Reducing the trigram posting cap regressed no-file lookup to 1,010.8 ms and was discarded.
+**Current evidence:** Node 22.20.0 on darwin/arm64: 10k discovery median 100.7 ms; 10k result-index build 11.9 ms, method query 2.7 ms, and file-backed Pest lookup 13.5 ms. In a separate 10k no-file Pest A/B, raising the trigram posting cap from 256 to 1,024 reduced median lookup from 345.4 ms to 57.8 ms across nine iterations; index build measured 71.1 ms at baseline and 66–68 ms with the new cap. Both configurations returned the expected 90,000 aggregate matches, and fallback scans dropped from 1,418/10,000 to zero. For 1M history records, slowest-test and flaky-candidate queries measured 53.7 ms and 46.9 ms. The completed-window guard previously reduced flaky lookup from 121.4 ms to 47.5 ms in a controlled A/B. A lower posting cap regressed no-file lookup to 1,010.8 ms and was discarded.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
 
@@ -60,7 +60,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 **Status: Active**
 
 - Keep insight reruns mapped to the exact discovered method or data set, and show enough recent outcomes to explain flaky candidates.
-- Verify AI context consent, output review, destination choice, and confirmed save behavior through extension-level tests.
+- Add extension-level coverage for the consent, output review, destination choice, and confirmed save flow; unit tests now verify the source scope and context disclosure.
 
 **Complete when:** insight run actions preserve exact discovered scope, and AI tool detection, context consent, output review, destination selection, and explicit save behavior are covered by tests and documented clearly.
 
