@@ -30,6 +30,7 @@ import {
   canRunTestInsight,
   createTestInsightChoices,
   formatTestInsightForClipboard,
+  getLatestTestProblems,
   type TestInsightChoice,
 } from './runInsights';
 import { runProcess } from './processRunner';
@@ -1636,6 +1637,16 @@ function showTestInsights(): void {
     } else {
       for (const test of flaky) {
         outputChannel.appendLine(`  ${test.label}`);
+      }
+    }
+
+    outputChannel.appendLine('Latest failures and errors:');
+    const problems = getLatestTestProblems(history);
+    if (problems.length === 0) {
+      outputChannel.appendLine('  None detected.');
+    } else {
+      for (const test of problems) {
+        outputChannel.appendLine(`  ${test.outcome}: ${test.label}`);
       }
     }
     outputChannel.appendLine('');

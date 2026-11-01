@@ -903,6 +903,7 @@ class DynamicDataProviderTest
     await vscode.commands.executeCommand('phpunitRunner.showTestInsights');
     assert.ok(diagnosticOutput.includes('Slowest tests:'), 'test insights show persisted durations from reported runs');
     assert.ok(diagnosticOutput.includes('Flaky candidates (pass and fail in the latest 10 outcomes):'));
+    assert.ok(diagnosticOutput.includes('Latest failures and errors:'), 'test insights include each test’s latest reported problem status');
 
     const insightTarget = findMethod('testAlpha');
     await workspaceAConfig.update('environment', { PHPUNIT_RUNNER_MODE: 'insight-location' }, vscode.ConfigurationTarget.WorkspaceFolder);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { canRunTestInsight, createTestInsightChoices, formatTestInsightForClipboard } from './runInsights';
+import { canRunTestInsight, createTestInsightChoices, formatTestInsightForClipboard, getLatestTestProblems } from './runInsights';
 import type { RunHistoryRun } from './runHistory';
 
 describe('createTestInsightChoices', () => {
@@ -116,6 +116,63 @@ describe('canRunTestInsight', () => {
     assert.equal(canRunTestInsight({ id: 'slow:b', label: 'Slow', description: '', detail: '', filePath: '/tests/B.php' }), false);
     assert.equal(canRunTestInsight({ id: 'slow:c', label: 'Slow', description: '', detail: '', filePath: '/tests/C.php', line: 0 }), false);
     assert.equal(canRunTestInsight({ id: 'slow:d', label: 'Slow', description: '', detail: '', line: 12 }), false);
+  });
+});
+
+describe('getLatestTestProblems', () => {
+  it('lists only the latest failed or errored outcome per test and keeps its source location', () => {
+    const history: RunHistoryRun[] = [
+      {
+        id: 'old',
+        completedAt: '2026-01-01T00:00:00.000Z',
+        cases: [
+          { testId: 'recovered', label: 'Test::recovered', outcome: 'failed' },
+          { testId: 'still-failing', label: 'Test::stillFailing', outcome: 'passed' },
+        ],
+      },
+      {
+        id: 'new',
+        completedAt: '2026-01-02T00:00:00.000Z',
+        cases: [
+          {
+            testId: 'recovered', label: 'Test::recovered', outcome: 'passed',
+            filePath: '/workspace/tests/Test.php', line: 20,
+          },
+          {
+            testId: 'still-failing', label: 'Test::stillFailing', outcome: 'failed',
+            filePath: '/workspace/tests/Test.php', line: 30,
+          },
+          { testId: 'errored', label: 'Test::errored', outcome: 'errored' },
+          { testId: 'skipped', label: 'Test::skipped', outcome: 'skipped' },
+        ],
+      },
+    ];
+
+    assert.deepEqual(getLatestTestProblems(history), [
+      {
+        testId: 'still-failing', label: 'Test::stillFailing', outcome: 'failed',
+        completedAt: '2026-01-02T00:00:00.000Z', filePath: '/workspace/tests/Test.php', line: 30,
+      },
+      { testId: 'errored', label: 'Test::errored', outcome: 'errored', completedAt: '2026-01-02T00:00:00.000Z' },
+    ]);
+    const problemChoices = createTestInsightChoices(history, 'workspace').filter(({ id }) => id.startsWith('problem:'));
+    assert.deepEqual(problemChoices.map(({ label }) => label), [
+      'Failed: Test::stillFailing',
+      'Errored: Test::errored',
+    ]);
+    assert.equal(problemChoices[0].testIdentity, 'still-failing');
+    assert.equal(problemChoices[0].line, 30);
+  });
+
+  it('limits results and rejects invalid limits', () => {
+    const history: RunHistoryRun[] = [{
+      id: 'run', completedAt: '2026-01-01T00:00:00.000Z', cases: [
+        { testId: 'one', label: 'Test::one', outcome: 'failed' },
+        { testId: 'two', label: 'Test::two', outcome: 'errored' },
+      ],
+    }];
+    assert.deepEqual(getLatestTestProblems(history, 1).map(({ testId }) => testId), ['one']);
+    assert.deepEqual(getLatestTestProblems(history, 0), []);
   });
 });
 

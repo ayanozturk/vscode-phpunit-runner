@@ -1,4 +1,4 @@
-import { findFlakyCandidates, getSlowestTests, type RunHistoryRun } from './runHistory';
+import { findFlakyCandidates, getSlowestTests, type RunHistoryRun, type RunCaseOutcome } from './runHistory';
 
 export type TestInsightChoice = {
   id: string;
@@ -10,6 +10,54 @@ export type TestInsightChoice = {
   filePath?: string;
   line?: number;
 };
+
+export type LatestTestProblem = {
+  testId: string;
+  label: string;
+  outcome: Extract<RunCaseOutcome, 'failed' | 'errored'>;
+  completedAt: string;
+  filePath?: string;
+  line?: number;
+};
+
+/** Returns the latest failed or errored reported outcome for each test. */
+export function getLatestTestProblems(history: readonly RunHistoryRun[], limit = 10): LatestTestProblem[] {
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return [];
+  }
+
+  const newestFirst = history
+    .map((run, index) => ({ run, index, timestamp: Date.parse(run.completedAt) }))
+    .sort((left, right) => {
+      const bothValid = Number.isFinite(left.timestamp) && Number.isFinite(right.timestamp);
+      return (bothValid ? right.timestamp - left.timestamp : 0) || right.index - left.index;
+    });
+  const seen = new Set<string>();
+  const problems: LatestTestProblem[] = [];
+  for (const { run } of newestFirst) {
+    for (const test of run.cases) {
+      if (seen.has(test.testId)) {
+        continue;
+      }
+      seen.add(test.testId);
+      if (test.outcome !== 'failed' && test.outcome !== 'errored') {
+        continue;
+      }
+      problems.push({
+        testId: test.testId,
+        label: test.label,
+        outcome: test.outcome,
+        completedAt: run.completedAt,
+        ...(test.filePath ? { filePath: test.filePath } : {}),
+        ...(test.line ? { line: test.line } : {}),
+      });
+      if (problems.length >= Math.floor(limit)) {
+        return problems;
+      }
+    }
+  }
+  return problems;
+}
 
 /** A report location is runnable when it can be mapped to a source range. */
 export function canRunTestInsight(choice: TestInsightChoice): boolean {
@@ -72,7 +120,21 @@ export function createTestInsightChoices(
     };
   });
 
-  return [...slowest, ...flaky];
+  const problems = getLatestTestProblems(history).map((test): TestInsightChoice => ({
+    id: `problem:${test.testId}`,
+    testIdentity: test.testId,
+    label: `${test.outcome === 'failed' ? 'Failed' : 'Errored'}: ${test.label}`,
+    description: `${workspaceName} · latest ${test.outcome}${dateSuffix(test.completedAt)}`,
+    detail: sourceDetail(
+      `Most recent reported outcome was ${test.outcome}.`,
+      test.filePath,
+      test.line,
+    ),
+    ...(test.filePath ? { filePath: test.filePath } : {}),
+    ...(test.line ? { line: test.line } : {}),
+  }));
+
+  return [...slowest, ...flaky, ...problems];
 }
 
 function dateSuffix(completedAt: string, prefix = ' · '): string {

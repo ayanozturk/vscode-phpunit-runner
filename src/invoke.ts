@@ -11,6 +11,7 @@ import {
 } from './commandTemplate';
 import type { Invocation, RunnerConfig, TestTarget } from './types';
 import { splitCommandLine } from './commandLine';
+import { resolveDockerPathMappings } from './dockerPathMappings';
 import { parallelRunnerArguments, type ParallelRunner } from './parallelRunner';
 import {
   escapeRegex,
@@ -184,7 +185,7 @@ export async function resolveInvocation(options: {
   return {
     ...resolveDockerInvocation(workspacePath, config, local, options.debug === true),
     env,
-    mappings: resolveDockerPathMappings(workspacePath, config, mappings),
+    mappings: resolveDockerPathMappings(workspacePath, config.dockerWorkspacePath, mappings),
   };
 }
 
@@ -303,7 +304,11 @@ export function resolveDockerInvocation(
     throw new Error('phpunitRunner.docker.container must be set when docker execution is enabled.');
   }
 
-  const pathMappings = resolveDockerPathMappings(workspacePath, config, invocation.mappings ?? []);
+  const pathMappings = resolveDockerPathMappings(
+    workspacePath,
+    config.dockerWorkspacePath,
+    invocation.mappings ?? [],
+  );
   const containerCwd = mapWithMappings(invocation.cwd, pathMappings);
   const containerCommand = mapWithMappings(invocation.command, pathMappings);
   const containerArgs = invocation.args.map((arg) => mapWithMappings(arg, pathMappings));
@@ -396,26 +401,4 @@ function dockerMappings(workspacePath: string, config: RunnerConfig): PathMappin
     return [];
   }
   return [{ from: workspacePath.replace(/\\/g, '/'), to: remote.replace(/\\/g, '/') }];
-}
-
-function resolveDockerPathMappings(
-  workspacePath: string,
-  config: RunnerConfig,
-  configuredMappings: PathMapping[],
-): PathMapping[] {
-  const normalizedWorkspacePath = normalizeDockerPath(workspacePath);
-  const workspaceIsCovered = configuredMappings.some(({ from }) => {
-    const normalizedFrom = normalizeDockerPath(from);
-    return normalizedWorkspacePath === normalizedFrom
-      || normalizedWorkspacePath.startsWith(`${normalizedFrom}/`);
-  });
-  const mappings = workspaceIsCovered
-    ? [...configuredMappings]
-    : [...configuredMappings, ...dockerMappings(workspacePath, config)];
-  return mappings.sort((left, right) => right.from.length - left.from.length);
-}
-
-function normalizeDockerPath(value: string): string {
-  const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '');
-  return /^[A-Za-z]:\//.test(normalized) ? normalized.toLowerCase() : normalized;
 }

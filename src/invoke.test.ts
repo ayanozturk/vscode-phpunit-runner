@@ -492,6 +492,28 @@ describe('resolveInvocation', () => {
     assert.equal(invocation.args[filterIndex + 1], '~^App\\\\Tests\\\\ExampleTest::testAdd with data set "zeros"$~i');
   });
 
+  it('escapes regex metacharacters and the PHPUnit filter delimiter in named data sets', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: {
+        kind: 'dataset',
+        className: 'App\\Tests\\ExampleTest',
+        methodName: 'testFind',
+        datasetName: 'testFind with data set "a+b~c[1]"',
+      },
+      config,
+      phpunitExecutable: '/proj/vendor/bin/phpunit',
+    });
+
+    const filterIndex = invocation.args.indexOf('--filter');
+    assert.ok(filterIndex >= 0);
+    assert.equal(
+      invocation.args[filterIndex + 1],
+      '~^App\\\\Tests\\\\ExampleTest::testFind with data set "a\\+b\\~c\\[1\\]"$~i',
+      'literal data-set names cannot alter the PHPUnit regex or terminate its ~ delimiter',
+    );
+  });
+
   it('filters a selected Pest data set by its complete case name', async () => {
     const invocation = await resolveInvocation({
       workspacePath: '/proj',
