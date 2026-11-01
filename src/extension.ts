@@ -26,7 +26,12 @@ import { buildGroupPickerOptions } from './groupPicker';
 import { autoDetectConfigurationFile, autoDetectPhpUnit, resolveInvocation } from './invoke';
 import { executeRemoteReportTransfer, renderRemoteReportTransferCommand } from './remoteReports';
 import { parseRuntimeTestListing, reconcileRuntimeTestListing } from './runtimeDiscovery';
-import { canRunTestInsight, createTestInsightChoices, type TestInsightChoice } from './runInsights';
+import {
+  canRunTestInsight,
+  createTestInsightChoices,
+  formatTestInsightForClipboard,
+  type TestInsightChoice,
+} from './runInsights';
 import { runProcess } from './processRunner';
 import { remapJUnitCases } from './junitMapping';
 import { commandAvailable, firstCommandToken } from './commandAvailability';
@@ -50,7 +55,8 @@ import {
   firstFailureMessage,
   readJUnitReport,
 } from './junit';
-import { datasetSuffixFromTestCase, normalizeClassName, parseTestSource } from './parser';
+import { normalizeClassName, parseTestSource } from './parser';
+import { datasetCasesForMethod } from './datasetCases';
 import {
   formatTestOutputSegments,
   type OutputPreset,
@@ -1333,12 +1339,7 @@ function syncDatasetItems(
   methodData: TestItemData,
   cases: JUnitTestCase[],
 ): void {
-  const datasets = cases.flatMap((testCase) => {
-    const suffix = methodData.methodName
-      ? datasetSuffixFromTestCase(testCase.name, methodData.methodName)
-      : undefined;
-    return suffix ? [{ testCase, suffix }] : [];
-  });
+  const datasets = datasetCasesForMethod(methodData.methodName, cases);
   const datasetIds = new Set<string>();
 
   for (const { testCase, suffix } of datasets) {
@@ -1659,6 +1660,10 @@ function showTestInsights(): void {
       iconPath: new vscode.ThemeIcon('play'),
       tooltip: 'Run this test',
     };
+    const copyInsightButton: vscode.QuickInputButton = {
+      iconPath: new vscode.ThemeIcon('copy'),
+      tooltip: 'Copy this insight summary and source location',
+    };
     const picker = vscode.window.createQuickPick<TestInsightChoice & { buttons?: vscode.QuickInputButton[] }>();
     picker.title = 'PHPUnit Test Insights';
     picker.placeholder = 'Select a slow or possibly flaky test to open its source';
@@ -1666,7 +1671,10 @@ function showTestInsights(): void {
     picker.matchOnDetail = true;
     picker.items = choices.map((choice) => ({
       ...choice,
-      ...(canRunTestInsight(choice) ? { buttons: [runInsightButton] } : {}),
+      buttons: [
+        ...(canRunTestInsight(choice) ? [runInsightButton] : []),
+        copyInsightButton,
+      ],
     }));
     picker.onDidAccept(() => {
       const selected = picker.selectedItems[0];
@@ -1676,6 +1684,13 @@ function showTestInsights(): void {
       }
     });
     picker.onDidTriggerItemButton(({ item, button }) => {
+      if (button === copyInsightButton) {
+        void vscode.env.clipboard.writeText(formatTestInsightForClipboard(item)).then(
+          () => vscode.window.setStatusBarMessage('Test insight copied to clipboard.', 3000),
+          () => vscode.window.showErrorMessage('Could not copy the test insight.'),
+        );
+        return;
+      }
       if (button !== runInsightButton) {
         return;
       }

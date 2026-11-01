@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { canRunTestInsight, createTestInsightChoices } from './runInsights';
+import { canRunTestInsight, createTestInsightChoices, formatTestInsightForClipboard } from './runInsights';
 import type { RunHistoryRun } from './runHistory';
 
 describe('createTestInsightChoices', () => {
@@ -104,5 +104,29 @@ describe('canRunTestInsight', () => {
     assert.equal(canRunTestInsight({ id: 'slow:b', label: 'Slow', description: '', detail: '', filePath: '/tests/B.php' }), false);
     assert.equal(canRunTestInsight({ id: 'slow:c', label: 'Slow', description: '', detail: '', filePath: '/tests/C.php', line: 0 }), false);
     assert.equal(canRunTestInsight({ id: 'slow:d', label: 'Slow', description: '', detail: '', line: 12 }), false);
+  });
+});
+
+describe('formatTestInsightForClipboard', () => {
+  it('copies the insight summary and complete reported location', () => {
+    assert.equal(formatTestInsightForClipboard({
+      id: 'flaky:id',
+      label: 'Flaky: ExampleTest::testFlaky',
+      description: 'api · 1 passed, 1 failed',
+      detail: 'Recent outcomes, newest first: passed → failed.',
+      filePath: '/workspace/tests/ExampleTest.php',
+      line: 18,
+    }), [
+      'Flaky: ExampleTest::testFlaky',
+      'api · 1 passed, 1 failed',
+      'Recent outcomes, newest first: passed → failed.',
+      'Location: /workspace/tests/ExampleTest.php:18',
+    ].join('\n'));
+  });
+
+  it('makes an unavailable source location explicit', () => {
+    assert.match(formatTestInsightForClipboard({
+      id: 'slow:id', label: 'Slow: ExampleTest::testSlow', description: 'api · 120 ms · passed', detail: 'No source.',
+    }), /Location: Source location unavailable$/);
   });
 });

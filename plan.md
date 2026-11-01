@@ -7,7 +7,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 ## Delivered capabilities
 
 - **Discovery and execution:** Static discovery, runtime PHPUnit provider discovery with fallback, incremental refresh, continuous testing, local and Docker execution, custom remote commands and report transfer, and an opt-in parallel profile for supported Pest and ParaTest projects.
-- **Results and insights:** JUnit mapping, Clover coverage, supported exact per-test coverage, bounded local history, slow-test and flaky-candidate views with recent outcome sequences, searchable insight pickers, and configurable output including compact custom failure messages.
+- **Results and insights:** JUnit mapping, Clover coverage, supported exact per-test coverage, bounded local history, slow-test and flaky-candidate views with recent outcome sequences, copyable insight summaries, searchable insight pickers, and configurable output including compact custom failure messages.
 - **AI test authoring:** Detect Codex CLI, GitHub Copilot CLI, and Claude Code only. Generate PHPUnit or Pest tests from selected PHP, confirm before sending context, preview a diff, and require confirmation before saving under `tests/`.
 - **Quality and performance:** Adversarial report and process-output tests, focused pure-module coverage, PHP/framework compatibility jobs, VS Code extension-host checks, and result-count-checked scale benchmarks.
 
@@ -41,7 +41,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Assert result counts; compare repeated measurements without machine-dependent CI thresholds.
 - Retain an optimization only when it improves measured workloads without changing results.
 
-**Current evidence:** Node 22.20.0 on darwin/arm64: 10k discovery median 99.7 ms; 10k result-index build 13.9 ms, method query 2.9 ms, file-backed Pest lookup 14.0 ms, and no-file Pest lookup 351.9 ms. For 1M history records, slowest-test and flaky-candidate queries measured 54.1 ms and 51.8 ms. A controlled 9-iteration A/B measured 121.4 ms without and 47.5 ms with the completed-window guard; it skips tests whose ten newer outcomes are already collected.
+**Current evidence:** Node 22.20.0 on darwin/arm64: 10k discovery median 100.7 ms; 10k result-index build 11.9 ms, method query 2.7 ms, file-backed Pest lookup 13.5 ms, and no-file Pest lookup 346.1 ms. For 1M history records, slowest-test and flaky-candidate queries measured 53.7 ms and 46.9 ms. The completed-window guard previously reduced flaky lookup from 121.4 ms to 47.5 ms in a controlled A/B. Reducing the trigram posting cap regressed no-file lookup to 1,010.8 ms and was discarded.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
 

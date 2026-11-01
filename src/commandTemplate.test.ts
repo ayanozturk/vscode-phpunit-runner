@@ -34,6 +34,17 @@ describe('command templates', () => {
     assert.equal(mapWithMappings('--filter', mappings), '--filter');
   });
 
+  it('matches Windows drive paths without regard to case while preserving suffix spelling', () => {
+    const mappings = expandPathMappings(
+      { 'C:\\Project\\App': '/var/www/app' },
+      {},
+    );
+
+    assert.equal(mapWithMappings('c:/project/app/Tests/LoginTest.php', mappings), '/var/www/app/Tests/LoginTest.php');
+    assert.equal(mapWithMappings('c:/project/application/Tests/LoginTest.php', mappings), 'c:/project/application/Tests/LoginTest.php');
+    assert.equal(unmapWithMappings('/var/www/app/Tests/LoginTest.php', mappings), 'C:/Project/App/Tests/LoginTest.php');
+  });
+
   it('quotes arguments that contain filter metacharacters', () => {
     assert.equal(quoteShellArg('php'), 'php');
     assert.equal(quoteShellArg('^App\\Tests::testA$'), '"^App\\\\Tests::testA$"');

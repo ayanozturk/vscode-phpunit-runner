@@ -17,6 +17,17 @@ export function canRunTestInsight(choice: TestInsightChoice): boolean {
     && choice.line > 0;
 }
 
+/** Formats a complete insight summary for copying or sharing outside the picker. */
+export function formatTestInsightForClipboard(choice: TestInsightChoice): string {
+  const line = typeof choice.line === 'number' && Number.isInteger(choice.line) && choice.line > 0
+    ? `:${choice.line}`
+    : '';
+  const location = choice.filePath
+    ? `${choice.filePath}${line}`
+    : 'Source location unavailable';
+  return `${choice.label}\n${choice.description}\n${choice.detail}\nLocation: ${location}`;
+}
+
 /** Builds navigable choices for the recent performance and reliability insights. */
 export function createTestInsightChoices(
   history: readonly RunHistoryRun[],

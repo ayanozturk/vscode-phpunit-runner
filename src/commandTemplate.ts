@@ -103,11 +103,18 @@ function normalizeMappedPath(targetPath: string): string {
 }
 
 function replacePathPrefix(value: string, from: string, to: string): string | undefined {
-  if (value === from) {
+  const compareCaseInsensitive = isWindowsDrivePath(value) && isWindowsDrivePath(from);
+  const comparedValue = compareCaseInsensitive ? value.toLowerCase() : value;
+  const comparedFrom = compareCaseInsensitive ? from.toLowerCase() : from;
+  if (comparedValue === comparedFrom) {
     return to;
   }
-  if (value.startsWith(`${from}/`)) {
+  if (comparedValue.startsWith(`${comparedFrom}/`)) {
     return `${to}${value.slice(from.length)}`;
   }
   return undefined;
+}
+
+function isWindowsDrivePath(value: string): boolean {
+  return /^[A-Za-z]:\//.test(value);
 }
