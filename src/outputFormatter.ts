@@ -203,6 +203,7 @@ function formatTestCaseLine(testCase: JUnitTestCase, defaultStatus: string, form
     return renderTemplate(format.testCase, {
       status: colorStatusLabel(statusLabel(testCase.status), testCase.status, format.colors !== false),
       icon: colorStatusGlyph(icon, testCase.status, format.colors !== false),
+      class: testCase.className,
       name: testCase.name,
       duration: duration.trim().replace(/^\(|\)$/g, ''),
     });
@@ -233,7 +234,7 @@ function formatFailureMessage(message: string | undefined, format: TestOutputFor
 }
 
 function renderTemplate(template: string, values: Record<string, string>): string {
-  return template.replace(/\{(status|icon|name|duration|file|line|message)\}/g, (_, key: string) => values[key] ?? '');
+  return template.replace(/\{(status|icon|class|name|duration|file|line|message)\}/g, (_, key: string) => values[key] ?? '');
 }
 
 function formatSnippet(snippet: string, format: TestOutputFormat): string {

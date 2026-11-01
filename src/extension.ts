@@ -16,6 +16,7 @@ import {
   type PHPUnitJsonlCoverage,
 } from './phpunitCoverageJsonl';
 import { createDebouncedTaskScheduler } from './continuousTesting';
+import { parseTestOutputFormat } from './outputFormatConfig';
 import { detectParallelRunner } from './parallelRunner';
 import { buildGroupPickerOptions } from './groupPicker';
 import { autoDetectConfigurationFile, autoDetectPhpUnit, resolveInvocation } from './invoke';
@@ -2202,26 +2203,7 @@ function getOutputPreset(folder?: vscode.WorkspaceFolder): OutputPreset {
 }
 
 function getOutputFormat(folder?: vscode.WorkspaceFolder): TestOutputFormat {
-  const value = getConfig(folder).get<unknown>('output.format', {});
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  const format = value as Record<string, unknown>;
-  const iconsValue = format.icons;
-  const icons = iconsValue && typeof iconsValue === 'object' && !Array.isArray(iconsValue)
-    ? iconsValue as TestOutputFormat['icons']
-    : undefined;
-
-  return {
-    colors: typeof format.colors === 'boolean' ? format.colors : undefined,
-    duration: typeof format.duration === 'boolean' ? format.duration : undefined,
-    icons,
-    testCase: typeof format.testCase === 'string' ? format.testCase : undefined,
-    failureLocation: typeof format.failureLocation === 'string' ? format.failureLocation : undefined,
-    failureMessage: typeof format.failureMessage === 'string' ? format.failureMessage : undefined,
-    sourceSnippet: typeof format.sourceSnippet === 'boolean' ? format.sourceSnippet : undefined,
-  };
+  return parseTestOutputFormat(getConfig(folder).get<unknown>('output.format', {}));
 }
 
 async function readFailureSourceSnippets(

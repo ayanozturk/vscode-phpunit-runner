@@ -35,6 +35,7 @@ export function runProcess(
     let output = '';
     let settled = false;
     let terminationRequested = false;
+    let stdinError: Error | undefined;
     let escalationTimer: ReturnType<typeof setTimeout> | undefined;
     const terminateTree = dependencies.terminate ?? terminateProcessTree;
     const clearTimer = dependencies.clearTimer ?? clearTimeout;
@@ -77,7 +78,19 @@ export function runProcess(
       settled = true;
       subscription.dispose();
       clearEscalationTimer();
-      resolve({ output, exitCode: exitCode ?? 1 });
+      if (stdinError) {
+        reject(stdinError);
+      } else {
+        resolve({ output, exitCode: exitCode ?? 1 });
+      }
+    });
+
+    child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
+      if (settled || error.code === 'EPIPE') {
+        return;
+      }
+      stdinError = error;
+      terminate();
     });
 
     // Test and AI CLI invocations are non-interactive. Always close stdin so

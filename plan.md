@@ -21,7 +21,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Keep filesystem, process, and VS Code effects at module edges.
 - Add characterization tests before moving behavior; preserve test identity, cancellation, workspace ownership, and report fallback behavior.
 
-**Recent progress:** PHPUnit suite ownership matching, cursor-to-test selection, and file/method tree traversal are pure tested modules. Suite matching honors configured directory filename prefixes and suffixes.
+**Recent progress:** PHPUnit suite ownership matching, cursor-to-test selection, file/method tree traversal, and output-format settings parsing are pure tested modules. Suite matching honors configured directory filename prefixes and suffixes.
 
 **Complete when:** focused modules have stable interfaces and tests, orchestration is smaller, and behavior remains unchanged except for covered compatibility fixes.
 
@@ -33,7 +33,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Preserve exact test identities and source paths; never infer per-test coverage from aggregate data.
 - Keep unsupported or unavailable fields visibly unavailable rather than reporting guessed results.
 
-**Recent progress:** repeated PHPUnit per-test coverage records merge line ranges; runtime listing reconciliation drops duplicate exact identities; JSONL coverage rejects unsafe NUL-containing paths; remote transfer rejects blank required JUnit paths.
+**Recent progress:** repeated PHPUnit per-test coverage records merge line ranges; runtime listing reconciliation drops duplicate exact identities; JSONL coverage rejects unsafe NUL-containing paths; remote transfer rejects blank required JUnit paths; process stdin handles child-close `EPIPE` safely.
 
 **Complete when:** supported paths map exact results and unsupported or incomplete paths produce a clear, unverified or unavailable outcome.
 
@@ -45,7 +45,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Assert result counts; compare repeated measurements without machine-dependent CI thresholds.
 - Retain an optimization only when it improves measured workloads without changing results.
 
-**Current evidence:** repeated 10k discovery took about 101–103 ms; 1M-case history queries varied from 55–81 ms (slowest) and 39–49 ms (flaky). No-file Pest lookup varied from 348–379 ms, while file-backed lookup was about 14–15 ms. No tested change produced a repeatable improvement.
+**Current evidence:** repeated 10k discovery took 101–103 ms; 1M-case history queries took about 53.5 ms (slowest) and 41–44 ms (flaky). No-file Pest lookup varied from 347–371 ms, while file-backed lookup took 14–15 ms. No tested change produced a repeatable improvement.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
 
@@ -66,11 +66,12 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Let users run a slow or potentially flaky test directly from its insight when its reported file and line map to a discovered method or data set.
 - Keep failure locations navigable in compact summaries, including when several tests fail.
 - Confirm before clearing insight history across all workspace folders.
+- Expose enough identity in custom output templates to distinguish same-named tests.
 - Detect Codex CLI, GitHub Copilot CLI, and Claude Code only; keep generation user-initiated and context sharing consent-based.
 - Make destination suggestions follow the project's Unit/Feature layout and source folders; never silently overwrite an existing test.
 - Keep generated changes reviewable and require explicit confirmation before writing a PHP file under the workspace `tests/` directory.
 
-**Recent progress:** insight items with a usable reported source range have a Run button; summary output retains a clickable location per failure; history clearing names its workspace scope and asks for confirmation. AI generation uses a matching test example when available, skips tool selection when exactly one supported CLI is detected, and avoids existing test filenames.
+**Recent progress:** insight items with a usable reported source range have a Run button; summary output retains a clickable location per failure; history clearing names its workspace scope and asks for confirmation. Test output templates now expose the class name to distinguish duplicate method names. AI generation uses a matching test example when available, skips tool selection when exactly one supported CLI is detected, and avoids existing test filenames.
 
 **Complete when:** insight run actions preserve exact discovered scope, and AI tool detection, context consent, output review, destination selection, and explicit save behavior are covered by tests and documented clearly.
 

@@ -66,6 +66,18 @@ describe('runProcess', () => {
     assert.equal(result.output, 'stdin closed');
   });
 
+  it('handles a child exiting before a large stdin payload is flushed', async () => {
+    const result = await runProcess({
+      command: process.execPath,
+      args: ['-e', 'process.exit(0)'],
+      cwd: process.cwd(),
+      stdin: Buffer.alloc(8 * 1024 * 1024, 'x'),
+      token: new TestCancellationToken(),
+    });
+
+    assert.equal(result.exitCode, 0);
+  });
+
   it('rejects spawn errors and disposes the cancellation subscription', async () => {
     const token = new TestCancellationToken();
     await assert.rejects(runProcess({
