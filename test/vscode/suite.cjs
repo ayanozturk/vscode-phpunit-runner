@@ -910,10 +910,16 @@ class DynamicDataProviderTest
     assert.ok(events.some((event) => event.id === cancelItem.id && event.state === 'skipped'), 'cancelled tests are skipped rather than failed');
     assert.ok(!events.some((event) => event.id === cancelItem.id && event.state === 'failed'), 'cancellation does not report a test failure');
 
+    const previousInsightLimit = workspaceAConfig.get('insights.limit', 10);
+    await workspaceAConfig.update('insights.limit', 1, vscode.ConfigurationTarget.WorkspaceFolder);
     await vscode.commands.executeCommand('phpunitRunner.showTestInsights');
     assert.ok(diagnosticOutput.includes('Slowest tests:'), 'test insights show persisted durations from reported runs');
     assert.ok(diagnosticOutput.includes('Flaky candidates (pass and fail in the latest 10 outcomes):'));
     assert.ok(diagnosticOutput.includes('Latest failures and errors:'), 'test insights include each test’s latest reported problem status');
+    assert.ok(
+      diagnosticOutput.some((line) => line.trim() === 'Showing up to 1 per insight type.'),
+      'insight count follows the workspace setting',
+    );
 
     const insightTarget = findMethod('testAlpha');
     await workspaceAConfig.update('environment', { PHPUNIT_RUNNER_MODE: 'insight-location' }, vscode.ConfigurationTarget.WorkspaceFolder);
@@ -967,6 +973,7 @@ class DynamicDataProviderTest
       )), 'the insight action does not run a data set');
     } finally {
       vscode.window.showWarningMessage = originalInsightWarning;
+      await workspaceAConfig.update('insights.limit', previousInsightLimit, vscode.ConfigurationTarget.WorkspaceFolder);
       restoreInsightCapture();
       vscode.window.createQuickPick = originalCreateQuickPick;
       await fs.writeFile(path.join(workspaceA.uri.fsPath, 'runner.log'), '', 'utf8');

@@ -17,7 +17,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 
 **Status: Active**
 
-- Continue extracting deterministic discovery and suite-matching logic from VS Code orchestration when ownership is clear; method/data-set result planning, test-selection arguments, and failure-summary normalization now live in focused pure modules.
+- Continue extracting deterministic discovery and suite-matching logic from VS Code orchestration when ownership is clear; method/data-set result planning, test-selection arguments, failure-summary normalization, and PHP source masking now live in focused pure modules.
 - Keep filesystem, process, and VS Code effects at module edges.
 - Add characterization tests before moving behavior; preserve test identity, cancellation, workspace ownership, and report fallback behavior.
 
@@ -30,6 +30,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Add adversarial cases for malformed reports, duplicate identities, repeated records, missing paths, interrupted processes, and unsupported runner versions.
 - Reject truncated optional coverage reports as a whole rather than exposing partial per-test coverage.
 - Preserve exact test identities and source paths; never infer per-test coverage from aggregate data.
+- Treat class/method identities that differ only by case as ambiguous when mapping exact per-test coverage.
 - Keep unsupported or unavailable fields visibly unavailable rather than reporting guessed results.
 
 **Complete when:** supported paths map exact results and unsupported or incomplete paths produce a clear, unverified or unavailable outcome.

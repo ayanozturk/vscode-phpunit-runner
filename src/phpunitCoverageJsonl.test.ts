@@ -164,6 +164,10 @@ describe('PHPUnit JSONL coverage integration helpers', () => {
       ...candidates,
       { itemId: 'item-duplicate', workspacePath: '/project-a', className: 'App\\MoneyTest', methodName: 'testFormat' },
     ]), undefined);
+    assert.equal(matchPhpUnitCoverageMethodItem('App\\MoneyTest::testFormat', '/project-a', [
+      ...candidates,
+      { itemId: 'item-case-duplicate', workspacePath: '/project-a', className: 'app\\moneytest', methodName: 'TESTFORMAT' },
+    ]), undefined, 'case-only PHP identity duplicates are ambiguous and must not receive per-test coverage');
   });
 
   it('keeps missing reports as an optional warning so aggregate coverage can remain available', async () => {
