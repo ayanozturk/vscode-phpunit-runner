@@ -68,7 +68,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Make destination suggestions follow the project's Unit/Feature layout and source folders; never silently overwrite an existing test.
 - Keep generated changes reviewable and require explicit confirmation before writing a PHP file under the workspace `tests/` directory.
 
-**Recent progress:** insight items with a usable reported source range have a Run button. AI test generation skips tool selection when exactly one supported CLI is detected, and destination suggestions avoid existing test filenames.
+**Recent progress:** insight items with a usable reported source range have a Run button. AI generation uses a matching test example when available, skips tool selection when exactly one supported CLI is detected, and avoids existing test filenames.
 
 **Complete when:** insight run actions preserve exact discovered scope, and AI tool detection, context consent, output review, destination selection, and explicit save behavior are covered by tests and documented clearly.
 

@@ -76,6 +76,26 @@ export function soleDetectedAiCli(tools: readonly AiCliTool[]): AiCliTool | unde
   return tools.length === 1 ? tools[0] : undefined;
 }
 
+/** Prefers an existing test with the same source basename, then sorts fallbacks deterministically. */
+export function selectTestExample(sourceFilePath: string, candidatePaths: readonly string[]): string | undefined {
+  const sourcePath = path.resolve(sourceFilePath);
+  const sourceBase = path.basename(sourcePath, path.extname(sourcePath)).toLowerCase();
+  const candidates = [...new Set(candidatePaths.map((candidate) => path.resolve(candidate))) ]
+    .filter((candidate) => !samePath(candidate, sourcePath))
+    .sort((left, right) => left.localeCompare(right));
+  return candidates.find((candidate) => (
+    path.basename(candidate).toLowerCase() === `${sourceBase}test.php`
+  )) ?? candidates[0];
+}
+
+function samePath(left: string, right: string): boolean {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  return process.platform === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
 /** Formats a detection result without discarding earlier runner output. */
 export function formatDetectedAiTools(tools: readonly AiCliTool[]): string {
   if (tools.length === 0) {

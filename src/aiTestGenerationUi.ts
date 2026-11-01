@@ -9,6 +9,7 @@ import {
   extractGeneratedPhpTest,
   formatDetectedAiTools,
   isTestDestination,
+  selectTestExample,
   soleDetectedAiCli,
   suggestTestDestination,
   type AiCliTool,
@@ -236,13 +237,16 @@ async function buildProjectContext(
   const sampleFiles = await vscode.workspace.findFiles(
     new vscode.RelativePattern(folder, 'tests/**/*.php'),
     '**/{vendor,node_modules}/**',
-    1,
+    100,
   );
-  const samplePath = sampleFiles.find((uri) => uri.fsPath !== path.resolve(root, sourcePath));
+  const samplePath = selectTestExample(
+    path.resolve(root, sourcePath),
+    sampleFiles.map((uri) => uri.fsPath),
+  );
   if (samplePath) {
-    const sample = await readOptionalFile(samplePath.fsPath);
+    const sample = await readOptionalFile(samplePath);
     if (sample) {
-      guidance.push(`Existing test example (${path.relative(root, samplePath.fsPath)}): ${sample.slice(0, 6_000)}`);
+      guidance.push(`Existing test example (${path.relative(root, samplePath)}): ${sample.slice(0, 6_000)}`);
     }
   }
 

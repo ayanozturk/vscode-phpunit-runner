@@ -10,6 +10,7 @@ import {
   extractGeneratedPhpTest,
   formatDetectedAiTools,
   isTestDestination,
+  selectTestExample,
   soleDetectedAiCli,
   suggestTestDestination,
   type AiCliTool,
@@ -101,6 +102,25 @@ describe('soleDetectedAiCli', () => {
     assert.equal(soleDetectedAiCli([codex]), codex);
     assert.equal(soleDetectedAiCli([]), undefined);
     assert.equal(soleDetectedAiCli([codex, claude]), undefined);
+  });
+});
+
+describe('selectTestExample', () => {
+  it('prefers a matching test basename and ignores the source file', () => {
+    const project = path.resolve('/project');
+    const source = path.join(project, 'src', 'Billing', 'Invoice.php');
+    const related = path.join(project, 'tests', 'Feature', 'InvoiceTest.php');
+    const unrelated = path.join(project, 'tests', 'Unit', 'CustomerTest.php');
+    assert.equal(selectTestExample(source, [unrelated, source, related]), related);
+  });
+
+  it('uses a deterministic fallback when no matching test basename exists', () => {
+    const project = path.resolve('/project');
+    const source = path.join(project, 'src', 'Billing', 'Invoice.php');
+    const later = path.join(project, 'tests', 'ZTest.php');
+    const earlier = path.join(project, 'tests', 'ATest.php');
+    assert.equal(selectTestExample(source, [later, earlier]), earlier);
+    assert.equal(selectTestExample(source, [source]), undefined);
   });
 });
 
