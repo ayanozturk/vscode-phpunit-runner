@@ -12,8 +12,15 @@ import { buildGroupPickerOptions } from './groupPicker';
 import { autoDetectConfigurationFile, autoDetectPhpUnit, resolveInvocation } from './invoke';
 import { renderRemoteReportTransferCommand } from './remoteReports';
 import { parseRuntimeTestListing, reconcileRuntimeTestListing } from './runtimeDiscovery';
+import {
+  appendRunHistory,
+  findFlakyCandidates,
+  getSlowestTests,
+  type RunHistoryRun,
+} from './runHistory';
 import { groupItemsBy, runGroupsSequentially } from './grouping';
 import { terminateProcessTree } from './processTree';
+import { expandIncludedScopes } from './testScopes';
 import {
   aggregateMethodStatus,
   firstFailureLocation,
@@ -73,24 +80,28 @@ const runtimeOwnedDatasetItems = new WeakSet<vscode.TestItem>();
 
 let outputChannel: vscode.OutputChannel;
 let controller: vscode.TestController;
+let extensionContext: vscode.ExtensionContext;
 let runProfile: vscode.TestRunProfile;
 let lastIncludeIds: string[] | undefined;
 let lastFailedIds: string[] = [];
 let debugListenStarted = false;
 let debugListenPort: number | undefined;
 let runtimeDiscoveryScheduler: ReturnType<typeof createDebouncedTaskScheduler> | undefined;
+let continuousTestingScheduler: ReturnType<typeof createDebouncedTaskScheduler> | undefined;
 const continuousRuns = new Map<string, vscode.CancellationTokenSource>();
+const nativeContinuousFileCounts = new Map<string, number>();
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionTestApi | undefined> {
+  extensionContext = context;
   outputChannel = vscode.window.createOutputChannel('PHPUnit Runner');
   controller = vscode.tests.createTestController('phpunitRunner', 'PHPUnit Runner');
-  const continuousTestingScheduler = createDebouncedTaskScheduler(250);
+  continuousTestingScheduler = createDebouncedTaskScheduler(250);
   runtimeDiscoveryScheduler = createDebouncedTaskScheduler(250);
 
   context.subscriptions.push(
     outputChannel,
     controller,
-    { dispose: () => continuousTestingScheduler.dispose() },
+    { dispose: () => continuousTestingScheduler?.dispose() },
     { dispose: () => runtimeDiscoveryScheduler?.dispose() },
     { dispose: () => {
       for (const child of runtimeDiscoveryProcesses.values()) {
@@ -109,7 +120,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     await discoverWorkspaceTests();
   };
 
-  runProfile = controller.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, runTests, true);
+  runProfile = controller.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, runTests, true, undefined, true);
   const debugProfile = controller.createRunProfile('Debug Tests', vscode.TestRunProfileKind.Debug, runTests, true);
   const coverageProfile = controller.createRunProfile('Coverage Tests', vscode.TestRunProfileKind.Coverage, runTests, true);
   coverageProfile.loadDetailedCoverage = async (_run, fileCoverage) => coverageDetails.get(fileCoverage) ?? [];
@@ -156,6 +167,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     vscode.commands.registerCommand('phpunitRunner.diagnoseProject', async () => {
       await diagnoseProject();
     }),
+    vscode.commands.registerCommand('phpunitRunner.showTestInsights', () => {
+      showTestInsights();
+    }),
     vscode.workspace.onDidSaveTextDocument(async (document) => {
       if (document.languageId !== 'php') {
         return;
@@ -163,8 +177,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
 
       await refreshUri(document.uri, document.getText());
       scheduleRuntimeDiscoveryForUri(document.uri);
-      if (getConfig(vscode.workspace.getWorkspaceFolder(document.uri)).get<boolean>('continuousTesting', false)) {
-        continuousTestingScheduler.schedule(document.uri.toString(), async () => {
+      if (!nativeContinuousFileCounts.has(document.uri.toString())
+        && getConfig(vscode.workspace.getWorkspaceFolder(document.uri)).get<boolean>('continuousTesting', false)) {
+        continuousTestingScheduler?.schedule(document.uri.toString(), async () => {
           if (getConfig(vscode.workspace.getWorkspaceFolder(document.uri)).get<boolean>('continuousTesting', false)) {
             await rerunSavedFile(document.uri);
           }
@@ -850,13 +865,23 @@ function findNarrowestTestItem(item: vscode.TestItem, position: vscode.Position)
 }
 
 async function runTests(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
+  if (request.continuous) {
+    await runContinuousTests(request, token);
+    return;
+  }
+
   clearOutputForRun(outputFoldersForRequest(request));
   await maybeSaveBeforeTest();
   const run = controller.createTestRun(request);
   const cancellation = new vscode.CancellationTokenSource();
   const tokenSubscription = token.onCancellationRequested(() => cancellation.cancel());
   const runSubscription = run.token.onCancellationRequested(() => cancellation.cancel());
-  const queue = request.include?.length ? [...request.include] : collectTestItems(controller.items);
+  const queue = expandIncludedScopes(
+    request.include?.length ? [...request.include] : collectTestItems(controller.items),
+    request.exclude ?? [],
+    (item) => item.id,
+    (item) => collectTestItems(item.children),
+  );
   const selectedFilesByWorkspace = new Map<string, vscode.TestItem[]>();
   for (const item of queue) {
     const data = itemData.get(item);
@@ -906,6 +931,86 @@ async function runTests(request: vscode.TestRunRequest, token: vscode.Cancellati
     cancellation.dispose();
     run.end();
   }
+}
+
+async function runContinuousTests(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
+  const selectedRoots = request.include?.length ? [...request.include] : collectTestItems(controller.items);
+  const watchedUris = new Set(selectedRoots.flatMap((root) => {
+    const data = itemData.get(root);
+    const fileUris = collectFileItems(root).flatMap((file) => file.uri ? [file.uri.toString()] : []);
+    return [...(data?.uri ? [data.uri.toString()] : []), ...fileUris];
+  }));
+  for (const uri of watchedUris) {
+    nativeContinuousFileCounts.set(uri, (nativeContinuousFileCounts.get(uri) ?? 0) + 1);
+  }
+
+  const runOnce = async (items: vscode.TestItem[]) => {
+    if (items.length === 0 || token.isCancellationRequested) {
+      return;
+    }
+    await runTests(new vscode.TestRunRequest(items, request.exclude, request.profile), token);
+  };
+
+  try {
+    await runOnce(selectedRoots);
+    if (token.isCancellationRequested) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      const saveSubscription = vscode.workspace.onDidSaveTextDocument((document) => {
+        if (document.languageId !== 'php') {
+          return;
+        }
+
+        const targets = continuousTargetsForUri(selectedRoots, document.uri);
+        if (targets.length === 0) {
+          return;
+        }
+
+        continuousTestingScheduler?.schedule(`native:${document.uri.toString()}`, async () => {
+          await refreshUri(document.uri, document.getText());
+          const refreshedTargets = continuousTargetsForUri(selectedRoots, document.uri);
+          await runOnce(refreshedTargets);
+        });
+      });
+      const cancellationSubscription = token.onCancellationRequested(() => {
+        saveSubscription.dispose();
+        cancellationSubscription.dispose();
+        resolve();
+      });
+    });
+  } finally {
+    for (const uri of watchedUris) {
+      const activeRuns = nativeContinuousFileCounts.get(uri) ?? 1;
+      if (activeRuns <= 1) {
+        nativeContinuousFileCounts.delete(uri);
+      } else {
+        nativeContinuousFileCounts.set(uri, activeRuns - 1);
+      }
+    }
+  }
+}
+
+function continuousTargetsForUri(roots: vscode.TestItem[], uri: vscode.Uri): vscode.TestItem[] {
+  const targets = new Map<string, vscode.TestItem>();
+  const uriString = uri.toString();
+
+  for (const root of roots) {
+    if (itemData.get(root)?.uri.toString() === uriString) {
+      targets.set(root.id, root);
+      continue;
+    }
+
+    const matchingFile = collectTestItems(root.children)
+      .flatMap((child) => collectFileItems(child))
+      .find((file) => file.uri?.toString() === uriString);
+    if (matchingFile) {
+      targets.set(matchingFile.id, matchingFile);
+    }
+  }
+
+  return [...targets.values()];
 }
 
 async function runItem(
@@ -1403,6 +1508,13 @@ async function executePhpUnit(
       ? 'Remote PHPUnit execution completed, but its JUnit report is unavailable on the host. Detailed test results require a shared or mounted report path, or retrieval by the remote command.'
       : undefined);
     const cases = remapCases(junitReport.cases, invocation.mappings ?? []);
+    if (junitReport.available && cases.length > 0 && !token.isCancellationRequested) {
+      try {
+        await recordRunHistory(workspaceFolder, cases);
+      } catch (error) {
+        outputChannel.appendLine(`Could not save test insights to workspace state: ${String(error)}`);
+      }
+    }
     if (coverageCloverPath) {
       await applyCloverCoverage(run, coverageCloverPath, invocation.mappings ?? [], remoteExecution);
     }
@@ -1419,6 +1531,67 @@ async function executePhpUnit(
       await fs.rm(coverageCloverPath, { force: true }).catch(() => undefined);
     }
   }
+}
+
+async function recordRunHistory(folder: vscode.WorkspaceFolder, cases: JUnitTestCase[]): Promise<void> {
+  const key = `phpunitRunner.runHistory:${folder.uri.toString()}`;
+  const history = extensionContext.workspaceState.get<RunHistoryRun[]>(key, []);
+  const completedAt = new Date().toISOString();
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const updated = appendRunHistory(history, {
+    id: runId,
+    completedAt,
+    cases: cases.map((testCase) => ({
+      testId: `${folder.uri.toString()}::${testCase.className}::${testCase.name}`,
+      label: `${testCase.className}::${testCase.name}`,
+      outcome: testCase.status,
+      durationMs: testCase.timeSeconds * 1000,
+      completed: true,
+      reported: true,
+    })),
+  });
+  await extensionContext.workspaceState.update(key, updated);
+}
+
+function showTestInsights(): void {
+  outputChannel.clear();
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  let hasHistory = false;
+  for (const folder of folders) {
+    const key = `phpunitRunner.runHistory:${folder.uri.toString()}`;
+    const history = extensionContext.workspaceState.get<RunHistoryRun[]>(key, []);
+    if (history.length === 0) {
+      continue;
+    }
+
+    hasHistory = true;
+    outputChannel.appendLine(folder.name);
+    outputChannel.appendLine('Slowest tests:');
+    const slowest = getSlowestTests(history, 10);
+    if (slowest.length === 0) {
+      outputChannel.appendLine('  No reported test durations are available yet.');
+    } else {
+      for (const test of slowest) {
+        outputChannel.appendLine(`  ${test.label} — ${test.durationMs.toFixed(0)} ms`);
+      }
+    }
+
+    outputChannel.appendLine('Flaky candidates (pass and fail in the latest 10 outcomes):');
+    const flaky = findFlakyCandidates(history);
+    if (flaky.length === 0) {
+      outputChannel.appendLine('  None detected.');
+    } else {
+      for (const test of flaky) {
+        outputChannel.appendLine(`  ${test.label}`);
+      }
+    }
+    outputChannel.appendLine('');
+  }
+
+  if (!hasHistory) {
+    outputChannel.appendLine('No completed, reported test runs are available yet.');
+  }
+  outputChannel.show(true);
 }
 
 async function executeReportTransfer(

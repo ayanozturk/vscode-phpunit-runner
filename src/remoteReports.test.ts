@@ -59,6 +59,22 @@ describe('remote report transfer command', () => {
     );
   });
 
+  it('shell-quotes metacharacters and safely handles repeated placeholders', () => {
+    const command = renderRemoteReportTransferCommand(
+      'scp ${remoteJunitReport} ${localJunitReport} && printf %s ${workspaceFolder} ${workspaceFolder}',
+      {
+        workspaceFolder: '$(touch /tmp/should-not-run); project',
+        remoteJunitReport: 'remote/$(rm -rf data).xml',
+        localJunitReport: '/workspace/result.xml',
+      },
+    );
+
+    assert.equal(
+      command,
+      "scp 'remote/$(rm -rf data).xml' /workspace/result.xml && printf %s '$(touch /tmp/should-not-run); project' '$(touch /tmp/should-not-run); project'",
+    );
+  });
+
   it('substitutes an unused optional coverage path as an empty shell argument', () => {
     const command = renderRemoteReportTransferCommand(
       'scp ${remoteJunitReport} ${localJunitReport} ${remoteCoverageReport} ${localCoverageReport}',

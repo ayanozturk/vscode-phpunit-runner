@@ -88,6 +88,7 @@ exports.run = async () => {
     assert.ok(commands.has('phpunitRunner.refreshTests'));
     assert.ok(commands.has('phpunitRunner.runByGroup'));
     assert.ok(commands.has('phpunitRunner.diagnoseProject'));
+    assert.ok(commands.has('phpunitRunner.showTestInsights'));
 
     const workspaceA = vscode.workspace.workspaceFolders.find((folder) => folder.name === 'workspace-a');
     const workspaceB = vscode.workspace.workspaceFolders.find((folder) => folder.name === 'workspace-b');
@@ -359,6 +360,45 @@ class DynamicDataProviderTest
     const restorePestCapture = captureRunEvents(api.controller, pestEvents);
     const testRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
     assert.ok(testRunProfile);
+    assert.equal(testRunProfile.supportsContinuousRun, true, 'the Run Tests profile exposes VS Code continuous runs');
+
+    const continuousLogPath = path.join(workspaceA.uri.fsPath, 'runner.log');
+    const continuousLogCount = async () => (await fs.readFile(continuousLogPath, 'utf8').catch(() => ''))
+      .split('\n').filter((line) => line.startsWith('invoked ') && !line.includes('--list-tests-xml')).length;
+    const initialContinuousLogCount = await continuousLogCount();
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'continuousTesting', true, vscode.ConfigurationTarget.Workspace,
+    );
+    const continuousCancellation = new vscode.CancellationTokenSource();
+    const continuousRun = testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')], undefined, testRunProfile, true),
+      continuousCancellation.token,
+    );
+    await until(async () => await continuousLogCount() > initialContinuousLogCount, 'native continuous testing performs its initial run');
+    const alphaDocument = await vscode.workspace.openTextDocument(path.join(workspaceA.uri.fsPath, 'tests', 'AlphaTest.php'));
+    const alphaEdit = new vscode.WorkspaceEdit();
+    alphaEdit.insert(alphaDocument.uri, alphaDocument.positionAt(alphaDocument.getText().length), '\n// continuous run fixture\n');
+    await vscode.workspace.applyEdit(alphaEdit);
+    await alphaDocument.save();
+    await until(async () => await continuousLogCount() > initialContinuousLogCount + 1, 'saving a selected PHP test repeats a native continuous run');
+    await delay(400);
+    assert.equal(await continuousLogCount(), initialContinuousLogCount + 2,
+      'native and save-triggered continuous testing do not duplicate the same save run');
+    continuousCancellation.cancel();
+    await continuousRun;
+    continuousCancellation.dispose();
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'continuousTesting', false, vscode.ConfigurationTarget.Workspace,
+    );
+
+    const alphaFileItem = findMethod('AlphaTest.php');
+    assert.ok(alphaFileItem, 'the Alpha test file is selectable for exclusion checks');
+    const beforeExcludedRun = await continuousLogCount();
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([alphaFileItem], [findMethod('testAlpha')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    assert.equal(await continuousLogCount(), beforeExcludedRun, 'excluding every test in a selected file prevents runner execution');
 
     await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
       'command', '${phpunit} ${phpunitargs}', vscode.ConfigurationTarget.Workspace,
@@ -739,6 +779,10 @@ class DynamicDataProviderTest
     cancellation.dispose();
     assert.ok(events.some((event) => event.id === cancelItem.id && event.state === 'skipped'), 'cancelled tests are skipped rather than failed');
     assert.ok(!events.some((event) => event.id === cancelItem.id && event.state === 'failed'), 'cancellation does not report a test failure');
+
+    await vscode.commands.executeCommand('phpunitRunner.showTestInsights');
+    assert.ok(diagnosticOutput.includes('Slowest tests:'), 'test insights show persisted durations from reported runs');
+    assert.ok(diagnosticOutput.includes('Flaky candidates (pass and fail in the latest 10 outcomes):'));
 
     console.log('VS Code extension-host tests passed');
     process.exit(0);

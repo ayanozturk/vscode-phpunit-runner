@@ -19,6 +19,7 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Debug and measure coverage.** Start an Xdebug session for a selected test and inspect Clover coverage in the editor.
 - **Fit your environment.** Run locally, through Docker, or with a command template for Laravel Sail, DDEV, SSH, and other remote setups. Host-to-remote path mappings keep results connected to local files across multi-root workspaces.
 - **Diagnose setup and remote results.** Check runner, configuration, PHP, and report readiness without starting tests; retrieve JUnit and coverage files from custom remote commands when they are not on a shared mount.
+- **Review test insights.** Use VS Code's continuous run controls or save-triggered reruns, then inspect the slowest tests and possible flaky candidates from recent verified runs.
 - **Keep results current.** Refresh discovery as PHP files, PHPUnit configuration, or Composer dependencies change, or enable continuous testing to rerun a saved file.
 
 ## Get started
@@ -35,6 +36,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 - Shows static method-level PHPUnit `#[TestDox('...')]` descriptions in the Testing view while keeping the actual method name for execution.
 - Discovers same-class PHPUnit `#[DataProvider('providerMethod')]` or `@dataProvider providerMethod` rows when the provider returns a literal array, including named cases, before the first run.
 - Uses PHPUnit's machine-readable test listing to discover dynamic provider rows when static analysis cannot resolve them; unsupported runner versions keep static discovery available.
+- Supports VS Code's native continuous test action on the Run Tests profile. The optional `phpunitRunner.continuousTesting` setting remains available to rerun a saved PHP file automatically.
 - Discovers literal PHPUnit `#[TestWith([...])]` and `#[TestWithJson('...')]` rows before the first run, showing numeric labels such as `#0` or custom names such as `positive pair` as selectable data-set tests.
 - Discovers function-style Pest `test()` and `it()` cases with literal string names.
 - Discovers statically declared Pest `dataset()` values, `->with([...])` data sets, and inline generator closures with literal `yield` values as selectable child tests, including chained data sets.
@@ -73,6 +75,8 @@ Core settings:
 - `phpunitRunner.excludeGlobs`
 - `phpunitRunner.debuggerConfig`
 - `phpunitRunner.xdebugPort` (set to `0` to choose an available port automatically)
+
+Run **PHPUnit Runner: Show Test Insights** from the Command Palette to see the ten slowest reported test cases and possible flaky candidates. History stays in VS Code workspace state, keeps up to 100 runs per workspace, and only includes completed cases from readable JUnit reports.
 
 Docker settings:
 
@@ -234,9 +238,12 @@ Large suites can contain thousands of individual results. Workspace and folder s
 - `PHPUnit Runner: Rerun Last Run`
 - `PHPUnit Runner: Run Failed Tests`
 - `PHPUnit Runner: Run By Group`
+- `PHPUnit Runner: Show Test Insights`
 - `PHPUnit Runner: Show Output`
 
 ## Repository
 
 - Source: https://github.com/ayanozturk/vscode-phpunit-runner
 - License: MIT
+
+Run `npm run benchmark:discovery` to measure parser time and memory for synthetic 1k- and 10k-test projects. Results are observational baselines, not CI thresholds.

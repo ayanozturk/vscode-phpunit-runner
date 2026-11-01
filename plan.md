@@ -6,6 +6,12 @@ Make PHPUnit Runner a fast, dependable PHPUnit and Pest workflow in VS Code, fro
 
 Research confirms that machine-readable test listing and result formats are available in PHPUnit, VS Code supports native continuous runs and detailed coverage, and Pest provides parallel execution and profiling. PHP testing tools also surface run history, timings, and profiling. ([PHPUnit CLI](https://docs.phpunit.de/en/12.5/cli-options.html), [VS Code Testing API](https://code.visualstudio.com/api/extension-guides/testing), [Pest optimization](https://pestphp.com/docs/optimizing-tests), [PHPUnit Test Workbench](https://marketplace.visualstudio.com/items?itemName=chiefmyron.phpunit-test-workbench), [PHP Tools](https://open-vsx.org/extension/DEVSENSE/phptools-vscode))
 
+## Progress
+
+- **Delivered:** Dynamic PHPUnit provider listing with static fallback, project diagnostics, remote report transfer, incremental discovery, VS Code native continuous runs, saved-file continuous runs, and workspace-local history/slow-test/flaky-candidate insights.
+- **Baseline added:** `npm run benchmark:discovery` measures 1k and 10k synthetic test projects. Initial local median parser times were about 19 ms and 182 ms respectively; these observations do not impose machine-dependent pass/fail thresholds.
+- **Still planned:** Opt-in parallel execution, richer coverage, a supported PHPUnit/Pest CI matrix, and further module boundaries around invocation and result mapping.
+
 ## Roadmap
 
 ### 1. Trustworthy discovery and results — months 0–2

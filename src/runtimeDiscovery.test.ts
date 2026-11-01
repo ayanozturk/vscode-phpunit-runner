@@ -59,6 +59,17 @@ describe('parseRuntimeTestListing', () => {
     });
   });
 
+  it('rejects unnamed methods and a listing with multiple root elements', () => {
+    assert.throws(
+      () => parseRuntimeTestListing('<tests><testCaseClass name="UserTest"><testCaseMethod /></testCaseClass></tests>'),
+      /unnamed method.*UserTest/,
+    );
+    assert.throws(
+      () => parseRuntimeTestListing('<tests /><tests />'),
+      /XML|root|tag|closed|unexpected/i,
+    );
+  });
+
   it('rejects empty, malformed, and structurally invalid listings', () => {
     assert.throws(() => parseRuntimeTestListing(''));
     assert.throws(() => parseRuntimeTestListing('<wrong />'), /root element/);
@@ -126,6 +137,20 @@ class UserTest {
       filePath: '/workspace/tests/UserTest.php',
       identity: 'App\\Tests\\UserTest::testCanLogin with data set "blue"',
     }]);
+  });
+
+  it('does not map a runtime class by short name when its namespace is unknown', () => {
+    const parsed = parseTestSource('/workspace/tests/UserTest.php', `<?php
+namespace App\Tests;
+class UserTest { public function testCanLogin(): void {} }
+`);
+    const listing = parseRuntimeTestListing(`<tests>
+  <testCaseClass name="Other\\Tests\\UserTest">
+    <testCaseMethod name="testCanLogin" />
+  </testCaseClass>
+</tests>`);
+
+    assert.deepEqual(reconcileRuntimeTestListing(listing, [parsed]), []);
   });
 
   it('does not guess a source file for unknown or ambiguous runtime entries', () => {

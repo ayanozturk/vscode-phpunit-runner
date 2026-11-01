@@ -51,6 +51,10 @@ export function parseRuntimeTestListing(xml: string): RuntimeTestListing {
     const name = tag.name.toLowerCase();
     const attributes = normalizeSaxAttributes(tag.attributes);
 
+    if (rootClosed) {
+      throw new Error('PHPUnit test listing contains multiple root elements.');
+    }
+
     if (!rootSeen) {
       if (name !== 'tests') {
         throw new Error(`Unexpected PHPUnit test listing root element: ${tag.name}.`);
