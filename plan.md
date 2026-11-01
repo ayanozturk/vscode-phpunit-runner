@@ -7,7 +7,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 ## Delivered capabilities
 
 - **Discovery and execution:** Static discovery, runtime PHPUnit provider discovery with fallback, incremental refresh, continuous testing, local and Docker execution, custom remote commands and report transfer, and an opt-in parallel profile for supported Pest and ParaTest projects.
-- **Results and insights:** JUnit mapping, pure method and dataset result planning, Clover coverage, supported exact per-test coverage, bounded local history, stable-identity insight reruns, configurable slow/flaky/problem insight counts, latest failure and error summaries with bounded first-line messages, copyable insight summaries, searchable insight pickers, and compact custom failure output.
+- **Results and insights:** JUnit mapping, pure method and data-set result planning, Clover coverage, supported exact per-test coverage, bounded local history, stable-identity insight reruns, configurable insight counts, latest failure and error summaries with bounded first-line messages, batch rerun of recent test problems, copyable insight summaries, searchable insight pickers, and compact custom failure output.
 - **AI test authoring:** Detect Codex CLI, GitHub Copilot CLI, and Claude Code only. The confirmation identifies source path and scope plus possible project context; generated PHPUnit/Pest output is previewed, and saving under `tests/` requires confirmation. Extension-host coverage verifies consent, review-before-apply, save, and cancel-before-run.
 - **Quality and performance:** Adversarial report and process-output tests, focused pure-module coverage, PHP/framework compatibility jobs, VS Code extension-host checks, and result-count-checked scale benchmarks. Process output observer failures stop the child and reject with the original error.
 
@@ -17,7 +17,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 
 **Status: Active**
 
-- Continue extracting deterministic discovery and suite-matching logic from VS Code orchestration when ownership is clear; method/data-set result planning and test-selection argument planning now live in focused pure modules.
+- Continue extracting deterministic discovery and suite-matching logic from VS Code orchestration when ownership is clear; method/data-set result planning, test-selection arguments, and failure-summary normalization now live in focused pure modules.
 - Keep filesystem, process, and VS Code effects at module edges.
 - Add characterization tests before moving behavior; preserve test identity, cancellation, workspace ownership, and report fallback behavior.
 
@@ -77,6 +77,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Latest failed or errored entries include a normalized, first-line failure summary capped at 200 characters; stack traces are not persisted in history.
 - Each workspace can configure the number of slow, flaky, and latest-problem insights shown (1–100; default 10).
 - Unit coverage exercises method and data-set identity resolution; extension-host coverage verifies the action runs the selected method without widening to its data sets.
+- The Command Palette can rerun the latest failed or errored tests whose report identity or source location maps to a discovered test.
 
 **Complete when:** insight run actions preserve exact discovered scope and recent outcomes remain understandable.
 

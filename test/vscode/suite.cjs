@@ -89,6 +89,7 @@ exports.run = async () => {
     assert.ok(commands.has('phpunitRunner.runByGroup'));
     assert.ok(commands.has('phpunitRunner.diagnoseProject'));
     assert.ok(commands.has('phpunitRunner.showTestInsights'));
+    assert.ok(commands.has('phpunitRunner.runLatestTestProblems'));
     assert.ok(commands.has('phpunitRunner.clearTestInsights'));
     assert.ok(commands.has('phpunitRunner.detectAiTools'));
     assert.ok(commands.has('phpunitRunner.generateUnitTests'));
@@ -728,6 +729,15 @@ class DynamicDataProviderTest
     assert.ok(linkedFailureOutput, 'structured failure output contains its source location');
     assert.equal(linkedFailureOutput.location.uri.fsPath, path.join(workspaceA.uri.fsPath, 'tests', 'AlphaTest.php'));
     assert.equal(linkedFailureOutput.location.range.start.line, 1, 'failure output links to the one-based JUnit line converted to a VS Code line');
+
+    const latestProblemEvents = [];
+    const restoreLatestProblemCapture = captureRunEvents(api.controller, latestProblemEvents);
+    await vscode.commands.executeCommand('phpunitRunner.runLatestTestProblems');
+    restoreLatestProblemCapture();
+    assert.ok(
+      latestProblemEvents.some((event) => event.id === findMethod('testAlpha').id && event.state === 'passed'),
+      'running latest test problems reruns the mapped failed test',
+    );
 
     const missingLocationEvents = [];
     const restoreMissingLocationCapture = captureRunEvents(api.controller, [], [], [], missingLocationEvents);

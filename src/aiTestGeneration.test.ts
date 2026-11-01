@@ -249,6 +249,33 @@ describe('extractGeneratedPhpTest', () => {
     assert.match(generated, /it\("works"/);
   });
 
+  it('skips an earlier PHP helper file and extracts the later test file', () => {
+    const generated = extractGeneratedPhpTest([
+      'The first block is only a shared helper, followed by the requested test.',
+      '```php',
+      '<?php',
+      'final class InvoiceFactory {}',
+      '```',
+      '',
+      '```php',
+      '<?php',
+      'final class InvoiceTest extends TestCase',
+      '{',
+      '    public function testInvoiceCanBeCreated(): void {}',
+      '}',
+      '```',
+    ].join('\n'));
+
+    assert.equal(generated, [
+      '<?php',
+      'final class InvoiceTest extends TestCase',
+      '{',
+      '    public function testInvoiceCanBeCreated(): void {}',
+      '}',
+      '',
+    ].join('\n'));
+  });
+
   it('accepts PHPUnit attribute-based tests whose method name does not start with test', () => {
     const generated = extractGeneratedPhpTest([
       '```php',

@@ -222,6 +222,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     vscode.commands.registerCommand('phpunitRunner.showTestInsights', () => {
       showTestInsights();
     }),
+    vscode.commands.registerCommand('phpunitRunner.runLatestTestProblems', async () => {
+      await runLatestTestProblems();
+    }),
     vscode.commands.registerCommand('phpunitRunner.clearTestInsights', async () => {
       await clearTestInsightsHistory();
     }),
@@ -1754,6 +1757,45 @@ function findTestItemForInsight(
   };
   visit(fileItem.children);
   return findInsightTarget(identity, candidates, folder?.uri.toString())?.item;
+}
+
+async function runLatestTestProblems(): Promise<void> {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  const targets = new Map<string, vscode.TestItem>();
+  let unmapped = 0;
+  for (const folder of folders) {
+    const historyKey = `phpunitRunner.runHistory:${folder.uri.toString()}`;
+    const history = extensionContext.workspaceState.get<RunHistoryRun[]>(historyKey, []);
+    const limit = normalizeInsightLimit(getConfig(folder).get<number>('insights.limit', 10));
+    for (const problem of getLatestTestProblems(history, limit)) {
+      if (!problem.filePath) {
+        unmapped += 1;
+        continue;
+      }
+      const uri = vscode.Uri.file(problem.filePath);
+      await refreshUri(uri);
+      const fileItem = findFileItem(uri);
+      const target = fileItem
+        ? findTestItemForInsight(fileItem, uri, problem.testId)
+          ?? (problem.line ? findNarrowestTestItem(fileItem, new vscode.Position(problem.line - 1, 0)) : undefined)
+        : undefined;
+      const kind = target ? itemData.get(target)?.kind : undefined;
+      if (target && (kind === 'method' || kind === 'dataset')) {
+        targets.set(target.id, target);
+      } else {
+        unmapped += 1;
+      }
+    }
+  }
+
+  if (targets.size === 0) {
+    void vscode.window.showInformationMessage('No recent failed or errored tests could be mapped to discovered tests.');
+    return;
+  }
+  if (unmapped > 0) {
+    void vscode.window.showWarningMessage(`${unmapped} recent test problem${unmapped === 1 ? '' : 's'} could not be mapped and will be skipped.`);
+  }
+  await runTests(new vscode.TestRunRequest([...targets.values()]), new vscode.CancellationTokenSource().token);
 }
 
 async function clearTestInsightsHistory(): Promise<void> {
