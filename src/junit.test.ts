@@ -43,6 +43,26 @@ describe('parseJUnitXml', () => {
     assert.equal(cases[3].message, 'boom');
   });
 
+  it('parses cases from nested suites without losing sibling results', () => {
+    const cases = parseJUnitXml(`<testsuites>
+      <testsuite name="Feature Suite">
+        <testsuite name="Nested Feature Suite">
+          <testcase name="testNestedPass" classname="App\\FeatureTest" time="0.01"/>
+          <testcase name="testNestedSkip" class="App\\FeatureTest" time="0">
+            <skipped message="requires optional service"/>
+          </testcase>
+        </testsuite>
+        <testcase name="testSibling" classname="App\\FeatureTest" time="0.02"/>
+      </testsuite>
+    </testsuites>`);
+
+    assert.deepEqual(cases.map(({ name, className, status, message }) => ({ name, className, status, message })), [
+      { name: 'testNestedPass', className: 'App\\FeatureTest', status: 'passed', message: '' },
+      { name: 'testNestedSkip', className: 'App\\FeatureTest', status: 'skipped', message: 'requires optional service' },
+      { name: 'testSibling', className: 'App\\FeatureTest', status: 'passed', message: '' },
+    ]);
+  });
+
   it('returns an empty list for blank input', () => {
     assert.deepEqual(parseJUnitXml('   '), []);
   });

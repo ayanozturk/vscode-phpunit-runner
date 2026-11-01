@@ -48,6 +48,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - The per-file index retains at most 1,048,576 postings total; overflowed files exact-scan. The no-file Pest lookup cap change measured 345→58 ms at 10k. Benchmarks assert result counts and use no machine-specific timing gate.
 - Other measured workloads: 1M history records took 65.7 ms for slow-test and 64.5 ms for flaky-candidate queries; discovery took 12.8 ms at 1k and 110.5 ms at 10k; scanning a 5k-line heredoc fixture took 25.4 ms.
 - A top-K heap prototype for slowest-test selection did not yield consistent gains (63.9 ms then 71.2 ms versus a 68.3 ms baseline) and was discarded.
+- A seven-iteration history benchmark measured slowest/flaky medians of 3.5/6.5 ms at 20k cases and 74.4/89.2 ms at 1M; result counts passed and no consistent optimization was identified.
 - Composer metadata decoding is now isolated from filesystem reads; the unit tests cover valid, missing, malformed, and incomplete metadata.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
@@ -64,11 +65,11 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 
 ### P5 — Make test feedback actionable
 
-**Status: Active**
+**Status: Complete**
 
-- Insight actions resolve persisted report identity to the discovered class and method, with source-location mapping as a fallback when identity is stale.
+- Insight actions resolve persisted report identity to the exact discovered method or data set, fall back to the method when a reported row is unavailable, and use source location when identity is stale.
 - Slow-test entries show their latest reported date; flaky entries retain the newest-first pass/fail sequence and latest date.
-- Extension-host coverage verifies the insight action runs the selected method without widening to its data sets. Dataset-aware identity matching remains open.
+- Unit coverage exercises method and data-set identity resolution; extension-host coverage verifies the action runs the selected method without widening to its data sets.
 
 **Complete when:** insight run actions preserve exact discovered scope and recent outcomes remain understandable.
 

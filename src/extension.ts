@@ -54,7 +54,7 @@ import {
   firstFailureMessage,
   readJUnitReport,
 } from './junit';
-import { classNamesMatch, methodNameFromTestCase, normalizeClassName, parseTestSource } from './parser';
+import { normalizeClassName, parseTestSource } from './parser';
 import { planDatasetItems } from './datasetItemPlan';
 import {
   formatTestOutputSegments,
@@ -76,6 +76,7 @@ import {
 import { planMethodResult } from './methodResultPlan';
 import { readFailureSourceSnippets as readSourceFailureSnippets } from './sourceSnippets';
 import { makeFolderItemId, makeSuiteItemId, makeWorkspaceItemId } from './testItemIds';
+import { findInsightTarget } from './insightIdentity';
 import {
   findAcrossScopes,
   findWithGlobs as findWorkspaceFilesWithGlobs,
@@ -1724,38 +1725,18 @@ function findTestItemForInsight(
   identity: string,
 ): vscode.TestItem | undefined {
   const folder = vscode.workspace.getWorkspaceFolder(uri);
-  const prefix = folder ? `${folder.uri.toString()}::` : '';
-  const reportIdentity = prefix && identity.startsWith(prefix) ? identity.slice(prefix.length) : identity;
-  const separator = reportIdentity.indexOf('::');
-  if (separator < 1) {
-    return undefined;
-  }
-  const reportClass = reportIdentity.slice(0, separator);
-  const reportCase = reportIdentity.slice(separator + 2);
-  const methodName = methodNameFromTestCase(reportCase);
-  let match: vscode.TestItem | undefined;
+  const candidates: Array<TestItemData & { item: vscode.TestItem }> = [];
   const visit = (items: vscode.TestItemCollection): void => {
     items.forEach((item) => {
       const data = itemData.get(item);
-      if (
-        !match
-        && (data?.kind === 'method' || data?.kind === 'dataset')
-        && data.uri.fsPath === uri.fsPath
-        && data.className
-        && classNamesMatch(data.className, reportClass)
-        && (data.methodName?.toLowerCase() === methodName.toLowerCase()
-          || data.pestTestName?.toLowerCase() === reportCase.toLowerCase())
-      ) {
-        match = item;
-        return;
+      if (data?.uri.fsPath === uri.fsPath) {
+        candidates.push({ ...data, item });
       }
-      if (!match) {
-        visit(item.children);
-      }
+      visit(item.children);
     });
   };
   visit(fileItem.children);
-  return match;
+  return findInsightTarget(identity, candidates, folder?.uri.toString())?.item;
 }
 
 async function clearTestInsightsHistory(): Promise<void> {
