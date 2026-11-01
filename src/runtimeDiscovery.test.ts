@@ -108,6 +108,23 @@ class UserTest {
     }]);
   });
 
+  it('drops duplicate runtime entries that would otherwise produce duplicate test identities', () => {
+    const parsed = parseTestSource('/workspace/tests/UserTest.php', `<?php
+namespace App\\Tests;
+class UserTest { public function testCanLogin(): void {} }
+`);
+    const listing = parseRuntimeTestListing(`<tests>
+  <testCaseClass name="App\\Tests\\UserTest">
+    <testCaseMethod name="testCanLogin" dataSet="same row" />
+    <testCaseMethod name="testCanLogin" dataSet="same row" />
+  </testCaseClass>
+</tests>`);
+
+    const reconciled = reconcileRuntimeTestListing(listing, [parsed]);
+    assert.equal(reconciled.length, 1);
+    assert.equal(reconciled[0].identity, 'App\\Tests\\UserTest::testCanLogin with data set same row');
+  });
+
   it('normalizes PHPUnit class names and dataset suffixes when matching', () => {
     const parsed = parseTestSource('/workspace/tests/UserTest.php', `<?php
 namespace App\\Tests;

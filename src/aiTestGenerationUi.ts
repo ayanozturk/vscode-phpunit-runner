@@ -9,6 +9,7 @@ import {
   extractGeneratedPhpTest,
   formatDetectedAiTools,
   isTestDestination,
+  soleDetectedAiCli,
   suggestTestDestination,
   type AiCliTool,
 } from './aiTestGeneration';
@@ -61,11 +62,14 @@ export async function generateUnitTestsWithAi(
     description: tool.executablePath,
     tool,
   }));
-  const choice = await vscode.window.showQuickPick(choices, {
-    title: 'Generate Unit Tests',
-    placeHolder: 'Choose an installed AI CLI tool',
-    matchOnDescription: true,
-  });
+  const onlyTool = soleDetectedAiCli(tools);
+  const choice = onlyTool
+    ? { tool: onlyTool }
+    : await vscode.window.showQuickPick(choices, {
+      title: 'Generate Unit Tests',
+      placeHolder: 'Choose an installed AI CLI tool',
+      matchOnDescription: true,
+    });
   if (!choice) {
     return;
   }

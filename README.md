@@ -34,7 +34,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 
 ### AI-assisted test generation
 
-Run **PHPUnit Runner: Detect AI CLI Tools** to list supported Codex, GitHub Copilot, and Claude Code executables found on `PATH`. Choose **PHPUnit Runner: Generate Unit Tests with AI** from the Command Palette or a PHP editor context menu to generate a test for the selected code; with no selection, the active PHP file is used. The runner detects PHPUnit or Pest and includes the project test configuration and one existing test example when available.
+Run **PHPUnit Runner: Detect AI CLI Tools** to list supported Codex, GitHub Copilot, and Claude Code executables found on `PATH`. Choose **PHPUnit Runner: Generate Unit Tests with AI** from the Command Palette or a PHP editor context menu to generate a test for the selected code; with no selection, the active PHP file is used. If exactly one supported CLI is installed, it is used directly; if several are installed, choose one. The runner detects PHPUnit or Pest and includes the project test configuration and one existing test example when available.
 
 Before source and project context is sent to the selected CLI, the extension asks for confirmation. The CLI runs from a temporary directory in its read-only or planning mode; Copilot CLI also denies write, shell, and URL tools. Generated PHP is shown in a diff against the chosen file under the workspace `tests` folder; the save dialog suggests a `Unit` or `Feature` path based on the project’s existing test layout and mirrors source subfolders where possible. The extension saves only after you choose **Apply Test File**. You can then run the generated test through PHPUnit Runner. Authentication remains managed by the selected CLI.
 

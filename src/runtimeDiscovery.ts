@@ -159,6 +159,7 @@ export function reconcileRuntimeTestListing(
   }
 
   const reconciled: ReconciledRuntimeTest[] = [];
+  const seenIdentities = new Set<string>();
   for (const testCase of listing.testCases) {
     const locations = locationsByClassAndMethod.get(
       runtimeMethodKey(normalizeClassName(testCase.className), testCase.methodName),
@@ -172,6 +173,10 @@ export function reconcileRuntimeTestListing(
       + (testCase.dataSetSuffix
         ? ` ${testCase.dataSetSuffix}`
         : (testCase.dataSetName ? ` with data set ${testCase.dataSetName}` : ''));
+    if (seenIdentities.has(identity)) {
+      continue;
+    }
+    seenIdentities.add(identity);
     reconciled.push({
       ...testCase,
       methodName: location.methodName,

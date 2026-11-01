@@ -10,6 +10,7 @@ import {
   extractGeneratedPhpTest,
   formatDetectedAiTools,
   isTestDestination,
+  soleDetectedAiCli,
   suggestTestDestination,
   type AiCliTool,
 } from './aiTestGeneration';
@@ -90,6 +91,16 @@ describe('formatDetectedAiTools', () => {
 
   it('explains how to make a supported CLI available when none are found', () => {
     assert.match(formatDetectedAiTools([]), /Install Codex CLI, GitHub Copilot CLI, or Claude Code/);
+  });
+});
+
+describe('soleDetectedAiCli', () => {
+  it('auto-selects only when exactly one supported CLI is available', () => {
+    const codex: AiCliTool = { id: 'codex', label: 'Codex CLI', executablePath: '/tools/codex' };
+    const claude: AiCliTool = { id: 'claude', label: 'Claude Code', executablePath: '/tools/claude' };
+    assert.equal(soleDetectedAiCli([codex]), codex);
+    assert.equal(soleDetectedAiCli([]), undefined);
+    assert.equal(soleDetectedAiCli([codex, claude]), undefined);
   });
 });
 

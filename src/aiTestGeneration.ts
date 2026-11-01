@@ -71,6 +71,11 @@ export async function detectAiCliTools(options: DetectAiCliOptions = {}): Promis
   return candidates.filter((tool): tool is AiCliTool => tool !== undefined);
 }
 
+/** Avoids an unnecessary tool picker when exactly one supported CLI is installed. */
+export function soleDetectedAiCli(tools: readonly AiCliTool[]): AiCliTool | undefined {
+  return tools.length === 1 ? tools[0] : undefined;
+}
+
 /** Formats a detection result without discarding earlier runner output. */
 export function formatDetectedAiTools(tools: readonly AiCliTool[]): string {
   if (tools.length === 0) {

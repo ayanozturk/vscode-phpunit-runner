@@ -21,7 +21,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Keep filesystem, process, and VS Code effects at module edges.
 - Add characterization tests before moving behavior; preserve test identity, cancellation, workspace ownership, and report fallback behavior.
 
-**Recent progress:** PHPUnit suite ownership matching and cursor-to-test selection are now pure tested modules. Suite matching honors configured directory filename prefixes and suffixes.
+**Recent progress:** PHPUnit suite ownership matching, cursor-to-test selection, and method/data-set tree traversal are pure tested modules. Suite matching honors configured directory filename prefixes and suffixes.
 
 **Complete when:** focused modules have stable interfaces and tests, orchestration is smaller, and behavior remains unchanged except for covered compatibility fixes.
 
@@ -33,7 +33,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Preserve exact test identities and source paths; never infer per-test coverage from aggregate data.
 - Keep unsupported or unavailable fields visibly unavailable rather than reporting guessed results.
 
-**Recent progress:** repeated PHPUnit per-test coverage records for one test and source file merge and normalize line ranges. Remote report transfer rejects blank required JUnit paths before building a command.
+**Recent progress:** repeated PHPUnit per-test coverage records merge line ranges; runtime listing reconciliation drops duplicate exact identities; remote report transfer rejects blank required JUnit paths.
 
 **Complete when:** supported paths map exact results and unsupported or incomplete paths produce a clear, unverified or unavailable outcome.
 
@@ -45,7 +45,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Assert result counts; compare repeated measurements without machine-dependent CI thresholds.
 - Retain an optimization only when it improves measured workloads without changing results.
 
-**Current evidence:** repeated 10k no-file Pest lookups took 344–351 ms; an inline-loop experiment took 347–371 ms and was reverted. File-backed Pest lookup was 13.9–14.2 ms. No repeatable improvement justified retaining a change.
+**Current evidence:** repeated 10k discovery took about 100–102 ms; 1M-case history queries took 55–58 ms (slowest) and 40–41 ms (flaky). No-file Pest lookup remained the largest measured cost at 348–353 ms, while file-backed lookup took 14–15 ms. No tested change produced a repeatable improvement.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
 
@@ -68,7 +68,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Make destination suggestions follow the project's Unit/Feature layout and source folders; never silently overwrite an existing test.
 - Keep generated changes reviewable and require explicit confirmation before writing a PHP file under the workspace `tests/` directory.
 
-**Recent progress:** insight items with a usable reported source range now have a Run button. When the suggested AI test filename already exists, the save dialog selects the next unused conventional `Name2Test.php`, `Name3Test.php`, and so on.
+**Recent progress:** insight items with a usable reported source range have a Run button. AI test generation skips tool selection when exactly one supported CLI is detected, and destination suggestions avoid existing test filenames.
 
 **Complete when:** insight run actions preserve exact discovered scope, and AI tool detection, context consent, output review, destination selection, and explicit save behavior are covered by tests and documented clearly.
 

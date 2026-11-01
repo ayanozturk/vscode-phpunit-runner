@@ -34,6 +34,7 @@ import {
   type RunHistoryRun,
 } from './runHistory';
 import { groupItemsBy, runGroupsSequentially } from './grouping';
+import { collectMethodTreeItems } from './methodTree';
 import { terminateProcessTree } from './processTree';
 import { expandIncludedScopes } from './testScopes';
 import {
@@ -2422,19 +2423,11 @@ function collectExecutableItems(item: vscode.TestItem): vscode.TestItem[] {
 }
 
 function collectMethodItems(item: vscode.TestItem): vscode.TestItem[] {
-  const data = itemData.get(item);
-  if (data?.kind === 'dataset') {
-    return [item];
-  }
-  if (data?.kind === 'method') {
-    return [item, ...collectTestItems(item.children).flatMap((child) => collectMethodItems(child))];
-  }
-
-  const methods: vscode.TestItem[] = [];
-  for (const child of collectTestItems(item.children)) {
-    methods.push(...collectMethodItems(child));
-  }
-  return methods;
+  return collectMethodTreeItems(
+    item,
+    (candidate) => itemData.get(candidate)?.kind,
+    (candidate) => collectTestItems(candidate.children),
+  );
 }
 
 function toVscodeRange(range: SourceRange): vscode.Range {
