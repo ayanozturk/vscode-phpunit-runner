@@ -1,0 +1,60 @@
+name: Extension quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extension-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Record discovery performance baseline
+        run: npm run benchmark:discovery
+
+      - name: Record result-mapping performance baseline
+        run: npm run benchmark:result-index
+
+      - name: Run VS Code extension-host tests
+        run: xvfb-run -a npm run test:vscode
+
+      - name: Build production bundle
+        run: npm run package
+
+      - name: Validate VSIX packaging
+        run: npm run vsix
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=low

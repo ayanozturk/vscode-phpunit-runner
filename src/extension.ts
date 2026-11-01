@@ -8,6 +8,7 @@ import { mapWithMappings, unmapWithMappings, type PathMapping } from './commandT
 import { testCodeLensTargets } from './codeLens';
 import { readCloverReport } from './coverage';
 import { createDebouncedTaskScheduler } from './continuousTesting';
+import { detectParallelRunner } from './parallelRunner';
 import { buildGroupPickerOptions } from './groupPicker';
 import { autoDetectConfigurationFile, autoDetectPhpUnit, resolveInvocation } from './invoke';
 import { renderRemoteReportTransferCommand } from './remoteReports';
@@ -82,6 +83,7 @@ let outputChannel: vscode.OutputChannel;
 let controller: vscode.TestController;
 let extensionContext: vscode.ExtensionContext;
 let runProfile: vscode.TestRunProfile;
+let parallelProfile: vscode.TestRunProfile;
 let lastIncludeIds: string[] | undefined;
 let lastFailedIds: string[] = [];
 let debugListenStarted = false;
@@ -121,12 +123,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   };
 
   runProfile = controller.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, runTests, true, undefined, true);
+  parallelProfile = controller.createRunProfile(
+    'Parallel Tests',
+    vscode.TestRunProfileKind.Run,
+    (request, token) => runTests(request, token, true),
+    false,
+  );
   const debugProfile = controller.createRunProfile('Debug Tests', vscode.TestRunProfileKind.Debug, runTests, true);
   const coverageProfile = controller.createRunProfile('Coverage Tests', vscode.TestRunProfileKind.Coverage, runTests, true);
   coverageProfile.loadDetailedCoverage = async (_run, fileCoverage) => coverageDetails.get(fileCoverage) ?? [];
 
   context.subscriptions.push(
     runProfile,
+    parallelProfile,
     debugProfile,
     coverageProfile,
     vscode.commands.registerCommand('phpunitRunner.refreshTests', async () => {
@@ -271,7 +280,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   if (context.extensionMode === vscode.ExtensionMode.Test) {
     return {
       controller,
-      profiles: [runProfile, debugProfile, coverageProfile],
+      profiles: [runProfile, parallelProfile, debugProfile, coverageProfile],
       refresh: discoverWorkspaceTests,
       runGroup: (group) => runByGroup(group),
     };
@@ -864,9 +873,13 @@ function findNarrowestTestItem(item: vscode.TestItem, position: vscode.Position)
   return item.range?.contains(position) ? item : undefined;
 }
 
-async function runTests(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
+async function runTests(
+  request: vscode.TestRunRequest,
+  token: vscode.CancellationToken,
+  parallel = false,
+): Promise<void> {
   if (request.continuous) {
-    await runContinuousTests(request, token);
+    await runContinuousTests(request, token, parallel);
     return;
   }
 
@@ -919,10 +932,10 @@ async function runTests(request: vscode.TestRunRequest, token: vscode.Cancellati
           for (const file of selectedFiles) {
             processedFileIds.add(file.id);
           }
-          await runFileScope(item, selectedFiles, run, cancellation.token, kind);
+          await runFileScope(item, selectedFiles, run, cancellation.token, kind, parallel);
         }
       } else {
-        await runItem(item, run, cancellation.token, kind);
+        await runItem(item, run, cancellation.token, kind, parallel);
       }
     }
   } finally {
@@ -933,7 +946,11 @@ async function runTests(request: vscode.TestRunRequest, token: vscode.Cancellati
   }
 }
 
-async function runContinuousTests(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
+async function runContinuousTests(
+  request: vscode.TestRunRequest,
+  token: vscode.CancellationToken,
+  parallel: boolean,
+): Promise<void> {
   const selectedRoots = request.include?.length ? [...request.include] : collectTestItems(controller.items);
   const watchedUris = new Set(selectedRoots.flatMap((root) => {
     const data = itemData.get(root);
@@ -948,7 +965,7 @@ async function runContinuousTests(request: vscode.TestRunRequest, token: vscode.
     if (items.length === 0 || token.isCancellationRequested) {
       return;
     }
-    await runTests(new vscode.TestRunRequest(items, request.exclude, request.profile), token);
+    await runTests(new vscode.TestRunRequest(items, request.exclude, request.profile), token, parallel);
   };
 
   try {
@@ -1018,6 +1035,7 @@ async function runItem(
   run: vscode.TestRun,
   token: vscode.CancellationToken,
   kind: vscode.TestRunProfileKind,
+  parallel = false,
 ): Promise<void> {
   const data = itemData.get(item);
   if (!data && item.children.size > 0) {
@@ -1025,7 +1043,7 @@ async function runItem(
       .flatMap((child) => collectFileItems(child))
       .filter((fileItem, index, all) => all.findIndex((candidate) => candidate.id === fileItem.id) === index);
     if (files.length > 0) {
-      await runFileScope(item, files, run, token, kind);
+      await runFileScope(item, files, run, token, kind, parallel);
     }
     return;
   }
@@ -1038,7 +1056,7 @@ async function runItem(
   run.started(item);
 
   try {
-    const result = await executePhpUnit(data, token, kind, run);
+    const result = await executePhpUnit(data, token, kind, run, parallel);
     const folder = vscode.workspace.getWorkspaceFolder(data.uri);
     const outputPreset = getOutputPreset(folder);
     const outputFormat = getOutputFormat(folder);
@@ -1076,6 +1094,7 @@ async function runFileScope(
   run: vscode.TestRun,
   token: vscode.CancellationToken,
   kind: vscode.TestRunProfileKind,
+  parallel = false,
 ): Promise<void> {
   const firstFileData = itemData.get(files[0]);
   if (!firstFileData) {
@@ -1098,7 +1117,7 @@ async function runFileScope(
         return filePath ? [filePath] : [];
       }),
     };
-    const result = await executePhpUnit(scopeData, token, kind, run);
+    const result = await executePhpUnit(scopeData, token, kind, run, parallel);
     const folder = vscode.workspace.getWorkspaceFolder(firstFileData.uri);
     const outputPreset = getOutputPreset(folder);
     const outputFormat = getOutputFormat(folder);
@@ -1376,6 +1395,7 @@ async function executePhpUnit(
   token: vscode.CancellationToken,
   kind: vscode.TestRunProfileKind,
   run: vscode.TestRun,
+  parallel = false,
 ): Promise<{
   output: string;
   exitCode: number;
@@ -1399,6 +1419,23 @@ async function executePhpUnit(
   const coverageCloverPath = coverage ? path.join(runnerDir, `clover-${stamp}.xml`) : undefined;
 
   const config = readRunnerConfig(workspaceFolder);
+  const parallelRunner = parallel
+    ? await detectParallelRunner({
+      workspacePath: workspaceFolder.uri.fsPath,
+      configuredRunner: config.phpunitCommand,
+      commandTemplate: config.command,
+    })
+    : undefined;
+  if (parallel && !parallelRunner) {
+    throw new Error(config.command.trim()
+      ? 'Parallel Tests cannot use this custom command template. Include both ${phpunit} and ${phpunitargs}, or configure a supported Pest or ParaTest runner.'
+      : 'Parallel Tests requires Pest declared in Composer with vendor/bin/pest installed, or ParaTest installed beside PHPUnit.');
+  }
+  const parallelExecutable = parallelRunner === 'paratest'
+    && !/paratest(?:\.(?:bat|cmd|exe))?/i.test(config.phpunitCommand)
+    ? path.join(workspaceFolder.uri.fsPath, 'vendor', 'bin', process.platform === 'win32' ? 'paratest.bat' : 'paratest')
+    : undefined;
+  const parallelProcesses = getConfig(workspaceFolder).get<number>('parallel.processes', 2);
   if (debug) {
     await ensureDebugListen(workspaceFolder, config);
   }
@@ -1409,6 +1446,7 @@ async function executePhpUnit(
     config,
     junitLogPath,
     coverageCloverPath,
+    ...(parallelRunner ? { parallelRunner, parallelProcesses, phpunitExecutable: parallelExecutable } : {}),
     debug,
     detectedConfigurationFile: config.configurationFile
       ? undefined

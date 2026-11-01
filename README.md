@@ -10,6 +10,7 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Run configured suites directly.** Named suites from `phpunit.xml` appear as groups in the Testing view and run with PHPUnit’s suite selection, with individual results mapped back to discovered tests.
 - **Run the right amount.** Run a test at the cursor, the open file, failed tests, a group, or the whole suite. Rerun the last selection when you need another pass.
 - **Run or debug inline.** Use the Run Test and Debug Test actions shown above discovered PHPUnit methods and Pest cases.
+- **Choose speed or compatibility.** Keep the serial Run Tests profile as the default, or select Parallel Tests when Pest is declared and installed or ParaTest is installed. Set the worker count with `phpunitRunner.parallel.processes`.
 - **Work with data providers.** Literal PHPUnit `#[TestWith]` and `#[TestWithJson]` rows appear beneath each test before the first run; data-provider cases discovered from results can also be run individually.
 - **See provider cases before running.** Same-class PHPUnit providers that return literal arrays are expanded into selectable data sets in the Testing view, whether referenced by `#[DataProvider]` or `@dataProvider`.
 - **Handle dynamic PHPUnit providers.** When a provider cannot be evaluated statically, a PHPUnit list-only discovery pass enumerates its data sets; each case can then be run independently.
@@ -50,6 +51,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 - Adds PHPUnit data sets to their method after the first run so each data set can be run separately.
 - Supports run, debug, and coverage profiles, plus commands to run all, rerun the last selection, run failed tests, or choose a group.
 - Supports local and Docker execution, custom remote command templates, environment variables, and host-to-remote path mappings.
+- Offers an opt-in Parallel Tests profile for supported Pest and ParaTest projects, preserving selected scope and reported JUnit results. Unsupported application and opaque custom commands show an explanatory error.
 - Can save dirty editors before a run and automatically rerun a saved PHP file. Rapid saves to the same file are coalesced into one run.
 
 ## Configuration
@@ -71,6 +73,7 @@ Core settings:
 - `phpunitRunner.output.preset` (`collision`, `progress`, `pretty`, or `summary`)
 - `phpunitRunner.output.sourceSnippetContextLines` (source lines shown before and after a failure, from 0 to 5)
 - `phpunitRunner.continuousTesting`
+- `phpunitRunner.parallel.processes` (defaults to `2`, range `1`–`64`)
 - `phpunitRunner.testFileGlobs`
 - `phpunitRunner.excludeGlobs`
 - `phpunitRunner.debuggerConfig`
@@ -247,3 +250,4 @@ Large suites can contain thousands of individual results. Workspace and folder s
 - License: MIT
 
 Run `npm run benchmark:discovery` to measure parser time and memory for synthetic 1k- and 10k-test projects. Results are observational baselines, not CI thresholds.
+Run `npm run benchmark:result-index` to measure JUnit index construction and method/Pest lookups at the same scales. CI records both benchmarks without machine-dependent pass/fail thresholds.

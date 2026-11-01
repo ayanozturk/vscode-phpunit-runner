@@ -598,6 +598,40 @@ describe('resolveInvocation', () => {
       cwd: '/proj',
     }), /docker.container/);
   });
+
+  it('adds one runner-specific parallel configuration while preserving the test filter', async () => {
+    const pestInvocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: methodTarget,
+      config: { ...config, additionalArgs: ['--processes=9', '--processes', '11', '--parallel=false', '--testdox'] },
+      phpunitExecutable: 'vendor/bin/pest',
+      parallelRunner: 'pest',
+      parallelProcesses: 3,
+    });
+    const filterIndex = pestInvocation.args.indexOf('--filter');
+    assert.deepEqual(pestInvocation.args.slice(filterIndex), [
+      '--filter', '~^App\\\\Tests\\\\ExampleTest::testItWorks(?: with data set .*)?$~i', '/proj/tests/ExampleTest.php',
+    ]);
+    assert.ok(pestInvocation.args.includes('--parallel'));
+    assert.ok(pestInvocation.args.includes('--processes=3'));
+    assert.ok(pestInvocation.args.includes('--testdox'));
+    assert.ok(!pestInvocation.args.includes('--parallel=false'));
+    assert.ok(!pestInvocation.args.includes('9'));
+    assert.ok(!pestInvocation.args.includes('11'));
+    assert.equal(pestInvocation.args.filter((argument) => argument === '--parallel').length, 1);
+    assert.equal(pestInvocation.args.filter((argument) => argument.startsWith('--processes=')).length, 1);
+
+    const paratestInvocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: fileTarget,
+      config,
+      phpunitExecutable: 'vendor/bin/paratest',
+      parallelRunner: 'paratest',
+      parallelProcesses: 4,
+    });
+    assert.ok(paratestInvocation.args.includes('--processes=4'));
+    assert.ok(!paratestInvocation.args.includes('--parallel'));
+  });
 });
 
 describe('mapHostPathToContainer', () => {

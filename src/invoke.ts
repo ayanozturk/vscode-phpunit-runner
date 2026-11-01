@@ -10,6 +10,7 @@ import {
   type PathMapping,
 } from './commandTemplate';
 import type { Invocation, RunnerConfig, TestTarget } from './types';
+import { parallelRunnerArguments, type ParallelRunner } from './parallelRunner';
 import {
   escapeRegex,
   isPhpScript,
@@ -71,6 +72,8 @@ export async function resolveInvocation(options: {
   junitLogPath?: string;
   coverageCloverPath?: string;
   testListingXmlPath?: string;
+  parallelRunner?: ParallelRunner;
+  parallelProcesses?: number;
   debug?: boolean;
   phpunitExecutable?: string;
   detectedConfigurationFile?: string;
@@ -103,7 +106,13 @@ export async function resolveInvocation(options: {
   }
 
   phpunitArgs.push('--colors=always');
-  phpunitArgs.push(...config.additionalArgs);
+  const additionalArgs = options.parallelRunner
+    ? withoutParallelOverrides(config.additionalArgs)
+    : config.additionalArgs;
+  phpunitArgs.push(...additionalArgs);
+  if (options.parallelRunner) {
+    phpunitArgs.push(...parallelRunnerArguments(options.parallelRunner, options.parallelProcesses ?? 2));
+  }
 
   if (options.junitLogPath) {
     phpunitArgs.push('--log-junit', options.junitLogPath);
@@ -172,6 +181,24 @@ export async function resolveInvocation(options: {
     env,
     mappings: resolveDockerPathMappings(workspacePath, config, mappings),
   };
+}
+
+function withoutParallelOverrides(args: string[]): string[] {
+  const filtered: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (/^--parallel(?:=.*)?$/i.test(argument)) {
+      continue;
+    }
+    if (/^--processes(?:=.*)?$/i.test(argument)) {
+      if (argument === '--processes' && args[index + 1] && !args[index + 1].startsWith('--')) {
+        index += 1;
+      }
+      continue;
+    }
+    filtered.push(argument);
+  }
+  return filtered;
 }
 
 type ParsedRunnerCommand = { command: string; args: string[] };

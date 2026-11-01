@@ -359,12 +359,64 @@ class DynamicDataProviderTest
     const pestEvents = [];
     const restorePestCapture = captureRunEvents(api.controller, pestEvents);
     const testRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
+    const parallelProfile = api.profiles.find((profile) => profile.label === 'Parallel Tests');
     assert.ok(testRunProfile);
+    assert.ok(parallelProfile && !parallelProfile.isDefault, 'Parallel Tests is available as an opt-in profile');
     assert.equal(testRunProfile.supportsContinuousRun, true, 'the Run Tests profile exposes VS Code continuous runs');
 
     const continuousLogPath = path.join(workspaceA.uri.fsPath, 'runner.log');
     const continuousLogCount = async () => (await fs.readFile(continuousLogPath, 'utf8').catch(() => ''))
       .split('\n').filter((line) => line.startsWith('invoked ') && !line.includes('--list-tests-xml')).length;
+    const originalRunner = path.join(workspaceA.uri.fsPath, 'fake-phpunit');
+    const parallelRunnerPath = path.join(workspaceA.uri.fsPath, 'vendor', 'bin', 'paratest');
+    const fakePhpExecutable = path.join(workspaceA.uri.fsPath, 'fake-php');
+    await fs.mkdir(path.dirname(parallelRunnerPath), { recursive: true });
+    await fs.copyFile(originalRunner, parallelRunnerPath);
+    await fs.chmod(parallelRunnerPath, 0o755);
+    await fs.writeFile(fakePhpExecutable, '#!/bin/sh\nrunner="$1"\nshift\nexec "$runner" "$@"\n', 'utf8');
+    await fs.chmod(fakePhpExecutable, 0o755);
+    const workspaceAConfig = vscode.workspace.getConfiguration('phpunitRunner', workspaceA);
+    await workspaceAConfig.update('phpunitCommand', 'vendor/bin/phpunit', vscode.ConfigurationTarget.WorkspaceFolder);
+    await workspaceAConfig.update('phpExecutable', fakePhpExecutable, vscode.ConfigurationTarget.Workspace);
+    await workspaceAConfig.update('parallel.processes', 3, vscode.ConfigurationTarget.WorkspaceFolder);
+    const beforeParallelRun = await continuousLogCount();
+    const parallelEvents = [];
+    const restoreParallelCapture = captureRunEvents(api.controller, parallelEvents);
+    await parallelProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')], undefined, parallelProfile),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreParallelCapture();
+    assert.ok(parallelEvents.some((event) => event.label === 'testAlpha' && event.state === 'passed'),
+      `ParaTest JUnit results map to the selected test (${JSON.stringify(parallelEvents)})`);
+    assert.equal(await continuousLogCount(), beforeParallelRun + 1, 'a selected parallel scope uses one runner invocation');
+    const parallelInvocation = (await fs.readFile(continuousLogPath, 'utf8')).split('\n').findLast((line) => line.startsWith('invoked '));
+    assert.match(parallelInvocation, /--processes=3/);
+    assert.match(parallelInvocation, /--filter/);
+    const parallelCancellationEvents = [];
+    const restoreParallelCancellationCapture = captureRunEvents(api.controller, parallelCancellationEvents);
+    await fs.rm(path.join(workspaceA.uri.fsPath, 'runner-ready'), { force: true });
+    await workspaceAConfig.update('environment', { PHPUNIT_RUNNER_MODE: 'hang' }, vscode.ConfigurationTarget.WorkspaceFolder);
+    const parallelCancellation = new vscode.CancellationTokenSource();
+    const parallelCancellationRun = Promise.resolve(parallelProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')], undefined, parallelProfile),
+      parallelCancellation.token,
+    ));
+    await until(
+      () => fs.access(path.join(workspaceA.uri.fsPath, 'runner-ready')).then(() => true, () => false),
+      'ParaTest runner starts before cancellation',
+    );
+    parallelCancellation.cancel();
+    await parallelCancellationRun;
+    restoreParallelCancellationCapture();
+    parallelCancellation.dispose();
+    assert.ok(parallelCancellationEvents.some((event) => event.label === 'testAlpha' && event.state === 'skipped'),
+      'cancelling a parallel runner marks its selected test skipped');
+    await workspaceAConfig.update('phpunitCommand', originalRunner, vscode.ConfigurationTarget.WorkspaceFolder);
+    await workspaceAConfig.update('phpExecutable', 'php', vscode.ConfigurationTarget.Workspace);
+    await workspaceAConfig.update('environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder);
+    await workspaceAConfig.update('parallel.processes', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+
     const initialContinuousLogCount = await continuousLogCount();
     await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
       'continuousTesting', true, vscode.ConfigurationTarget.Workspace,

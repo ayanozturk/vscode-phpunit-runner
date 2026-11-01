@@ -89,6 +89,14 @@
           "default": [],
           "description": "Additional arguments appended to every PHPUnit invocation."
         },
+        "phpunitRunner.parallel.processes": {
+          "type": "integer",
+          "scope": "resource",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 64,
+          "description": "Worker processes used by the opt-in Parallel Tests profile."
+        },
         "phpunitRunner.command": {
           "type": "string",
           "default": "",
@@ -378,6 +386,7 @@
     "watch": "tsc -watch -p ./tsconfig.json",
     "test": "tsx --test src/*.test.ts",
     "benchmark:discovery": "node --expose-gc --import tsx scripts/benchmark-discovery.ts",
+    "benchmark:result-index": "node --expose-gc --import tsx scripts/benchmark-result-index.ts",
     "test:vscode": "npm run package && node test/vscode/run.mjs",
     "package": "webpack --mode production --devtool hidden-source-map",
     "vsix": "vsce package --no-dependencies",

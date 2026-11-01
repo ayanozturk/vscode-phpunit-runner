@@ -56,7 +56,11 @@ export function indexTestCases(cases: JUnitTestCase[], workspaceRoot?: string): 
 }
 
 export function findIndexedMethodCases(index: TestCaseIndex, className: string, methodName: string): JUnitTestCase[] {
-  return findByClass(index.byClass, index, className, methodName).flat();
+  const result: JUnitTestCase[] = [];
+  forEachByClass(index.byClass, index, className, (cases) => {
+    result.push(...(cases.get(methodName) ?? []));
+  });
+  return result;
 }
 
 export function findIndexedDatasetCases(
@@ -65,8 +69,15 @@ export function findIndexedDatasetCases(
   datasetName: string,
 ): JUnitTestCase[] {
   const methodName = methodNameFromTestCase(datasetName);
-  return findByClass(index.byClass, index, className, methodName)
-    .flatMap((cases) => cases.filter((testCase) => testCase.name === datasetName));
+  const result: JUnitTestCase[] = [];
+  forEachByClass(index.byClass, index, className, (cases) => {
+    for (const testCase of cases.get(methodName) ?? []) {
+      if (testCase.name === datasetName) {
+        result.push(testCase);
+      }
+    }
+  });
+  return result;
 }
 
 export function findIndexedPestCases(
@@ -78,11 +89,18 @@ export function findIndexedPestCases(
   const fileCases = index.byFile.get(expectedPath) ?? [];
   const indexedCases = findPestTrigramCandidates(index.withoutFileByTrigram, testName);
   const casesWithoutFile = indexedCases ?? index.withoutFile;
-  const candidates = [
-    ...fileCases,
-    ...casesWithoutFile,
-  ];
-  return candidates.filter((testCase) => testCase.name.includes(testName));
+  const result: JUnitTestCase[] = [];
+  for (const testCase of fileCases) {
+    if (testCase.name.includes(testName)) {
+      result.push(testCase);
+    }
+  }
+  for (const testCase of casesWithoutFile) {
+    if (testCase.name.includes(testName)) {
+      result.push(testCase);
+    }
+  }
+  return result;
 }
 
 export function findIndexedFileCases(
@@ -93,32 +111,33 @@ export function findIndexedFileCases(
   const result = [...(index.byFile.get(path.resolve(filePath)) ?? [])];
   const included = new Set(result);
   for (const className of classNames) {
-    for (const cases of findByClass(index.byClassWithoutFile, index, className)) {
-      for (const testCase of cases) {
-        if (!included.has(testCase)) {
-          included.add(testCase);
-          result.push(testCase);
+    forEachByClass(index.byClassWithoutFile, index, className, (methods) => {
+      for (const cases of methods.values()) {
+        for (const testCase of cases) {
+          if (!included.has(testCase)) {
+            included.add(testCase);
+            result.push(testCase);
+          }
         }
       }
-    }
+    });
   }
   return result;
 }
 
-function findByClass(
+function forEachByClass(
   source: Map<string, Map<string, JUnitTestCase[]>>,
   index: TestCaseIndex,
   requestedClassName: string,
-  methodName?: string,
-): JUnitTestCase[][] {
+  visit: (methods: Map<string, JUnitTestCase[]>) => void,
+): void {
   const normalized = normalizeClassName(requestedClassName);
   const exact = source.get(normalized);
   if (exact) {
-    const cases = methodName === undefined ? [...exact.values()] : [exact.get(methodName) ?? []];
-    return cases.filter((items) => items.length > 0);
+    visit(exact);
+    return;
   }
 
-  const result: JUnitTestCase[][] = [];
   const candidates = new Set(index.classNameSuffixes.get(normalized) ?? []);
   for (const suffix of classNameSuffixesFor(normalized)) {
     if (source.has(suffix)) {
@@ -131,13 +150,10 @@ function findByClass(
 
   for (const className of matchingClasses) {
     const methods = source.get(className);
-    if (!methods) {
-      continue;
+    if (methods) {
+      visit(methods);
     }
-    const cases = methodName === undefined ? [...methods.values()] : [methods.get(methodName) ?? []];
-    result.push(...cases.filter((items) => items.length > 0));
   }
-  return result;
 }
 
 function classNameSuffixesFor(className: string): string[] {

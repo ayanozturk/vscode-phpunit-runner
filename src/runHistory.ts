@@ -79,7 +79,10 @@ export function appendRunHistory(
   return [...history, createRunHistoryRecord(run)].slice(-MAX_RUN_HISTORY);
 }
 
-/** Returns reported completed case occurrences with the greatest durations first. */
+/**
+ * Returns one latest reported occurrence per test, ranked by its latest
+ * duration. A repeated test therefore cannot take multiple slots.
+ */
 export function getSlowestTests(
   history: readonly RunHistoryRun[],
   limit = 10,
@@ -88,20 +91,48 @@ export function getSlowestTests(
     return [];
   }
 
-  return history
-    .flatMap((run) => run.cases.flatMap((testCase) => (
-      isValidDuration(testCase.durationMs)
-        ? [{
-          testId: testCase.testId,
-          label: testCase.label,
-          outcome: testCase.outcome,
-          durationMs: testCase.durationMs,
-          runId: run.id,
-          completedAt: run.completedAt,
-        }]
-        : []
-    )))
-    .sort((left, right) => right.durationMs - left.durationMs)
+  const latestByTest = new Map<string, { occurrence: SlowTestOccurrence; historyIndex: number; timestamp: number }>();
+  history.forEach((run, historyIndex) => {
+    const timestamp = Date.parse(run.completedAt);
+    for (const testCase of run.cases) {
+      if (!isValidDuration(testCase.durationMs)) {
+        continue;
+      }
+
+      const occurrence: SlowTestOccurrence = {
+        testId: testCase.testId,
+        label: testCase.label,
+        outcome: testCase.outcome,
+        durationMs: testCase.durationMs,
+        runId: run.id,
+        completedAt: run.completedAt,
+      };
+      const previous = latestByTest.get(testCase.testId);
+      const previousHasTimestamp = previous !== undefined && Number.isFinite(previous.timestamp);
+      const currentHasTimestamp = Number.isFinite(timestamp);
+      let isNewer = previous === undefined;
+      if (previous) {
+        if (currentHasTimestamp && previousHasTimestamp) {
+          isNewer = timestamp > previous.timestamp
+            || (timestamp === previous.timestamp && historyIndex > previous.historyIndex);
+        } else {
+          isNewer = historyIndex > previous.historyIndex;
+        }
+      }
+
+      if (isNewer) {
+        latestByTest.set(testCase.testId, { occurrence, historyIndex, timestamp });
+      }
+    }
+  });
+
+  return [...latestByTest.values()]
+    .map(({ occurrence }) => occurrence)
+    .sort((left, right) => (
+      right.durationMs - left.durationMs
+      || right.completedAt.localeCompare(left.completedAt)
+      || left.testId.localeCompare(right.testId)
+    ))
     .slice(0, Math.floor(limit));
 }
 

@@ -4,13 +4,15 @@
 
 Make PHPUnit Runner a fast, dependable PHPUnit and Pest workflow in VS Code, from initial discovery through local, containerized, and remote execution. This roadmap targets the next 6–12 months and prioritizes trustworthy results, low-latency feedback, and practical diagnostics before adding more surface area.
 
-Research confirms that machine-readable test listing and result formats are available in PHPUnit, VS Code supports native continuous runs and detailed coverage, and Pest provides parallel execution and profiling. PHP testing tools also surface run history, timings, and profiling. ([PHPUnit CLI](https://docs.phpunit.de/en/12.5/cli-options.html), [VS Code Testing API](https://code.visualstudio.com/api/extension-guides/testing), [Pest optimization](https://pestphp.com/docs/optimizing-tests), [PHPUnit Test Workbench](https://marketplace.visualstudio.com/items?itemName=chiefmyron.phpunit-test-workbench), [PHP Tools](https://open-vsx.org/extension/DEVSENSE/phptools-vscode))
+Research confirms that machine-readable test listing and result formats are available in PHPUnit, VS Code supports native continuous runs and detailed coverage, and Pest and ParaTest provide parallel execution. PHP testing tools also surface run history, timings, and profiling. ([PHPUnit CLI](https://docs.phpunit.de/en/12.5/cli-options.html), [VS Code Testing API](https://code.visualstudio.com/api/extension-guides/testing), [Pest optimization](https://pestphp.com/docs/optimizing-tests), [ParaTest](https://github.com/paratestphp/paratest), [PHPUnit Test Workbench](https://marketplace.visualstudio.com/items?itemName=chiefmyron.phpunit-test-workbench), [PHP Tools](https://open-vsx.org/extension/DEVSENSE/phptools-vscode))
 
 ## Progress
 
 - **Delivered:** Dynamic PHPUnit provider listing with static fallback, project diagnostics, remote report transfer, incremental discovery, VS Code native continuous runs, saved-file continuous runs, and workspace-local history/slow-test/flaky-candidate insights.
-- **Baseline added:** `npm run benchmark:discovery` measures 1k and 10k synthetic test projects. Initial local median parser times were about 19 ms and 182 ms respectively; these observations do not impose machine-dependent pass/fail thresholds.
-- **Still planned:** Opt-in parallel execution, richer coverage, a supported PHPUnit/Pest CI matrix, and further module boundaries around invocation and result mapping.
+- **Delivered:** An opt-in Parallel Tests profile for detected Pest and ParaTest installations, with configurable workers, scoped execution, JUnit mapping, and cancellation; unsupported Artisan and opaque remote commands are reported clearly.
+- **Delivered:** A Node 22/24 GitHub Actions quality matrix and focused modules for run history and excluded test scopes. Result mapping now avoids intermediate nested-array allocations in its lookup paths.
+- **Baselines added:** `npm run benchmark:discovery` and `npm run benchmark:result-index` measure synthetic 1k/10k test workloads without machine-dependent thresholds. On this local machine, initial discovery medians were about 19/180 ms; result mapping improved from 5.8 to 3.9 ms for 10k method lookups and 258 to 221 ms for Pest lookups.
+- **Still planned:** A PHPUnit/Pest version matrix, richer coverage, and further module boundaries around invocation and result mapping.
 
 ## Roadmap
 

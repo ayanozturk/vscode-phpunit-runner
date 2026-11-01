@@ -78,6 +78,50 @@ describe('run history', () => {
     assert.deepEqual(getSlowestTests(history, 0), []);
   });
 
+  it('uses each test’s latest duration so repeated runs do not crowd out unique slow tests', () => {
+    const history = [
+      {
+        ...run('old', [{ testId: 'repeated', outcome: 'passed', durationMs: 1500 }]),
+        completedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        ...run('latest', [{ testId: 'repeated', outcome: 'passed', durationMs: 400 }]),
+        completedAt: '2026-01-03T00:00:00.000Z',
+      },
+      {
+        ...run('other', [{ testId: 'other', outcome: 'passed', durationMs: 900 }]),
+        completedAt: '2026-01-02T00:00:00.000Z',
+      },
+    ];
+
+    assert.deepEqual(getSlowestTests(history).map(({ testId, durationMs, runId }) => ({ testId, durationMs, runId })), [
+      { testId: 'other', durationMs: 900, runId: 'other' },
+      { testId: 'repeated', durationMs: 400, runId: 'latest' },
+    ]);
+  });
+
+  it('uses later history order to break equal completion-time ties', () => {
+    const history = [
+      { ...run('first', [{ testId: 'same-time', outcome: 'passed', durationMs: 100 }]), completedAt: '2026-01-01T00:00:00.000Z' },
+      { ...run('second', [{ testId: 'same-time', outcome: 'passed', durationMs: 200 }]), completedAt: '2026-01-01T00:00:00.000Z' },
+    ];
+
+    assert.deepEqual(getSlowestTests(history).map(({ runId, durationMs }) => ({ runId, durationMs })), [
+      { runId: 'second', durationMs: 200 },
+    ]);
+  });
+
+  it('uses history order when either completion timestamp is invalid', () => {
+    const history = [
+      { ...run('valid', [{ testId: 'invalid-time', outcome: 'passed', durationMs: 100 }]), completedAt: '2026-01-01T00:00:00.000Z' },
+      { ...run('invalid', [{ testId: 'invalid-time', outcome: 'passed', durationMs: 200 }]), completedAt: 'not-a-timestamp' },
+    ];
+
+    assert.deepEqual(getSlowestTests(history).map(({ runId, durationMs }) => ({ runId, durationMs })), [
+      { runId: 'invalid', durationMs: 200 },
+    ]);
+  });
+
   it('flags a candidate only when both pass and fail appear in the latest ten outcomes', () => {
     const history = [
       run('1', [{ testId: 'flaky', outcome: 'failed' }, { testId: 'stable', outcome: 'failed' }]),
