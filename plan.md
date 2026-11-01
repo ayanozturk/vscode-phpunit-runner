@@ -16,6 +16,7 @@ Research confirms that machine-readable test listing and result formats are avai
 - **Performance note:** A measured alternative to the parser's comment/string masking was slower on both benchmark sizes, so it was discarded without changing parser behavior.
 - **Delivered:** Process creation, output capture, cancellation, and exit handling for test and remote-transfer commands now share a tested process runner. Remote report template variables are substituted in one pass so placeholder-like text inside a path remains literal.
 - **Delivered:** Result mapping now treats PHP class and method names case-insensitively while preserving data-set label matching. Composer-driven runtime discovery now ignores stale cancelled runs, preventing them from suppressing the latest refresh. The benchmark exercises the bounded trigram fallback used for JUnit cases without file metadata.
+- **Delivered:** Runtime provider results preserve source method casing, repeated include globs run once per refresh, and plain-output mode strips ANSI colors from failure messages. JUnit path remapping now lives in a focused module with tests for sibling-path boundaries and Windows separators.
 - **Measured:** On this local machine, trigram fallback across 10k JUnit cases took about 69 ms to index and 351 ms for 10k lookups; the fallback is now represented in the benchmark for future comparisons.
 - **Still planned:** Further module boundaries around invocation and result mapping, plus coverage attribution for multi-test runs if the report format can support it safely.
 

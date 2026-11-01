@@ -141,7 +141,7 @@ export function reconcileRuntimeTestListing(
   listing: RuntimeTestListing,
   parsedFiles: readonly ParsedTestFile[],
 ): ReconciledRuntimeTest[] {
-  const locationsByClassAndMethod = new Map<string, string[]>();
+  const locationsByClassAndMethod = new Map<string, Array<{ filePath: string; methodName: string }>>();
 
   for (const parsedFile of parsedFiles) {
     for (const testClass of parsedFile.classes) {
@@ -149,10 +149,10 @@ export function reconcileRuntimeTestListing(
       for (const method of testClass.methods) {
         const baseMethodName = methodNameFromTestCase(method.name);
         const key = runtimeMethodKey(normalizedClassName, baseMethodName);
-        const files = locationsByClassAndMethod.get(key) ?? [];
-        if (!files.includes(parsedFile.filePath)) {
-          files.push(parsedFile.filePath);
-          locationsByClassAndMethod.set(key, files);
+        const locations = locationsByClassAndMethod.get(key) ?? [];
+        if (!locations.some(({ filePath }) => filePath === parsedFile.filePath)) {
+          locations.push({ filePath: parsedFile.filePath, methodName: baseMethodName });
+          locationsByClassAndMethod.set(key, locations);
         }
       }
     }
@@ -160,18 +160,24 @@ export function reconcileRuntimeTestListing(
 
   const reconciled: ReconciledRuntimeTest[] = [];
   for (const testCase of listing.testCases) {
-    const files = locationsByClassAndMethod.get(
+    const locations = locationsByClassAndMethod.get(
       runtimeMethodKey(normalizeClassName(testCase.className), testCase.methodName),
     );
-    if (!files || files.length !== 1) {
+    if (!locations || locations.length !== 1) {
       continue;
     }
 
-    const identity = `${normalizeClassName(testCase.className)}::${testCase.methodName}`
+    const location = locations[0];
+    const identity = `${normalizeClassName(testCase.className)}::${location.methodName}`
       + (testCase.dataSetSuffix
         ? ` ${testCase.dataSetSuffix}`
         : (testCase.dataSetName ? ` with data set ${testCase.dataSetName}` : ''));
-    reconciled.push({ ...testCase, filePath: files[0], identity });
+    reconciled.push({
+      ...testCase,
+      methodName: location.methodName,
+      filePath: location.filePath,
+      identity,
+    });
   }
 
   return reconciled;

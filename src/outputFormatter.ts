@@ -225,9 +225,10 @@ function formatFailureMessage(message: string | undefined, format: TestOutputFor
   if (!message || format.failureMessage === '') {
     return undefined;
   }
+  const normalizedMessage = format.colors === false ? stripAnsiColors(message) : message;
   return format.failureMessage
-    ? renderTemplate(format.failureMessage, { message })
-    : indent(message, '  ');
+    ? renderTemplate(format.failureMessage, { message: normalizedMessage })
+    : indent(normalizedMessage, '  ');
 }
 
 function renderTemplate(template: string, values: Record<string, string>): string {
@@ -235,7 +236,11 @@ function renderTemplate(template: string, values: Record<string, string>): strin
 }
 
 function formatSnippet(snippet: string, format: TestOutputFormat): string {
-  return format.colors === false ? snippet.replace(/\u001b\[[0-9;]*m/g, '') : snippet;
+  return format.colors === false ? stripAnsiColors(snippet) : snippet;
+}
+
+function stripAnsiColors(value: string): string {
+  return value.replace(/\u001b\[[0-?]*[ -/]*m/g, '');
 }
 
 function ensureTrailingNewline(output: string): string {

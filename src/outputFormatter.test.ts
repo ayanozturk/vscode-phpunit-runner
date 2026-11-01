@@ -220,6 +220,22 @@ describe('formatTestOutput', () => {
 
     assert.equal(output, '\u001b[32m✓\u001b[0m \u001b[32mPASS\u001b[0m testPass\n');
   });
+
+  it('removes ANSI colors from runner failure text when colors are disabled', () => {
+    const coloredFailure = {
+      ...cases[1],
+      message: '\u001b[31mFailed assertion.\u001b[0m\n\u001b[1;33mExpected true.\u001b[0m',
+    };
+
+    for (const preset of ['collision', 'pretty', 'summary'] as OutputPreset[]) {
+      const output = formatTestOutput([coloredFailure], preset, '', new Map(), { colors: false });
+      assert.doesNotMatch(output, /\u001b\[/, `${preset} should honor colors: false in runner output`);
+      assert.match(output, /Failed assertion\./);
+      if (preset !== 'summary') {
+        assert.match(output, /Expected true\./);
+      }
+    }
+  });
 });
 
 describe('sourceSnippetAtLine', () => {

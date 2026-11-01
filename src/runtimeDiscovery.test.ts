@@ -139,6 +139,30 @@ class UserTest {
     }]);
   });
 
+  it('uses the declared method casing for runtime data sets', () => {
+    const parsed = parseTestSource('/workspace/tests/UserTest.php', `<?php
+namespace App\\Tests;
+class UserTest {
+    public function testCanLogin(): void {}
+}
+`);
+    const listing = parseRuntimeTestListing(`<tests>
+  <testCaseClass name="App\\Tests\\UserTest">
+    <testCaseMethod name="testcanlogin" dataSet="runtime row" />
+  </testCaseClass>
+</tests>`);
+
+    assert.deepEqual(reconcileRuntimeTestListing(listing, [parsed]), [{
+      className: 'App\\Tests\\UserTest',
+      caseName: 'testcanlogin',
+      methodName: 'testCanLogin',
+      dataSetName: 'runtime row',
+      groups: [],
+      filePath: '/workspace/tests/UserTest.php',
+      identity: 'App\\Tests\\UserTest::testCanLogin with data set runtime row',
+    }]);
+  });
+
   it('does not map a runtime class by short name when its namespace is unknown', () => {
     const parsed = parseTestSource('/workspace/tests/UserTest.php', `<?php
 namespace App\Tests;

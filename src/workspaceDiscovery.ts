@@ -29,7 +29,9 @@ export async function findWithGlobs<TScope, TResult>(
 ): Promise<TResult[]> {
   const excludeGlob = excludes.length > 0 ? `{${excludes.join(',')}}` : undefined;
   const matchesByGlob = await Promise.all(
-    includes.map((pattern) => search(pattern, excludeGlob, scope)),
+    // Repeated settings or overlapping suite declarations must not schedule
+    // the exact same workspace scan more than once.
+    [...new Set(includes)].map((pattern) => search(pattern, excludeGlob, scope)),
   );
   for (const results of matchesByGlob) {
     for (const result of results) {

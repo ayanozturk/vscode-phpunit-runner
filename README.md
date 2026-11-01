@@ -48,6 +48,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 - Indexes JUnit results for fast status mapping, even when a run contains thousands of tests.
 - Adds inline Run Test and Debug Test actions above each discovered test.
 - Maps JUnit results to individual tests and reports assertion failure locations.
+- Matches PHPUnit classes and methods without case sensitivity, maps remote paths in failure messages at directory boundaries, and preserves unrelated sibling paths.
 - Adds PHPUnit data sets to their method after the first run so each data set can be run separately.
 - Supports run, debug, and coverage profiles, plus commands to run all, rerun the last selection, run failed tests, or choose a group.
 - Supports local and Docker execution, custom remote command templates, environment variables, and host-to-remote path mappings.
@@ -115,7 +116,7 @@ Use `phpunitRunner.output.format` to tailor status markers and failure details p
 }
 ```
 
-The `testCase` template accepts `{status}`, `{icon}`, `{name}`, and `{duration}`. Failure details accept `{file}` and `{line}` for `failureLocation`, and `{message}` for `failureMessage`. Set either failure template to an empty string to hide that detail. Use `icons` to override markers for `passed`, `failed`, `errored`, and `skipped` cases.
+The `testCase` template accepts `{status}`, `{icon}`, `{name}`, and `{duration}`. Failure details accept `{file}` and `{line}` for `failureLocation`, and `{message}` for `failureMessage`. Set either failure template to an empty string to hide that detail. Use `icons` to override markers for `passed`, `failed`, `errored`, and `skipped` cases. Setting `colors` to `false` also removes standard ANSI color codes embedded in runner failure messages.
 
 Set `phpunitRunner.output.sourceSnippetContextLines` to control how much PHP source appears around a failure location. It defaults to one line above and below; set it to `0` to show only the failing line, or choose up to `5` lines of context on each side.
 

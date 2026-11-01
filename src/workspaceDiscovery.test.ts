@@ -93,6 +93,28 @@ describe('workspace-scoped test discovery', () => {
     }
   });
 
+  it('searches duplicate include globs once and deduplicates overlapping results', async () => {
+    const calls: string[] = [];
+    const unique = new Map<string, string>();
+    const found = await findWithGlobs(
+      ['tests/**/*.php', '**/*Test.php', 'tests/**/*.php'],
+      [],
+      unique,
+      'workspace',
+      async (pattern) => {
+        calls.push(pattern);
+        return pattern === 'tests/**/*.php'
+          ? ['tests/ExampleTest.php', 'tests/Support.php']
+          : ['tests/ExampleTest.php', 'OtherTest.php'];
+      },
+      (result) => result,
+    );
+
+    assert.deepEqual(calls, ['tests/**/*.php', '**/*Test.php']);
+    assert.deepEqual(found, ['tests/ExampleTest.php', 'tests/Support.php', 'OtherTest.php']);
+    assert.equal(unique.size, 3);
+  });
+
   it('overlaps independent workspace roots and preserves root order while deduplicating', async () => {
     type Result = { path: string; root: string };
     let firstPending = true;

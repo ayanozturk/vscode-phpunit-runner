@@ -15,6 +15,7 @@ import { renderRemoteReportTransferCommand } from './remoteReports';
 import { parseRuntimeTestListing, reconcileRuntimeTestListing } from './runtimeDiscovery';
 import { createTestInsightChoices, type TestInsightChoice } from './runInsights';
 import { runProcess } from './processRunner';
+import { remapJUnitCases } from './junitMapping';
 import {
   appendRunHistory,
   findFlakyCandidates,
@@ -1530,7 +1531,7 @@ async function executePhpUnit(
     const reportWarning = reportTransferWarning ?? junitReport.warning ?? (remoteExecution && !junitReport.available
       ? 'Remote PHPUnit execution completed, but its JUnit report is unavailable on the host. Detailed test results require a shared or mounted report path, or retrieval by the remote command.'
       : undefined);
-    const cases = remapCases(junitReport.cases, invocation.mappings ?? []);
+    const cases = remapJUnitCases(junitReport.cases, invocation.mappings ?? []);
     if (junitReport.available && cases.length > 0 && !token.isCancellationRequested) {
       try {
         await recordRunHistory(workspaceFolder, cases);
@@ -2243,26 +2244,6 @@ async function maybeSaveBeforeTest(folders = vscode.workspace.workspaceFolders ?
   if (folders.some((folder) => readRunnerConfig(folder).saveBeforeTest)) {
     await vscode.workspace.saveAll(false);
   }
-}
-
-function remapCases(cases: JUnitTestCase[], mappings: PathMapping[]): JUnitTestCase[] {
-  if (mappings.length === 0) {
-    return cases;
-  }
-
-  return cases.map((item) => ({
-    ...item,
-    file: item.file ? unmapWithMappings(item.file, mappings) : item.file,
-    message: remapText(item.message, mappings),
-  }));
-}
-
-function remapText(value: string, mappings: PathMapping[]): string {
-  let result = value;
-  for (const mapping of mappings) {
-    result = result.split(mapping.to).join(mapping.from);
-  }
-  return result;
 }
 
 function addFileItemToHierarchy(
