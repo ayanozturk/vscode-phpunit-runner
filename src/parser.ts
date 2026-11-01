@@ -693,15 +693,16 @@ export function parseTestMethods(
       continue;
     }
 
+    const providerDatasets = testDataProviderDatasetNames(header, dataProviderAttributeAliases, dataProviders);
     const start = bodyOffset + startOffset;
     methods.push({
       name: methodName,
       testDoxName: testDoxDisplayName(header, testDoxAttributeAliases),
       range: rangeFromOffsets(lineStarts, start, start + match[0].length),
       groups: extractGroups(header),
+      ...(providerDatasets.found && !providerDatasets.datasets ? { phpunitDataProvider: true } : {}),
     });
 
-    const providerDatasets = testDataProviderDatasetNames(header, dataProviderAttributeAliases, dataProviders);
     const datasets = providerDatasets.found
       ? providerDatasets.datasets
       : testWithDatasetNames(header, testWithAttributeAliases, testWithJsonAttributeAliases);

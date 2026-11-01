@@ -19,6 +19,7 @@ export type TestMethod = {
   pestDescribePath?: string[];
   pestDatasetName?: string;
   phpunitDatasetName?: string;
+  phpunitDataProvider?: boolean;
 };
 
 export type TestClass = {
@@ -57,6 +58,7 @@ export type RunnerConfig = {
   additionalArgs: string[];
   phpArgs: string[];
   command: string;
+  remoteReportTransferCommand?: string;
   paths: Record<string, string>;
   environment: Record<string, string>;
   saveBeforeTest: boolean;

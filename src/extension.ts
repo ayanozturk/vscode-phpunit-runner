@@ -1,14 +1,17 @@
 import * as fs from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import { createServer } from 'net';
 import * as path from 'path';
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import * as vscode from 'vscode';
-import { unmapWithMappings, type PathMapping } from './commandTemplate';
+import { mapWithMappings, unmapWithMappings, type PathMapping } from './commandTemplate';
 import { testCodeLensTargets } from './codeLens';
 import { readCloverReport } from './coverage';
 import { createDebouncedTaskScheduler } from './continuousTesting';
 import { buildGroupPickerOptions } from './groupPicker';
-import { autoDetectConfigurationFile, resolveInvocation } from './invoke';
+import { autoDetectConfigurationFile, autoDetectPhpUnit, resolveInvocation } from './invoke';
+import { renderRemoteReportTransferCommand } from './remoteReports';
+import { parseRuntimeTestListing, reconcileRuntimeTestListing } from './runtimeDiscovery';
 import { groupItemsBy, runGroupsSequentially } from './grouping';
 import { terminateProcessTree } from './processTree';
 import {
@@ -17,13 +20,13 @@ import {
   firstFailureMessage,
   readJUnitReport,
 } from './junit';
-import { datasetSuffixFromTestCase, parseTestSource } from './parser';
+import { datasetSuffixFromTestCase, normalizeClassName, parseTestSource } from './parser';
 import {
   formatTestOutputSegments,
   type OutputPreset,
   type TestOutputFormat,
 } from './outputFormatter';
-import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS } from './paths';
+import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS, isPhpScript, resolvePath } from './paths';
 import { parsePhpUnitXml, resolveDiscoveryGlobs, type PhpUnitSuite } from './phpunitXml';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
 import { resolveOutputFilePath } from './outputLocation';
@@ -42,7 +45,14 @@ import {
 } from './workspaceDiscovery';
 import type { JUnitTestCase, RunnerConfig, SourceRange, TestTarget } from './types';
 
-type TestItemData = TestTarget & { uri: vscode.Uri; groups?: string[] };
+type TestItemData = TestTarget & {
+  uri: vscode.Uri;
+  groups?: string[];
+  phpunitDataProvider?: boolean;
+  parsed?: ReturnType<typeof parseTestSource>;
+  sourceText?: string;
+  suiteName?: string;
+};
 type SuiteConfigCache = { xmlPath: string; modifiedAt: number; suites: PhpUnitSuite[] };
 
 type ExtensionTestApi = {
@@ -56,6 +66,10 @@ const itemData = new WeakMap<vscode.TestItem, TestItemData>();
 const fileItemPaths = new Map<string, vscode.TestItem[]>();
 const coverageDetails = new WeakMap<vscode.FileCoverage, vscode.FileCoverageDetail[]>();
 const suiteConfigCache = new Map<string, SuiteConfigCache>();
+const runtimeListedWorkspaces = new Set<string>();
+const runtimeDatasetIdsByWorkspace = new Map<string, Set<string>>();
+const runtimeDiscoveryProcesses = new Map<string, ChildProcess>();
+const runtimeOwnedDatasetItems = new WeakSet<vscode.TestItem>();
 
 let outputChannel: vscode.OutputChannel;
 let controller: vscode.TestController;
@@ -64,14 +78,27 @@ let lastIncludeIds: string[] | undefined;
 let lastFailedIds: string[] = [];
 let debugListenStarted = false;
 let debugListenPort: number | undefined;
+let runtimeDiscoveryScheduler: ReturnType<typeof createDebouncedTaskScheduler> | undefined;
 const continuousRuns = new Map<string, vscode.CancellationTokenSource>();
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionTestApi | undefined> {
   outputChannel = vscode.window.createOutputChannel('PHPUnit Runner');
   controller = vscode.tests.createTestController('phpunitRunner', 'PHPUnit Runner');
   const continuousTestingScheduler = createDebouncedTaskScheduler(250);
+  runtimeDiscoveryScheduler = createDebouncedTaskScheduler(250);
 
-  context.subscriptions.push(outputChannel, controller, { dispose: () => continuousTestingScheduler.dispose() });
+  context.subscriptions.push(
+    outputChannel,
+    controller,
+    { dispose: () => continuousTestingScheduler.dispose() },
+    { dispose: () => runtimeDiscoveryScheduler?.dispose() },
+    { dispose: () => {
+      for (const child of runtimeDiscoveryProcesses.values()) {
+        terminateProcessTree(child);
+      }
+      runtimeDiscoveryProcesses.clear();
+    } },
+  );
 
   controller.resolveHandler = async (item) => {
     if (item) {
@@ -126,12 +153,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     vscode.commands.registerCommand('phpunitRunner.showOutput', () => {
       outputChannel.show();
     }),
+    vscode.commands.registerCommand('phpunitRunner.diagnoseProject', async () => {
+      await diagnoseProject();
+    }),
     vscode.workspace.onDidSaveTextDocument(async (document) => {
       if (document.languageId !== 'php') {
         return;
       }
 
       await refreshUri(document.uri, document.getText());
+      scheduleRuntimeDiscoveryForUri(document.uri);
       if (getConfig(vscode.workspace.getWorkspaceFolder(document.uri)).get<boolean>('continuousTesting', false)) {
         continuousTestingScheduler.schedule(document.uri.toString(), async () => {
           if (getConfig(vscode.workspace.getWorkspaceFolder(document.uri)).get<boolean>('continuousTesting', false)) {
@@ -190,12 +221,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     watcher,
     watcher.onDidCreate(async (uri) => {
       await refreshUri(uri);
+      scheduleRuntimeDiscoveryForUri(uri);
     }),
     watcher.onDidChange(async (uri) => {
       await refreshUri(uri);
+      scheduleRuntimeDiscoveryForUri(uri);
     }),
     watcher.onDidDelete((uri) => {
       removeFileItem(uri);
+      scheduleRuntimeDiscoveryForUri(uri);
     }),
     configWatcher,
     configWatcher.onDidCreate(async (uri) => {
@@ -235,10 +269,236 @@ export function deactivate(): void {
 
 async function discoverWorkspaceTests(): Promise<void> {
   const uris = await findCandidateTestFiles();
-  controller.items.replace([]);
-  fileItemPaths.clear();
+  runtimeListedWorkspaces.clear();
   const suiteConfigLookups = new Map<string, Promise<SuiteConfigCache | undefined>>();
   await Promise.all(uris.map((uri) => refreshUri(uri, undefined, suiteConfigLookups)));
+  const discovered = new Set(uris.map((uri) => uri.toString()));
+  for (const uriString of [...fileItemPaths.keys()]) {
+    if (!discovered.has(uriString)) {
+      removeFileItem(vscode.Uri.parse(uriString));
+    }
+  }
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    scheduleRuntimeDiscoveryForWorkspace(folder);
+  }
+}
+
+function scheduleRuntimeDiscoveryForUri(uri: vscode.Uri): void {
+  const folder = vscode.workspace.getWorkspaceFolder(uri);
+  if (folder) {
+    scheduleRuntimeDiscoveryForWorkspace(folder);
+  }
+}
+
+function scheduleRuntimeDiscoveryForWorkspace(folder: vscode.WorkspaceFolder): void {
+  const key = folder.uri.fsPath;
+  const running = runtimeDiscoveryProcesses.get(key);
+  if (running) {
+    terminateProcessTree(running);
+  }
+  runtimeListedWorkspaces.delete(key);
+  runtimeDiscoveryScheduler?.schedule(key, () => discoverRuntimeProviderCases(folder));
+}
+
+async function discoverRuntimeProviderCases(folder: vscode.WorkspaceFolder): Promise<void> {
+  const workspacePath = folder.uri.fsPath;
+  if (runtimeListedWorkspaces.has(workspacePath)) {
+    return;
+  }
+
+  const fileItems = [...new Set([...fileItemPaths.values()].map((itemPath) => itemPath.at(-1)).filter(
+    (item): item is vscode.TestItem => item !== undefined,
+  ))];
+  const candidates = fileItems.flatMap((fileItem) => {
+    const fileData = itemData.get(fileItem);
+    if (!fileData?.parsed || vscode.workspace.getWorkspaceFolder(fileData.uri)?.uri.fsPath !== workspacePath) {
+      return [];
+    }
+    const needsRuntimeRows = fileData.parsed.classes.some((cls) => cls.methods.some((method) => method.phpunitDataProvider));
+    return needsRuntimeRows ? [{ fileItem, parsed: fileData.parsed }] : [];
+  });
+  if (candidates.length === 0) {
+    reconcileRuntimeDatasetItems(workspacePath, new Set());
+    runtimeListedWorkspaces.add(workspacePath);
+    return;
+  }
+
+  const config = readRunnerConfig(folder);
+  if (config.command.trim()) {
+    outputChannel.appendLine(`[phpunit-runner] Static data-provider discovery is incomplete in ${workspacePath}; runtime listing is unavailable for custom remote commands.`);
+    runtimeListedWorkspaces.add(workspacePath);
+    return;
+  }
+
+  const runner = config.phpunitCommand.trim() || await autoDetectPhpUnit(workspacePath);
+  if (/(?:^|[\\/])pest(?:\.bat|\.cmd)?$/i.test(runner)) {
+    runtimeListedWorkspaces.add(workspacePath);
+    return;
+  }
+
+  const reportDirectory = path.join(workspacePath, '.phpunit-runner');
+  const listingPath = path.join(reportDirectory, `test-list-${Date.now()}-${Math.random().toString(16).slice(2)}.xml`);
+  await fs.mkdir(reportDirectory, { recursive: true });
+  try {
+    const invocation = await resolveInvocation({
+      workspacePath,
+      target: { kind: 'file' },
+      config,
+      testListingXmlPath: listingPath,
+      detectedConfigurationFile: config.configurationFile
+        ? undefined
+        : await autoDetectConfigurationFile(workspacePath),
+    });
+    outputChannel.appendLine(`[phpunit-runner] Discovering dynamic PHPUnit data sets in ${workspacePath}`);
+    const result = await runDiscoveryCommand(invocation, workspacePath);
+    if (result.exitCode !== 0) {
+      outputChannel.appendLine(`[phpunit-runner] Runtime test listing is unavailable; keeping static discovery. ${result.output.trim()}`);
+      return;
+    }
+
+    const xml = await fs.readFile(listingPath, 'utf8');
+    const listing = parseRuntimeTestListing(xml);
+    const reconciled = reconcileRuntimeTestListing(listing, candidates.map(({ parsed }) => parsed));
+    const currentRuntimeIds = new Set<string>();
+    for (const testCase of reconciled) {
+      const fileItem = candidates.find(({ parsed }) => path.resolve(parsed.filePath) === path.resolve(testCase.filePath))?.fileItem;
+      if (!fileItem) {
+        continue;
+      }
+      const id = addRuntimeDatasetItem(fileItem, testCase);
+      if (id) {
+        currentRuntimeIds.add(id);
+      }
+    }
+    reconcileRuntimeDatasetItems(workspacePath, currentRuntimeIds);
+  } catch (error) {
+    outputChannel.appendLine(`[phpunit-runner] Runtime test listing failed; keeping static discovery: ${String(error)}`);
+  } finally {
+    runtimeListedWorkspaces.add(workspacePath);
+    await fs.rm(listingPath, { force: true }).catch(() => undefined);
+  }
+}
+
+async function runDiscoveryCommand(
+  invocation: Awaited<ReturnType<typeof resolveInvocation>>,
+  workspacePath: string,
+  timeoutMs = 30_000,
+): Promise<{
+  output: string;
+  exitCode: number;
+}> {
+  return new Promise((resolve, reject) => {
+    const child = invocation.shell
+      ? spawn(invocation.command, {
+        cwd: invocation.cwd,
+        env: { ...process.env, ...invocation.env },
+        shell: true,
+        detached: process.platform !== 'win32',
+      })
+      : spawn(invocation.command, invocation.args, {
+        cwd: invocation.cwd,
+        env: { ...process.env, ...invocation.env },
+        detached: process.platform !== 'win32',
+      });
+    runtimeDiscoveryProcesses.set(workspacePath, child);
+    let output = '';
+    let timedOut = false;
+    let settled = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      output += `\nRuntime test listing timed out after ${timeoutMs}ms.`;
+      terminateProcessTree(child);
+    }, timeoutMs);
+    const finish = (exitCode: number) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      if (runtimeDiscoveryProcesses.get(workspacePath) === child) {
+        runtimeDiscoveryProcesses.delete(workspacePath);
+      }
+      resolve({ output, exitCode });
+    };
+    child.stdout.on('data', (chunk: string | Buffer) => { output += chunk.toString(); });
+    child.stderr.on('data', (chunk: string | Buffer) => { output += chunk.toString(); });
+    child.on('error', (error) => {
+      if (runtimeDiscoveryProcesses.get(workspacePath) === child) {
+        runtimeDiscoveryProcesses.delete(workspacePath);
+      }
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('close', (exitCode) => finish(timedOut ? 124 : exitCode ?? 1));
+  });
+}
+
+function addRuntimeDatasetItem(
+  fileItem: vscode.TestItem,
+  testCase: ReturnType<typeof reconcileRuntimeTestListing>[number],
+): string | undefined {
+  const normalizedClassName = normalizeClassName(testCase.className).toLowerCase();
+  const classItem = collectTestItems(fileItem.children).find((item) => {
+    const data = itemData.get(item);
+    return data?.kind === 'class'
+      && data.className !== undefined
+      && normalizeClassName(data.className).toLowerCase() === normalizedClassName;
+  });
+  if (!classItem) {
+    return undefined;
+  }
+  const methodItem = collectTestItems(classItem.children).find((item) => {
+    const data = itemData.get(item);
+    return data?.kind === 'method' && data.methodName === testCase.methodName;
+  });
+  if (!methodItem) {
+    return undefined;
+  }
+
+  const suffix = testCase.dataSetSuffix ?? (testCase.dataSetName
+    ? `with data set ${testCase.dataSetName.startsWith('#') ? testCase.dataSetName : `"${testCase.dataSetName}"`}`
+    : undefined);
+  if (!suffix) {
+    return undefined;
+  }
+  const id = `${methodItem.id}::dataset:${suffix}`;
+  const existing = methodItem.children.get(id);
+  if (existing) {
+    return runtimeOwnedDatasetItems.has(existing) ? id : undefined;
+  }
+
+  const label = suffix.replace(/^with data set\s*/, '');
+  const datasetItem = controller.createTestItem(id, label, fileItem.uri);
+  datasetItem.range = methodItem.range;
+  datasetItem.tags = methodItem.tags;
+  itemData.set(datasetItem, {
+    kind: 'dataset',
+    uri: fileItem.uri!,
+    filePath: itemData.get(fileItem)?.filePath,
+    className: testCase.className,
+    methodName: testCase.methodName,
+    datasetName: `${testCase.methodName} ${suffix}`,
+    groups: testCase.groups,
+  });
+  methodItem.children.add(datasetItem);
+  runtimeOwnedDatasetItems.add(datasetItem);
+  return id;
+}
+
+function reconcileRuntimeDatasetItems(workspacePath: string, currentIds: Set<string>): void {
+  const previousIds = runtimeDatasetIdsByWorkspace.get(workspacePath) ?? new Set<string>();
+  for (const staleId of previousIds) {
+    if (currentIds.has(staleId)) {
+      continue;
+    }
+    const staleItem = findItemById(staleId);
+    staleItem?.parent?.children.delete(staleId);
+  }
+  runtimeDatasetIdsByWorkspace.set(workspacePath, currentIds);
 }
 
 async function refreshForConfiguration(uri: vscode.Uri): Promise<void> {
@@ -388,8 +648,8 @@ async function refreshUri(
     return;
   }
 
-  const parsed = await parseTestFile(uri, text);
-  if (!parsed || parsed.classes.length === 0) {
+  const source = text ?? await readFileText(uri);
+  if (source === undefined) {
     removeFileItem(uri);
     return;
   }
@@ -398,10 +658,28 @@ async function refreshUri(
   const suiteName = workspaceFolder
     ? await findSuiteForFile(uri, workspaceFolder, suiteConfigLookups)
     : undefined;
+  const existingFileItem = findFileItem(uri);
+  const existingData = existingFileItem ? itemData.get(existingFileItem) : undefined;
+  if (existingData?.sourceText === source && existingData.suiteName === suiteName) {
+    return;
+  }
+
+  const parsed = parseTestSource(uri.fsPath, source);
+  if (!parsed || parsed.classes.length === 0) {
+    removeFileItem(uri);
+    return;
+  }
   const label = path.basename(uri.fsPath);
 
   const fileItem = controller.createTestItem(uri.toString(), label, uri);
-  itemData.set(fileItem, { kind: 'file', uri, filePath: uri.fsPath });
+  itemData.set(fileItem, {
+    kind: 'file',
+    uri,
+    filePath: uri.fsPath,
+    parsed,
+    sourceText: source,
+    suiteName,
+  });
 
   for (const cls of parsed.classes) {
     const classId = `${uri.toString()}::${cls.fullyQualifiedName}`;
@@ -439,6 +717,7 @@ async function refreshUri(
         methodName: method.name,
         pestTestName: method.pestTestName,
         pestDatasetName: method.pestDatasetName,
+        phpunitDataProvider: method.phpunitDataProvider,
         groups: method.groups,
       });
       methodItem.tags = method.groups.map((group) => new vscode.TestTag(`group:${group}`));
@@ -488,15 +767,6 @@ async function refreshUri(
   }
 
   addFileItemToHierarchy(fileItem, workspaceFolder, suiteName);
-}
-
-async function parseTestFile(uri: vscode.Uri, text?: string) {
-  const source = text ?? await readFileText(uri);
-  if (source === undefined) {
-    return undefined;
-  }
-
-  return parseTestSource(uri.fsPath, source);
 }
 
 async function readFileText(uri: vscode.Uri): Promise<string | undefined> {
@@ -1094,9 +1364,42 @@ async function executePhpUnit(
       });
     });
 
+    let reportTransferWarning: string | undefined;
+    let transferCommand: string | undefined;
+    try {
+      transferCommand = invocation.shell || config.dockerEnable
+        ? renderRemoteReportTransferCommand(config.remoteReportTransferCommand ?? '', {
+          workspaceFolder: workspaceFolder.uri.fsPath,
+          remoteJunitReport: mapWithMappings(junitLogPath, invocation.mappings ?? []),
+          localJunitReport: junitLogPath,
+          ...(coverageCloverPath ? {
+            remoteCoverageReport: mapWithMappings(coverageCloverPath, invocation.mappings ?? []),
+            localCoverageReport: coverageCloverPath,
+          } : {}),
+        })
+        : undefined;
+    } catch (error) {
+      reportTransferWarning = `Remote report transfer configuration is invalid: ${String(error)}`;
+    }
+    if (transferCommand) {
+      try {
+        const transferResult = await executeReportTransfer(
+          transferCommand,
+          workspaceFolder.uri.fsPath,
+          invocation.env ?? {},
+          token,
+        );
+        if (transferResult.exitCode !== 0) {
+          reportTransferWarning = `Remote report transfer command exited with code ${transferResult.exitCode}. ${transferResult.output.trim()}`.trim();
+        }
+      } catch (error) {
+        reportTransferWarning = `Remote report transfer failed: ${String(error)}`;
+      }
+    }
+
     const junitReport = await readJUnitReport(junitLogPath);
     const remoteExecution = invocation.shell === true || config.dockerEnable;
-    const reportWarning = junitReport.warning ?? (remoteExecution && !junitReport.available
+    const reportWarning = reportTransferWarning ?? junitReport.warning ?? (remoteExecution && !junitReport.available
       ? 'Remote PHPUnit execution completed, but its JUnit report is unavailable on the host. Detailed test results require a shared or mounted report path, or retrieval by the remote command.'
       : undefined);
     const cases = remapCases(junitReport.cases, invocation.mappings ?? []);
@@ -1116,6 +1419,44 @@ async function executePhpUnit(
       await fs.rm(coverageCloverPath, { force: true }).catch(() => undefined);
     }
   }
+}
+
+async function executeReportTransfer(
+  command: string,
+  cwd: string,
+  configuredEnvironment: Record<string, string>,
+  token: vscode.CancellationToken,
+): Promise<{ output: string; exitCode: number }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, {
+      cwd,
+      env: { ...process.env, ...configuredEnvironment },
+      shell: true,
+      detached: process.platform !== 'win32',
+    });
+    let output = '';
+    const append = (chunk: string | Buffer) => {
+      const text = chunk.toString();
+      output += text;
+      outputChannel.append(text);
+    };
+    child.stdout.on('data', append);
+    child.stderr.on('data', append);
+
+    const cancel = () => terminateProcessTree(child);
+    const subscription = token.onCancellationRequested(cancel);
+    if (token.isCancellationRequested) {
+      cancel();
+    }
+    child.on('error', (error) => {
+      subscription.dispose();
+      reject(error);
+    });
+    child.on('close', (exitCode) => {
+      subscription.dispose();
+      resolve({ output, exitCode: exitCode ?? 1 });
+    });
+  });
 }
 
 async function ensureDebugListen(folder: vscode.WorkspaceFolder, config: RunnerConfig): Promise<void> {
@@ -1343,6 +1684,183 @@ function findItemById(id: string): vscode.TestItem | undefined {
   return undefined;
 }
 
+async function diagnoseProject(): Promise<void> {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folders.length === 0) {
+    void vscode.window.showErrorMessage('Open a PHP project folder before running project diagnostics.');
+    return;
+  }
+
+  outputChannel.clear();
+  outputChannel.appendLine('PHPUnit Runner project diagnostics');
+  outputChannel.appendLine('No tests or configured runner commands are executed by this check.');
+
+  for (const folder of folders) {
+    outputChannel.appendLine('');
+    outputChannel.appendLine(`Workspace: ${folder.name}`);
+    outputChannel.appendLine(`Root: ${folder.uri.fsPath}`);
+
+    try {
+      await appendWorkspaceDiagnostics(folder);
+    } catch (error) {
+      outputChannel.appendLine(`Diagnosis could not be completed: ${String(error)}`);
+    }
+  }
+
+  outputChannel.show(true);
+}
+
+async function appendWorkspaceDiagnostics(folder: vscode.WorkspaceFolder): Promise<void> {
+  const root = folder.uri.fsPath;
+  const config = readRunnerConfig(folder);
+  const configuredCwd = config.workingDirectory.trim();
+  const cwd = configuredCwd ? resolvePath(root, configuredCwd) : root;
+  outputChannel.appendLine(`Working directory: ${cwd}${await pathExists(cwd) ? '' : ' (missing)'}`);
+
+  const configuredXml = config.configurationFile.trim();
+  const detectedXml = configuredXml
+    ? resolvePath(root, configuredXml)
+    : await autoDetectConfigurationFile(cwd);
+  const configurationExists = detectedXml ? await pathExists(detectedXml) : false;
+  outputChannel.appendLine(`PHPUnit configuration: ${detectedXml
+    ? `${detectedXml}${configurationExists ? '' : ' (missing)'}`
+    : 'not found (phpunit.xml or phpunit.xml.dist)'}`);
+
+  const frameworkInfo = await readFrameworkInfo(cwd);
+  const configuredRunner = config.phpunitCommand.trim();
+  const detectedRunner = configuredRunner || await autoDetectPhpUnit(root);
+  const runnerToken = firstCommandToken(detectedRunner);
+  const runnerFramework = /(?:^|[\\/])pest(?:\.bat)?$/i.test(runnerToken)
+    ? 'Pest'
+    : /(?:^|[\\/])phpunit(?:\.bat)?$/i.test(runnerToken)
+      ? 'PHPUnit'
+      : undefined;
+  const detectedFramework = runnerFramework ?? (frameworkInfo.pestDeclared
+    ? 'Pest'
+    : 'PHPUnit');
+  const frameworkVersion = frameworkInfo.versions.get(detectedFramework === 'Pest' ? 'pestphp/pest' : 'phpunit/phpunit');
+  outputChannel.appendLine(`Framework: ${detectedFramework}${frameworkVersion ? ` ${frameworkVersion}` : ''}${frameworkInfo.pestDeclared && detectedFramework === 'Pest' ? ' (declared in Composer)' : ''}`);
+
+  const remoteTemplate = Boolean(config.command.trim());
+  if (remoteTemplate) {
+    outputChannel.appendLine('Runner: custom remote command configured (redacted; not executed or verified)');
+    outputChannel.appendLine('Host PHP executable: not checked for a custom remote command');
+  } else if (config.dockerEnable) {
+    const dockerCommand = firstCommandToken(config.dockerCommand || 'docker');
+    const dockerAvailable = await commandAvailable(dockerCommand, root);
+    outputChannel.appendLine(`Runner: Docker ${dockerCommand}${dockerAvailable ? ' found' : ' not found on PATH'}`);
+    outputChannel.appendLine(`Container: ${config.dockerContainer.trim() || 'not configured'}`);
+    outputChannel.appendLine('Container runner and report mount are not probed; diagnosis does not execute container commands.');
+  } else {
+    const runner = runnerToken;
+    const runnerIsScript = isPhpScript(runner) || /(?:^|[\\/])artisan(?:\.php)?$/i.test(runner);
+    const runnerAvailable = runnerIsScript
+      ? await pathExists(path.isAbsolute(runner) ? runner : path.resolve(cwd, runner))
+      : await commandAvailable(runner, cwd);
+    outputChannel.appendLine(`Runner: ${configuredRunner ? 'configured' : 'auto-detected'} ${runner}${runnerAvailable ? ' found' : ' not found'}`);
+    const phpAvailable = await commandAvailable(config.phpExecutable.trim() || 'php', cwd);
+    outputChannel.appendLine(`PHP executable: ${config.phpExecutable.trim() || 'php'}${phpAvailable ? ' found' : ' not found on PATH'}`);
+    if (!runnerAvailable) {
+      outputChannel.appendLine('Check phpunitRunner.phpunitCommand or install the project runner through Composer.');
+    }
+  }
+
+  const reportsDirectory = path.join(root, '.phpunit-runner');
+  const reportProbe = await pathExists(reportsDirectory) ? reportsDirectory : root;
+  const reportsWritable = await pathIsWritable(reportProbe);
+  outputChannel.appendLine(`Report directory: ${reportsDirectory} (${reportsWritable ? 'writable or can be created' : 'not writable on the host'})`);
+  if (remoteTemplate || config.dockerEnable) {
+    outputChannel.appendLine('Remote results: JUnit and Clover files must be visible in that host report directory after execution.');
+  }
+}
+
+async function readFrameworkInfo(root: string): Promise<{ pestDeclared: boolean; versions: Map<string, string> }> {
+  let pestDeclared = false;
+  const versions = new Map<string, string>();
+  try {
+    const manifest = JSON.parse(await fs.readFile(path.join(root, 'composer.json'), 'utf8')) as {
+      require?: Record<string, unknown>;
+      'require-dev'?: Record<string, unknown>;
+    };
+    pestDeclared = Boolean(manifest.require?.['pestphp/pest'] || manifest['require-dev']?.['pestphp/pest']);
+  } catch {
+    // Composer metadata is optional; binary detection below remains useful.
+  }
+
+  try {
+    const lock = JSON.parse(await fs.readFile(path.join(root, 'composer.lock'), 'utf8')) as {
+      packages?: Array<{ name?: string; version?: string }>;
+      'packages-dev'?: Array<{ name?: string; version?: string }>;
+    };
+    for (const pkg of [...(lock.packages ?? []), ...(lock['packages-dev'] ?? [])]) {
+      if ((pkg.name === 'pestphp/pest' || pkg.name === 'phpunit/phpunit') && pkg.version) {
+        versions.set(pkg.name, pkg.version);
+      }
+    }
+  } catch {
+    // A missing or invalid lock file only omits the displayed version.
+  }
+
+  return { pestDeclared, versions };
+}
+
+function firstCommandToken(command: string): string {
+  const match = command.trim().match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/);
+  return match?.[1] ?? match?.[2] ?? match?.[3] ?? '';
+}
+
+async function commandAvailable(command: string, cwd: string): Promise<boolean> {
+  if (!command) {
+    return false;
+  }
+
+  const hasPathSeparator = command.includes('/') || command.includes('\\');
+  if (path.isAbsolute(command) || hasPathSeparator) {
+    const candidate = path.isAbsolute(command) ? command : path.resolve(cwd, command);
+    return pathIsExecutable(candidate);
+  }
+
+  const pathEntries = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+  const extensions = process.platform === 'win32'
+    ? ['', ...(process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').filter(Boolean)]
+    : [''];
+  for (const entry of pathEntries) {
+    for (const extension of extensions) {
+      if (await pathIsExecutable(path.join(entry, `${command}${extension}`))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+async function pathIsExecutable(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function pathIsWritable(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath, fsConstants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function readRunnerConfig(scope?: vscode.ConfigurationScope): RunnerConfig {
   const config = getConfig(scope);
   return {
@@ -1353,6 +1871,7 @@ function readRunnerConfig(scope?: vscode.ConfigurationScope): RunnerConfig {
     additionalArgs: config.get<string[]>('additionalArgs', []),
     phpArgs: config.get<string[]>('phpArgs', []),
     command: config.get<string>('command', ''),
+    remoteReportTransferCommand: config.get<string>('remote.reportTransferCommand', ''),
     paths: config.get<Record<string, string>>('paths', {}),
     environment: config.get<Record<string, string>>('environment', {}),
     saveBeforeTest: config.get<boolean>('saveBeforeTest', false),

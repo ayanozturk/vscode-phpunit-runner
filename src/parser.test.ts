@@ -267,6 +267,11 @@ class DynamicDataProviderTest {
       { name: 'testMissing', phpunitDatasetName: undefined },
       { name: 'testAmbiguous', phpunitDatasetName: undefined },
     ]);
+    assert.deepEqual(
+      methods.filter((method) => method.phpunitDataProvider).map((method) => method.name),
+      ['testDynamic', 'testMissing', 'testAmbiguous'],
+      'unresolved provider methods are marked for runtime discovery',
+    );
   });
 
   it('discovers literal repeated PHPUnit TestWith attributes as selectable data sets', () => {

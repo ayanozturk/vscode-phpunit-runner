@@ -70,6 +70,7 @@ export async function resolveInvocation(options: {
   config: RunnerConfig;
   junitLogPath?: string;
   coverageCloverPath?: string;
+  testListingXmlPath?: string;
   debug?: boolean;
   phpunitExecutable?: string;
   detectedConfigurationFile?: string;
@@ -110,6 +111,9 @@ export async function resolveInvocation(options: {
 
   if (options.coverageCloverPath) {
     phpunitArgs.push('--coverage-clover', options.coverageCloverPath);
+  }
+  if (options.testListingXmlPath) {
+    phpunitArgs.push('--list-tests-xml', options.testListingXmlPath);
   }
 
   if (target.group) {

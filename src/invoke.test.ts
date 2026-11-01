@@ -512,6 +512,22 @@ describe('resolveInvocation', () => {
     assert.equal(invocation.args.at(-1), 'unit');
   });
 
+  it('requests a machine-readable runtime test listing without selecting or executing tests', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: { kind: 'file' },
+      config,
+      phpunitExecutable: '/proj/vendor/bin/phpunit',
+      testListingXmlPath: '/proj/.phpunit-runner/listing.xml',
+    });
+
+    const listingIndex = invocation.args.indexOf('--list-tests-xml');
+    assert.ok(listingIndex >= 0);
+    assert.equal(invocation.args[listingIndex + 1], '/proj/.phpunit-runner/listing.xml');
+    assert.ok(!invocation.args.includes('--filter'));
+    assert.ok(!invocation.args.includes('--log-junit'));
+  });
+
   it('renders a Sail-style command template with path mappings', async () => {
     const invocation = await resolveInvocation({
       workspacePath: '/proj',

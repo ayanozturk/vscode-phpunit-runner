@@ -94,6 +94,12 @@
           "default": "",
           "description": "Optional remote command template. Variables: ${php}, ${phpargs}, ${phpunit}, ${phpunitargs}, ${phpunitxml}, ${cwd}, ${workspaceFolder}, ${workspaceFolderBasename}, ${userHome}, ${pathSeparator}. When set, this takes precedence over docker.enable wrapping."
         },
+        "phpunitRunner.remote.reportTransferCommand": {
+          "type": "string",
+          "scope": "resource",
+          "default": "",
+          "description": "Optional host command run after a custom remote or Docker test command to retrieve reports. Variables: ${workspaceFolder}, ${remoteJunitReport}, ${localJunitReport}, ${remoteCoverageReport}, ${localCoverageReport}. JUnit paths are required; coverage paths are empty outside coverage runs."
+        },
         "phpunitRunner.paths": {
           "type": "object",
           "additionalProperties": {
@@ -259,6 +265,10 @@
         "title": "PHPUnit Runner: Show Output"
       },
       {
+        "command": "phpunitRunner.diagnoseProject",
+        "title": "PHPUnit Runner: Diagnose Project"
+      },
+      {
         "command": "phpunitRunner.runAll",
         "title": "PHPUnit Runner: Run All Tests"
       },
@@ -288,6 +298,9 @@
         },
         {
           "command": "phpunitRunner.showOutput"
+        },
+        {
+          "command": "phpunitRunner.diagnoseProject"
         },
         {
           "command": "phpunitRunner.runAll"

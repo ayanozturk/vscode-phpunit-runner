@@ -12,11 +12,13 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Run or debug inline.** Use the Run Test and Debug Test actions shown above discovered PHPUnit methods and Pest cases.
 - **Work with data providers.** Literal PHPUnit `#[TestWith]` and `#[TestWithJson]` rows appear beneath each test before the first run; data-provider cases discovered from results can also be run individually.
 - **See provider cases before running.** Same-class PHPUnit providers that return literal arrays are expanded into selectable data sets in the Testing view, whether referenced by `#[DataProvider]` or `@dataProvider`.
+- **Handle dynamic PHPUnit providers.** When a provider cannot be evaluated statically, a PHPUnit list-only discovery pass enumerates its data sets; each case can then be run independently.
 - **Run Pest data sets individually.** Literal arrays and inline generators with literal `yield` values passed to Pest’s `->with()` appear under their test, including chained data sets.
 - **Understand failures quickly.** See colored outcomes, assertion messages, source locations, and a short PHP code frame for readable local failure files in VS Code’s Test Results panel.
 - **Choose your test output.** Switch between detailed per-test results, a compact progress summary, or plain per-test lines.
 - **Debug and measure coverage.** Start an Xdebug session for a selected test and inspect Clover coverage in the editor.
 - **Fit your environment.** Run locally, through Docker, or with a command template for Laravel Sail, DDEV, SSH, and other remote setups. Host-to-remote path mappings keep results connected to local files across multi-root workspaces.
+- **Diagnose setup and remote results.** Check runner, configuration, PHP, and report readiness without starting tests; retrieve JUnit and coverage files from custom remote commands when they are not on a shared mount.
 - **Keep results current.** Refresh discovery as PHP files, PHPUnit configuration, or Composer dependencies change, or enable continuous testing to rerun a saved file.
 
 ## Get started
@@ -32,6 +34,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 - Discovers PHPUnit methods marked with a `test*` name, `@test` docblock, or `#[Test]` attribute.
 - Shows static method-level PHPUnit `#[TestDox('...')]` descriptions in the Testing view while keeping the actual method name for execution.
 - Discovers same-class PHPUnit `#[DataProvider('providerMethod')]` or `@dataProvider providerMethod` rows when the provider returns a literal array, including named cases, before the first run.
+- Uses PHPUnit's machine-readable test listing to discover dynamic provider rows when static analysis cannot resolve them; unsupported runner versions keep static discovery available.
 - Discovers literal PHPUnit `#[TestWith([...])]` and `#[TestWithJson('...')]` rows before the first run, showing numeric labels such as `#0` or custom names such as `positive pair` as selectable data-set tests.
 - Discovers function-style Pest `test()` and `it()` cases with literal string names.
 - Discovers statically declared Pest `dataset()` values, `->with([...])` data sets, and inline generator closures with literal `yield` values as selectable child tests, including chained data sets.
@@ -58,6 +61,7 @@ Core settings:
 - `phpunitRunner.additionalArgs`
 - `phpunitRunner.phpArgs`
 - `phpunitRunner.command`
+- `phpunitRunner.remote.reportTransferCommand`
 - `phpunitRunner.paths`
 - `phpunitRunner.environment`
 - `phpunitRunner.saveBeforeTest`
@@ -192,6 +196,24 @@ Set `phpunitRunner.docker.command` to `docker` for the Docker CLI or `docker com
 ### Remote reports
 
 JUnit and Clover reports are written under `.phpunit-runner` and read from the workspace on the VS Code host. Remote command and Docker setups must expose that directory through a shared or mounted workspace, or retrieve the generated reports before the command finishes. Without a readable JUnit report, tests are marked skipped as unverified; without a readable Clover report, coverage is unavailable. The output channel reports these cases.
+
+For a custom SSH command that cannot write directly to the host workspace, use `phpunitRunner.remote.reportTransferCommand` to copy reports after the test command exits. The command runs on the host and supports these shell-quoted placeholders:
+
+- `${remoteJunitReport}` and `${localJunitReport}` (required in a configured transfer command)
+- `${remoteCoverageReport}` and `${localCoverageReport}` (empty outside coverage runs)
+- `${workspaceFolder}`
+
+If the transfer command also copies Clover, guard that copy because coverage paths are empty during ordinary test runs.
+
+For example, when the project is available over SSH and `scp` can reach the generated path:
+
+```json
+{
+  "phpunitRunner.remote.reportTransferCommand": "scp user@example:${remoteJunitReport} ${localJunitReport}"
+}
+```
+
+Use the same remote path mapping as the configured command so `${remoteJunitReport}` points to the generated file. Run **PHPUnit Runner: Diagnose Project** to inspect detected configuration and host report-directory readiness without executing the test runner.
 
 ### Troubleshooting
 

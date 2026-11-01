@@ -56,6 +56,7 @@ exports.run = async () => {
     const extension = vscode.extensions.all.find((item) => item.packageJSON.name === 'aos-phpunit');
     assert.ok(extension, 'PHPUnit Runner extension is loaded');
     const outputClears = [];
+    const diagnosticOutput = [];
     const originalCreateOutputChannel = vscode.window.createOutputChannel;
     vscode.window.createOutputChannel = function (...args) {
       const channel = originalCreateOutputChannel.apply(this, args);
@@ -69,6 +70,12 @@ exports.run = async () => {
               return value.apply(target, clearArgs);
             };
           }
+          if (property === 'appendLine') {
+            return (line) => {
+              diagnosticOutput.push(line);
+              return value.call(target, line);
+            };
+          }
           return typeof value === 'function' ? value.bind(target) : value;
         },
       });
@@ -80,6 +87,7 @@ exports.run = async () => {
     const commands = new Set(await vscode.commands.getCommands(true));
     assert.ok(commands.has('phpunitRunner.refreshTests'));
     assert.ok(commands.has('phpunitRunner.runByGroup'));
+    assert.ok(commands.has('phpunitRunner.diagnoseProject'));
 
     const workspaceA = vscode.workspace.workspaceFolders.find((folder) => folder.name === 'workspace-a');
     const workspaceB = vscode.workspace.workspaceFolders.find((folder) => folder.name === 'workspace-b');
@@ -100,6 +108,7 @@ exports.run = async () => {
         'echo "invoked $@" >> "' + runLog + '"',
         'report=""',
         'coverage=""',
+        'listing=""',
         'previous=""',
         'testcaseName="' + methodName + '"',
         'testcaseClass="' + className + '"',
@@ -108,11 +117,13 @@ exports.run = async () => {
         'for argument in "$@"; do',
         '  if [ "$previous" = "report" ]; then report="$argument"; previous=""; continue; fi',
         '  if [ "$previous" = "coverage" ]; then coverage="$argument"; previous=""; continue; fi',
+        '  if [ "$previous" = "listing" ]; then listing="$argument"; previous=""; continue; fi',
         '  if [ "$previous" = "filter" ]; then',
         '    case "$argument" in',
         '      *"generated values"*) testcaseName=\'generated values with data set "first"\';;',
         '      *"TestDoxTest::testRawMethodName"*) testcaseName=\'testRawMethodName\'; testcaseClass=\'TestDoxTest\'; testcaseFile=\'tests/TestDoxTest.php\';;',
         "      *'DataProviderTest::testPairs with data set \"positive pair\"'*) testcaseName='testPairs with data set &quot;positive pair&quot;'; testcaseClass='DataProviderTest'; testcaseFile='tests/DataProviderTest.php';;",
+        "      *'DynamicDataProviderTest::testDynamic with data set \"runtime named\"'*) testcaseName='testDynamic with data set &quot;runtime named&quot;'; testcaseClass='DynamicDataProviderTest'; testcaseFile='tests/DynamicDataProviderTest.php';;",
         '      *"TestWithTest::testWithRows with data set #0"*) testcaseName=\'testWithRows with data set #0\'; testcaseClass=\'TestWithTest\'; testcaseFile=\'tests/TestWithTest.php\';;',
         "      *'TestWithTest::testWithRows with data set \"positive pair\"'*) testcaseName='testWithRows with data set &quot;positive pair&quot;'; testcaseClass='TestWithTest'; testcaseFile='tests/TestWithTest.php';;",
         "      *'TestWithJsonTest::testJsonRows with data set \"json named\"'*) testcaseName='testJsonRows with data set &quot;json named&quot;'; testcaseClass='TestWithJsonTest'; testcaseFile='tests/TestWithJsonTest.php';;",
@@ -122,9 +133,22 @@ exports.run = async () => {
         '  fi',
         '  if [ "$argument" = "--log-junit" ]; then previous="report"; fi',
         '  if [ "$argument" = "--coverage-clover" ]; then previous="coverage"; fi',
+        '  if [ "$argument" = "--list-tests-xml" ]; then previous="listing"; fi',
         '  if [ "$argument" = "--filter" ]; then previous="filter"; fi',
         '  case "$argument" in *ValuesTest.php) testcaseFile="tests/ValuesTest.php"; additionalCase="<testcase name=\'testValues\' classname=\'ValuesTest\' file=\'tests/ValuesTest.php\' time=\'0.02\'/>";; esac',
         'done',
+        'if [ -n "$listing" ]; then',
+        '  if [ "$RUNTIME_DATASET_MODE" = "empty" ]; then',
+        '    cat > "$listing" <<XML',
+        '<tests><testCaseClass name="DynamicDataProviderTest" /></tests>',
+        'XML',
+        '  else',
+        '    cat > "$listing" <<XML',
+        '<tests><testCaseClass name="DynamicDataProviderTest"><testCaseMethod name="testDynamic with data set &quot;runtime named&quot;" groups="unit" /></testCaseClass></tests>',
+        'XML',
+        '  fi',
+        '  exit 0',
+        'fi',
         'if [ "$PHPUNIT_RUNNER_MODE" = "summary" ]; then',
         '  cat > "$report" <<XML',
         "<testsuites><testsuite><testcase name='testAlpha' classname='" + className + "' file='tests/" + className + ".php' time='0.01'/><testcase name='testAlpha with data set #0' classname='" + className + "' file='tests/" + className + ".php' line='2' time='0.02'><failure message='Summary assertion failed'>Summary failure detail</failure></testcase></testsuite></testsuites>",
@@ -166,6 +190,26 @@ exports.run = async () => {
         'environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder,
       );
     }
+
+    await vscode.commands.executeCommand('phpunitRunner.diagnoseProject');
+    assert.ok(diagnosticOutput.some((line) => line.includes('No tests or configured runner commands are executed')));
+    assert.ok(diagnosticOutput.some((line) => line.includes('Framework: PHPUnit')));
+    assert.ok(diagnosticOutput.some((line) => line.includes('PHPUnit configuration: not found')));
+    assert.ok(diagnosticOutput.some((line) => line.includes('fake-phpunit found')));
+    assert.equal(await fs.access(path.join(workspaceA.uri.fsPath, 'runner.log')).then(() => true, () => false), false,
+      'project diagnostics do not invoke the configured test runner');
+    const artisanPath = path.join(workspaceA.uri.fsPath, 'artisan');
+    await fs.writeFile(artisanPath, '<?php // Laravel runner fixture\n', 'utf8');
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'phpunitCommand', 'artisan test', vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await vscode.commands.executeCommand('phpunitRunner.diagnoseProject');
+    assert.ok(diagnosticOutput.some((line) => line.includes('Runner: configured artisan found')),
+      'project diagnostics recognize non-executable PHP runner scripts');
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'phpunitCommand', path.join(workspaceA.uri.fsPath, 'fake-phpunit'), vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await fs.rm(artisanPath);
 
     await fs.writeFile(path.join(workspaceA.uri.fsPath, 'tests', 'TestWithTest.php'), `<?php
 use PHPUnit\\Framework\\Attributes\\TestWith;
@@ -216,9 +260,63 @@ class DataProviderTest
 }
 `, 'utf8');
 
+    await fs.writeFile(path.join(workspaceA.uri.fsPath, 'tests', 'DynamicDataProviderTest.php'), `<?php
+use PHPUnit\\Framework\\Attributes\\DataProvider;
+
+class DynamicDataProviderTest
+{
+    #[DataProvider('provideDynamicValues')]
+    public function testDynamic(string $value): void {}
+
+    public static function provideDynamicValues(): iterable
+    {
+        return self::loadValues();
+    }
+
+    private static function loadValues(): iterable { return []; }
+}
+`, 'utf8');
+
     await api.refresh();
+    await until(
+      () => flatten(api.controller.items).some((item) => item.label === '"runtime named"'),
+      'runtime PHPUnit listing discovers dynamic provider data sets before a test run',
+    );
+    const runtimeDataset = flatten(api.controller.items).find((item) => item.label === '"runtime named"');
+    assert.ok(runtimeDataset && runtimeDataset.parent, 'runtime dataset is attached to its source method');
+    const runtimeDatasetEvents = [];
+    const restoreRuntimeDatasetCapture = captureRunEvents(api.controller, runtimeDatasetEvents);
+    const runtimeRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
+    await runtimeRunProfile.runHandler(
+      new vscode.TestRunRequest([runtimeDataset]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreRuntimeDatasetCapture();
+    assert.ok(runtimeDatasetEvents.some((event) => event.id === runtimeDataset.id && event.state === 'passed'),
+      'runtime-discovered provider data sets can run independently');
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: '', RUNTIME_DATASET_MODE: 'empty' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await api.refresh();
+    await until(
+      () => !flatten(api.controller.items).some((item) => item.id === runtimeDataset.id),
+      'a successful runtime listing removes provider rows that no longer exist',
+    );
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'environment', { PHPUNIT_RUNNER_MODE: '', RUNTIME_DATASET_MODE: 'present' }, vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    await api.refresh();
+    await until(
+      () => flatten(api.controller.items).some((item) => item.id === runtimeDataset.id),
+      'a refreshed provider listing restores current runtime data sets',
+    );
+
     const findMethod = (name) => flatten(api.controller.items).find((item) => item.label === name);
     assert.ok(findMethod('testAlpha'), 'workspace A test is discovered');
+    const alphaBeforeRefresh = findMethod('testAlpha');
+    await api.refresh();
+    assert.strictEqual(findMethod('testAlpha'), alphaBeforeRefresh,
+      'refresh retains unchanged test items instead of rebuilding the whole tree');
     assert.ok(findMethod('testBeta'), 'workspace B test is discovered');
     const testDoxItem = findMethod('A readable description');
     assert.ok(testDoxItem, 'literal TestDox labels are shown for PHPUnit methods');
@@ -261,6 +359,31 @@ class DataProviderTest
     const restorePestCapture = captureRunEvents(api.controller, pestEvents);
     const testRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
     assert.ok(testRunProfile);
+
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'command', '${phpunit} ${phpunitargs}', vscode.ConfigurationTarget.Workspace,
+    );
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'remote.reportTransferCommand', 'scp ${remoteJunitReport} ${localJunitReport} ${invalid}', vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    const invalidTransferEvents = [];
+    const invalidTransferOutputs = [];
+    const restoreInvalidTransferCapture = captureRunEvents(api.controller, invalidTransferEvents, [], invalidTransferOutputs);
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreInvalidTransferCapture();
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'command', '', vscode.ConfigurationTarget.Workspace,
+    );
+    await vscode.workspace.getConfiguration('phpunitRunner', workspaceA).update(
+      'remote.reportTransferCommand', '', vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    assert.ok(invalidTransferEvents.some((event) => event.label === 'testAlpha' && event.state === 'passed'),
+      'an invalid report-transfer setting does not discard a readable JUnit result');
+    assert.ok(invalidTransferOutputs.some((output) => output.includes('Remote report transfer configuration is invalid')),
+      'invalid report-transfer configuration is reported to the user');
 
     const testDoxLog = path.join(workspaceA.uri.fsPath, 'runner.log');
     await fs.writeFile(testDoxLog, '', 'utf8');
@@ -527,26 +650,30 @@ class DataProviderTest
     await until(() => !flatten(api.controller.items).some((item) => item.label === 'WatcherTest.php'), 'delete watcher removes PHP tests');
 
     const composerLockPath = path.join(workspaceA.uri.fsPath, 'composer.lock');
-    const beforeLockCreate = findMethod('testAlpha');
+    const countRuntimeListings = async () => {
+      const log = await fs.readFile(path.join(workspaceA.uri.fsPath, 'runner.log'), 'utf8').catch(() => '');
+      return log.split('\n').filter((line) => line.includes('--list-tests-xml')).length;
+    };
+    let runtimeListingCount = await countRuntimeListings();
     await fs.writeFile(composerLockPath, '{"packages": []}\n');
-    await until(() => findMethod('testAlpha') !== beforeLockCreate, 'creating composer.lock refreshes discovered tests');
-    const beforeLockChange = findMethod('testAlpha');
+    await until(async () => await countRuntimeListings() > runtimeListingCount, 'creating composer.lock refreshes runtime test discovery');
+    runtimeListingCount = await countRuntimeListings();
     await fs.writeFile(composerLockPath, '{"packages": [], "content-hash": "updated"}\n');
-    await until(() => findMethod('testAlpha') !== beforeLockChange, 'changing composer.lock refreshes discovered tests');
-    const beforeLockDelete = findMethod('testAlpha');
+    await until(async () => await countRuntimeListings() > runtimeListingCount, 'changing composer.lock refreshes runtime test discovery');
+    runtimeListingCount = await countRuntimeListings();
     await fs.rm(composerLockPath);
-    await until(() => findMethod('testAlpha') !== beforeLockDelete, 'deleting composer.lock refreshes discovered tests');
+    await until(async () => await countRuntimeListings() > runtimeListingCount, 'deleting composer.lock refreshes runtime test discovery');
 
     const composerManifestPath = path.join(workspaceA.uri.fsPath, 'composer.json');
-    const beforeManifestCreate = findMethod('testAlpha');
+    runtimeListingCount = await countRuntimeListings();
     await fs.writeFile(composerManifestPath, '{"require-dev": {"phpunit/phpunit": "^11.0"}}\n');
-    await until(() => findMethod('testAlpha') !== beforeManifestCreate, 'creating composer.json refreshes discovered tests');
-    const beforeManifestChange = findMethod('testAlpha');
+    await until(async () => await countRuntimeListings() > runtimeListingCount, 'creating composer.json refreshes runtime test discovery');
+    runtimeListingCount = await countRuntimeListings();
     await fs.writeFile(composerManifestPath, '{"require-dev": {"pestphp/pest": "^3.0"}}\n');
-    await until(() => findMethod('testAlpha') !== beforeManifestChange, 'changing composer.json refreshes discovered tests');
-    const beforeManifestDelete = findMethod('testAlpha');
+    await until(async () => await countRuntimeListings() > runtimeListingCount, 'changing composer.json refreshes runtime test discovery');
+    runtimeListingCount = await countRuntimeListings();
     await fs.rm(composerManifestPath);
-    await until(() => findMethod('testAlpha') !== beforeManifestDelete, 'deleting composer.json refreshes discovered tests');
+    await until(async () => await countRuntimeListings() > runtimeListingCount, 'deleting composer.json refreshes runtime test discovery');
 
     const savedTestPath = path.join(workspaceB.uri.fsPath, 'tests', 'SavedTest.php');
     await fs.writeFile(savedTestPath, '<?php class SavedTest {}', 'utf8');
