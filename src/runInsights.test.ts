@@ -36,7 +36,7 @@ describe('createTestInsightChoices', () => {
       {
         id: 'slow:workspace::ExampleTest::testFlaky',
         label: 'Slow: ExampleTest::testFlaky',
-        description: 'api · 120 ms · passed',
+        description: 'api · 120 ms · passed · 2026-01-02',
         detail: 'Slowest test in its latest reported run. Select to open tests/ExampleTest.php:18.',
         filePath: '/workspace/tests/ExampleTest.php',
         line: 18,
@@ -44,7 +44,7 @@ describe('createTestInsightChoices', () => {
       {
         id: 'flaky:workspace::ExampleTest::testFlaky',
         label: 'Flaky: ExampleTest::testFlaky',
-        description: 'api · 1 passed, 1 failed',
+        description: 'api · 1 passed, 1 failed · latest 2026-01-02',
         detail: 'Recent outcomes, newest first: passed → failed. Select to open tests/ExampleTest.php:18.',
         filePath: '/workspace/tests/ExampleTest.php',
         line: 18,
@@ -60,6 +60,16 @@ describe('createTestInsightChoices', () => {
     }];
 
     assert.equal(createTestInsightChoices(history, 'workspace')[0].filePath, undefined);
+  });
+
+  it('omits an invalid run date instead of presenting a misleading timestamp', () => {
+    const history: RunHistoryRun[] = [{
+      id: 'run',
+      completedAt: 'not-a-date',
+      cases: [{ testId: 'id', label: 'Test::method', outcome: 'passed', durationMs: 20 }],
+    }];
+
+    assert.equal(createTestInsightChoices(history, 'workspace')[0].description, 'workspace · 20 ms · passed');
   });
 
   it('explains when a report has no source file and the insight cannot be opened or run', () => {

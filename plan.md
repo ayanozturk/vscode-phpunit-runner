@@ -7,7 +7,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 ## Delivered capabilities
 
 - **Discovery and execution:** Static discovery, runtime PHPUnit provider discovery with fallback, incremental refresh, continuous testing, local and Docker execution, custom remote commands and report transfer, and an opt-in parallel profile for supported Pest and ParaTest projects.
-- **Results and insights:** JUnit mapping, pure method and dataset result planning, Clover coverage, supported exact per-test coverage, bounded local history, slow-test and flaky-candidate views with recent outcomes, copyable insight summaries, searchable insight pickers, and compact custom failure output.
+- **Results and insights:** JUnit mapping, pure method and dataset result planning, Clover coverage, supported exact per-test coverage, bounded local history, slow-test and flaky-candidate views with recent outcomes and the latest run date, copyable insight summaries, searchable insight pickers, and compact custom failure output.
 - **AI test authoring:** Detect Codex CLI, GitHub Copilot CLI, and Claude Code only. The confirmation identifies source path and scope plus possible project context; generated PHPUnit/Pest output is previewed, and saving under `tests/` requires confirmation. Extension-host coverage verifies consent, review-before-apply, save, and cancel-before-run.
 - **Quality and performance:** Adversarial report and process-output tests, focused pure-module coverage, PHP/framework compatibility jobs, VS Code extension-host checks, and result-count-checked scale benchmarks. Process output observer failures stop the child and reject with the original error.
 
@@ -46,6 +46,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Latest multi-file smoke: 10k discovery 100.7 ms; result-index build 13.9 ms; method lookup 4.5 ms; file-backed Pest lookup 16 ms.
 - Single-file Pest A/B, 7 build samples and 5 lookup sweeps: 1k lookup 25.7→8.3 ms, 5k 616→22.4 ms, 10k 2,418→66 ms. At 10k, build rose 8→63 ms and index memory rose 0.46 MiB.
 - The per-file index retains at most 1,048,576 postings total; overflowed files exact-scan. The no-file Pest lookup cap change measured 345→58 ms at 10k. Benchmarks assert result counts and use no machine-specific timing gate.
+- Other measured workloads: 1M history records took 65.7 ms for slow-test and 64.5 ms for flaky-candidate queries; discovery took 12.8 ms at 1k and 110.5 ms at 10k; scanning a 5k-line heredoc fixture took 25.4 ms.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
 

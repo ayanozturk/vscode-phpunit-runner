@@ -37,7 +37,7 @@ export function createTestInsightChoices(
   const slowest = getSlowestTests(history, slowestLimit).map((test): TestInsightChoice => ({
     id: `slow:${test.testId}`,
     label: `Slow: ${test.label}`,
-    description: `${workspaceName} · ${test.durationMs.toFixed(0)} ms · ${test.outcome}`,
+    description: `${workspaceName} · ${test.durationMs.toFixed(0)} ms · ${test.outcome}${dateSuffix(test.completedAt)}`,
     detail: sourceDetail(
       'Slowest test in its latest reported run.',
       test.filePath,
@@ -53,10 +53,11 @@ export function createTestInsightChoices(
     const recentOutcomes = test.recentOutcomes
       .map(({ outcome }) => outcome === 'passed' ? 'passed' : 'failed')
       .join(' → ');
+    const latestCompletedAt = test.recentOutcomes[0]?.completedAt;
     return {
       id: `flaky:${test.testId}`,
       label: `Flaky: ${test.label}`,
-      description: `${workspaceName} · ${passes} passed, ${failures} failed`,
+      description: `${workspaceName} · ${passes} passed, ${failures} failed${latestCompletedAt ? dateSuffix(latestCompletedAt, ' · latest ') : ''}`,
       detail: sourceDetail(
         `Recent outcomes, newest first: ${recentOutcomes}.`,
         test.filePath,
@@ -68,6 +69,11 @@ export function createTestInsightChoices(
   });
 
   return [...slowest, ...flaky];
+}
+
+function dateSuffix(completedAt: string, prefix = ' · '): string {
+  const timestamp = Date.parse(completedAt);
+  return Number.isFinite(timestamp) ? `${prefix}${new Date(timestamp).toISOString().slice(0, 10)}` : '';
 }
 
 function sourceDetail(summary: string, filePath?: string, line?: number): string {

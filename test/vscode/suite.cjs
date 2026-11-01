@@ -472,6 +472,37 @@ class DynamicDataProviderTest
       'continuousTesting', false, vscode.ConfigurationTarget.Workspace,
     );
 
+    // A successful host-side transfer must make the remote-only JUnit report visible before result mapping.
+    const remoteReportDirectory = path.join(workspaceA.uri.fsPath, 'remote-report-mount');
+    await fs.mkdir(remoteReportDirectory, { recursive: true });
+    const reportDirectory = path.join(workspaceA.uri.fsPath, '.phpunit-runner');
+    await workspaceAConfig.update('command', '${phpunit} ${phpunitargs}', vscode.ConfigurationTarget.Workspace);
+    await workspaceAConfig.update('paths', { [reportDirectory]: remoteReportDirectory }, vscode.ConfigurationTarget.Workspace);
+    await workspaceAConfig.update('environment', { PHPUNIT_RUNNER_MODE: 'fail' }, vscode.ConfigurationTarget.WorkspaceFolder);
+    await workspaceAConfig.update(
+      'remote.reportTransferCommand',
+      'cp ${remoteJunitReport} ${localJunitReport}',
+      vscode.ConfigurationTarget.WorkspaceFolder,
+    );
+    const remoteTransferEvents = [];
+    const remoteTransferOutputs = [];
+    const restoreRemoteTransferCapture = captureRunEvents(api.controller, remoteTransferEvents, [], remoteTransferOutputs);
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([findMethod('testAlpha')]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreRemoteTransferCapture();
+    await workspaceAConfig.update('command', '', vscode.ConfigurationTarget.Workspace);
+    await workspaceAConfig.update('paths', {}, vscode.ConfigurationTarget.Workspace);
+    await workspaceAConfig.update('environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder);
+    await workspaceAConfig.update('remote.reportTransferCommand', '', vscode.ConfigurationTarget.WorkspaceFolder);
+    assert.ok(remoteTransferEvents.some((event) => event.label === 'testAlpha' && event.state === 'failed'),
+      `a transferred remote JUnit failure is mapped to its discovered test (${JSON.stringify(remoteTransferEvents)})`);
+    assert.ok(remoteTransferOutputs.some((output) => output.includes('Assertion failed')),
+      'the transferred failure details reach the Test Results output');
+    assert.equal((await fs.readdir(remoteReportDirectory)).filter((name) => name.endsWith('.xml')).length, 1,
+      'the fake remote report remains available at the mapped source after host-side transfer');
+
     const alphaFileItem = findMethod('AlphaTest.php');
     assert.ok(alphaFileItem, 'the Alpha test file is selectable for exclusion checks');
     const beforeExcludedRun = await continuousLogCount();
