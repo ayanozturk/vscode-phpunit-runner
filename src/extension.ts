@@ -8,6 +8,7 @@ import { mapWithMappings, unmapWithMappings, type PathMapping } from './commandT
 import { testCodeLensTargets } from './codeLens';
 import { readCloverReport } from './coverage';
 import { expandCoverageLineNumbers } from './coverageLineRanges';
+import { workspaceFoldersForItems } from './workspaceScope';
 import {
   canRequestLocalPhpUnitJsonlCoverage,
   createPhpUnitCoverageMethodMatcher,
@@ -2272,19 +2273,12 @@ function outputFoldersForRequest(request: vscode.TestRunRequest): Array<vscode.W
     return [...(vscode.workspace.workspaceFolders ?? [undefined])];
   }
 
-  return request.include.flatMap(workspaceFoldersForItem);
-}
-
-function workspaceFoldersForItem(item: vscode.TestItem): Array<vscode.WorkspaceFolder | undefined> {
-  const folder = item.uri ? vscode.workspace.getWorkspaceFolder(item.uri) : undefined;
-  if (folder) {
-    return [folder];
-  }
-
-  const children = collectTestItems(item.children);
-  return children.length > 0
-    ? children.flatMap(workspaceFoldersForItem)
-    : [undefined];
+  return workspaceFoldersForItems(
+    request.include,
+    (item) => item.uri,
+    (item) => collectTestItems(item.children),
+    (uri) => vscode.workspace.getWorkspaceFolder(uri),
+  );
 }
 
 function clearOutputForRun(folders: Array<vscode.WorkspaceFolder | undefined>): void {

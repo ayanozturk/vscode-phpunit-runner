@@ -181,21 +181,41 @@ export function findFlakyCandidates(history: readonly RunHistoryRun[]): FlakyCan
     });
 
   for (const { run } of newestFirst) {
+    const outcomesInRun = new Map<string, { testCase: RunHistoryCase; outcome: 'passed' | 'failed'; conflicting: boolean }>();
     for (const testCase of run.cases) {
       if (testCase.outcome !== 'passed' && testCase.outcome !== 'failed') {
         continue;
       }
-      const outcomes = byTest.get(testCase.testId) ?? [];
+      const existing = outcomesInRun.get(testCase.testId);
+      if (existing) {
+        if (existing.outcome !== testCase.outcome) {
+          existing.conflicting = true;
+        }
+        continue;
+      }
+      outcomesInRun.set(testCase.testId, {
+        testCase,
+        outcome: testCase.outcome,
+        conflicting: false,
+      });
+    }
+
+    for (const [testId, runOutcome] of outcomesInRun) {
+      // Conflicting duplicate records in one run cannot establish flakiness.
+      if (runOutcome.conflicting) {
+        continue;
+      }
+      const outcomes = byTest.get(testId) ?? [];
       if (outcomes.length >= FLAKY_OUTCOME_WINDOW) {
         continue;
       }
-      outcomes.push({ outcome: testCase.outcome, runId: run.id, completedAt: run.completedAt });
-      byTest.set(testCase.testId, outcomes);
-      if (!labels.has(testCase.testId)) {
-        labels.set(testCase.testId, testCase.label);
-        locations.set(testCase.testId, {
-          ...(testCase.filePath ? { filePath: testCase.filePath } : {}),
-          ...(isValidLine(testCase.line) ? { line: testCase.line } : {}),
+      outcomes.push({ outcome: runOutcome.outcome, runId: run.id, completedAt: run.completedAt });
+      byTest.set(testId, outcomes);
+      if (!labels.has(testId)) {
+        labels.set(testId, runOutcome.testCase.label);
+        locations.set(testId, {
+          ...(runOutcome.testCase.filePath ? { filePath: runOutcome.testCase.filePath } : {}),
+          ...(isValidLine(runOutcome.testCase.line) ? { line: runOutcome.testCase.line } : {}),
         });
       }
     }

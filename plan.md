@@ -21,8 +21,6 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Keep filesystem, process, and VS Code effects at module edges.
 - Add characterization tests before moving behavior; preserve test identity, cancellation, workspace ownership, and report fallback behavior.
 
-**Recent progress:** PHPUnit suite ownership matching, cursor-to-test selection, file/method tree traversal, output-format settings parsing, and inclusive coverage line-range expansion are pure tested modules. Suite matching honors configured directory filename prefixes and suffixes.
-
 **Complete when:** focused modules have stable interfaces and tests, orchestration is smaller, and behavior remains unchanged except for covered compatibility fixes.
 
 ### P2 — Protect result correctness
@@ -32,8 +30,6 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Add adversarial cases for malformed reports, duplicate identities, repeated records, missing paths, interrupted processes, and unsupported runner versions.
 - Preserve exact test identities and source paths; never infer per-test coverage from aggregate data.
 - Keep unsupported or unavailable fields visibly unavailable rather than reporting guessed results.
-
-**Recent progress:** repeated PHPUnit per-test coverage records merge line ranges; runtime listing reconciliation drops duplicate exact identities; JSONL coverage rejects unsafe NUL-containing paths; remote transfer rejects blank required JUnit paths; process stdin handles child-close `EPIPE` safely. JUnit failure parsing now recognizes relative PHP paths from stack traces while avoiding path-like prose.
 
 **Complete when:** supported paths map exact results and unsupported or incomplete paths produce a clear, unverified or unavailable outcome.
 
@@ -45,7 +41,7 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Assert result counts; compare repeated measurements without machine-dependent CI thresholds.
 - Retain an optimization only when it improves measured workloads without changing results.
 
-**Current evidence:** repeated 10k discovery took 101–103 ms; 1M-case history queries took about 53.5 ms (slowest) and 41–44 ms (flaky). Recent 10k no-file Pest lookups measured 347.4–349.2 ms, versus about 14 ms for file-backed lookup. A trigram-posting intersection trial regressed to 398 ms and was discarded; no performance change is retained.
+**Current evidence:** Node 22 on darwin/arm64: 10k discovery median 119.8 ms; 10k result-index build 17.4 ms, method query 4.5 ms, file-backed Pest lookup 16.7 ms, and no-file Pest lookup 345.5–374.1 ms; 1M history queries 61.1 ms for slowest tests and 42.3 ms for flaky candidates; 5k-line heredoc parse 23.5 ms. No performance change met the repeatability bar.
 
 **Complete when:** benchmarks remain comparable across revisions and every retained performance change has before/after evidence and correctness coverage.
 
@@ -71,9 +67,14 @@ Provide a dependable, responsive PHPUnit and Pest workflow in VS Code, from disc
 - Make destination suggestions follow the project's Unit/Feature layout and source folders; never silently overwrite an existing test.
 - Keep generated changes reviewable and require explicit confirmation before writing a PHP file under the workspace `tests/` directory.
 
-**Recent progress:** insight items with a usable reported source range have a Run button; summary output retains a clickable location per failure; history clearing names its workspace scope and asks for confirmation. Custom result lines expose class and source location. AI generation uses a matching test example when available, skips tool selection when exactly one supported CLI is detected, and avoids existing test filenames.
-
 **Complete when:** insight run actions preserve exact discovered scope, and AI tool detection, context consent, output review, destination selection, and explicit save behavior are covered by tests and documented clearly.
+
+## Latest cycle (2026-11-01)
+
+- **Correctness:** Flaky-candidate detection counts one record per test per run and ignores conflicting duplicate outcomes.
+- **Usability:** Insight entries explain when a missing source file prevents opening and when a missing line prevents rerunning.
+- **Tech debt:** Workspace-scope traversal is extracted into a pure tested module.
+- **Performance:** Baselines were repeated; no optimization was retained because trials showed no repeatable improvement.
 
 ## Support boundaries and acceptance criteria
 

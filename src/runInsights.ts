@@ -58,11 +58,13 @@ export function createTestInsightChoices(
 
 function sourceDetail(summary: string, filePath?: string, line?: number): string {
   if (!filePath) {
-    return `${summary} Source location was not included in the test report.`;
+    return `${summary} The report did not include a source file, so this test cannot be opened or run from the insight.`;
   }
 
   const segments = filePath.split(/[\\/]/).filter(Boolean);
   const shortPath = segments.slice(-2).join('/');
-  const location = line ? `${shortPath}:${line}` : shortPath;
-  return `${summary} Select to open ${location}.`;
+  if (!line) {
+    return `${summary} Select to open ${shortPath}. The report did not include a line number, so this test cannot be run from the insight.`;
+  }
+  return `${summary} Select to open ${shortPath}:${line}.`;
 }

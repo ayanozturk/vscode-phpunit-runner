@@ -62,7 +62,7 @@ describe('createTestInsightChoices', () => {
     assert.equal(createTestInsightChoices(history, 'workspace')[0].filePath, undefined);
   });
 
-  it('explains when a test report has no source location to open', () => {
+  it('explains when a report has no source file and the insight cannot be opened or run', () => {
     const history: RunHistoryRun[] = [{
       id: 'run',
       completedAt: '2026-01-01T00:00:00.000Z',
@@ -71,11 +71,12 @@ describe('createTestInsightChoices', () => {
 
     const [choice] = createTestInsightChoices(history, 'workspace');
     assert.match(choice.label, /^Slow:/);
-    assert.match(choice.detail, /Source location was not included/);
+    assert.match(choice.detail, /did not include a source file/);
+    assert.match(choice.detail, /cannot be opened or run/);
     assert.doesNotMatch(choice.detail, /Select to open/);
   });
 
-  it('shows the source file when the report has no line number', () => {
+  it('explains that a report without a line number can open its source but cannot run the test', () => {
     const history: RunHistoryRun[] = [{
       id: 'run',
       completedAt: '2026-01-01T00:00:00.000Z',
@@ -89,7 +90,10 @@ describe('createTestInsightChoices', () => {
     }];
 
     const [choice] = createTestInsightChoices(history, 'workspace');
-    assert.match(choice.detail, /tests\/ExampleTest\.php/);
+    assert.match(choice.detail, /Select to open tests\/ExampleTest\.php/);
+    assert.match(choice.detail, /did not include a line number/);
+    assert.match(choice.detail, /cannot be run from the insight/);
+    assert.equal(canRunTestInsight(choice), false);
     assert.doesNotMatch(choice.detail, /:0/);
   });
 });

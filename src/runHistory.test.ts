@@ -182,4 +182,32 @@ describe('run history', () => {
 
     assert.deepEqual(findFlakyCandidates(history), []);
   });
+
+  it('does not infer flakiness from conflicting duplicate outcomes within one run', () => {
+    const history = [run('1', [
+      { testId: 'duplicate', outcome: 'passed' },
+      { testId: 'duplicate', outcome: 'failed' },
+    ])];
+
+    assert.deepEqual(findFlakyCandidates(history), []);
+  });
+
+  it('counts repeated same-outcome records once per run', () => {
+    const history = [
+      run('1', [
+        { testId: 'duplicate', outcome: 'failed' },
+        { testId: 'duplicate', outcome: 'failed' },
+      ]),
+      run('2', [{ testId: 'duplicate', outcome: 'passed' }]),
+    ];
+
+    assert.deepEqual(findFlakyCandidates(history), [{
+      testId: 'duplicate',
+      label: 'duplicate',
+      recentOutcomes: [
+        { outcome: 'passed', runId: '2', completedAt: '2026-01-02T00:00:00.000Z' },
+        { outcome: 'failed', runId: '1', completedAt: '2026-01-01T00:00:00.000Z' },
+      ],
+    }]);
+  });
 });
