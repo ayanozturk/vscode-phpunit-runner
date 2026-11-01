@@ -90,7 +90,8 @@ export function mapPhpUnitCoverageFiles(
       const absolutePath = path.resolve(report.sourceRoot, file.filePath);
       const hostPath = unmapWithMappings(absolutePath, mappings);
       const tests = byFile.get(hostPath) ?? new Map<string, CoverageLineRange[]>();
-      tests.set(test.testId, file.lines);
+      const existingLines = tests.get(test.testId);
+      tests.set(test.testId, existingLines ? mergeLineRanges(existingLines, file.lines) : file.lines);
       byFile.set(hostPath, tests);
     }
   }
@@ -99,6 +100,21 @@ export function mapPhpUnitCoverageFiles(
     path: filePath,
     tests: [...tests.entries()].map(([testId, lines]) => ({ testId, lines })),
   }));
+}
+
+/** Combines repeated report records without dropping earlier execution evidence. */
+function mergeLineRanges(left: readonly CoverageLineRange[], right: readonly CoverageLineRange[]): CoverageLineRange[] {
+  const sorted = [...left, ...right].sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged: CoverageLineRange[] = [];
+  for (const range of sorted) {
+    const previous = merged.at(-1);
+    if (!previous || range.start > previous.end + 1) {
+      merged.push({ ...range });
+    } else {
+      previous.end = Math.max(previous.end, range.end);
+    }
+  }
+  return merged;
 }
 
 /** Parses PHPUnit's exact class::method identifier; data-set IDs are intentionally left unmapped. */

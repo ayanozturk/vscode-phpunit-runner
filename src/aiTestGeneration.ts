@@ -198,7 +198,24 @@ export function suggestTestDestination(
       ? 'Feature'
       : 'Unit';
   const directories = sourceIsInsideWorkspace ? sourceSegments : [];
-  return path.join(testRoot, area, ...directories, `${sourceName}Test.php`);
+  const suggestedPath = path.join(testRoot, area, ...directories, `${sourceName}Test.php`);
+  const pathKey = (filePath: string): string => {
+    const resolved = path.resolve(filePath);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  const occupied = new Set(existingTestFiles.map(pathKey));
+  if (!occupied.has(pathKey(suggestedPath))) {
+    return suggestedPath;
+  }
+
+  // Keep the conventional *Test.php suffix while avoiding a save dialog that
+  // defaults to replacing an existing test file.
+  for (let index = 2; ; index += 1) {
+    const candidate = path.join(testRoot, area, ...directories, `${sourceName}${index}Test.php`);
+    if (!occupied.has(pathKey(candidate))) {
+      return candidate;
+    }
+  }
 }
 
 async function findOnPath(

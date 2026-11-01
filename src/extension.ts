@@ -50,6 +50,7 @@ import {
 } from './outputFormatter';
 import { DEFAULT_EXCLUDE_GLOBS, DEFAULT_TEST_GLOBS, isPhpScript, resolvePath } from './paths';
 import { parsePhpUnitXml, resolveDiscoveryGlobs, type PhpUnitSuite } from './phpunitXml';
+import { findSuiteForFile as matchSuiteForFile } from './suiteMatcher';
 import { executionDisposition, unverifiedJUnitMessage } from './testResults';
 import { resolveOutputFilePath } from './outputLocation';
 import {
@@ -645,30 +646,7 @@ async function findSuiteForFile(
     return undefined;
   }
 
-  const xmlDirectory = path.dirname(cached.xmlPath);
-  const filePath = path.resolve(uri.fsPath);
-  for (const suite of cached.suites) {
-    const excluded = suite.excludes.some((exclude) => isPathInside(
-      filePath,
-      path.resolve(xmlDirectory, exclude),
-    ));
-    if (excluded) {
-      continue;
-    }
-
-    const includesFile = suite.files.some((file) => path.resolve(xmlDirectory, file) === filePath);
-    const includesDirectory = suite.directories.some((directory) => {
-      const basePath = path.resolve(xmlDirectory, directory.path);
-      const suffix = directory.suffix?.replace(/^\*/, '') || '.php';
-      return isPathInside(filePath, basePath)
-        && path.basename(filePath).endsWith(suffix);
-    });
-    if (includesFile || includesDirectory) {
-      return suite.name;
-    }
-  }
-
-  return undefined;
+  return matchSuiteForFile(uri.fsPath, path.dirname(cached.xmlPath), cached.suites);
 }
 
 async function loadSuiteConfig(folder: vscode.WorkspaceFolder): Promise<SuiteConfigCache | undefined> {
@@ -696,11 +674,6 @@ async function loadSuiteConfig(folder: vscode.WorkspaceFolder): Promise<SuiteCon
     suiteConfigCache.set(workspacePath, cached);
   }
   return cached;
-}
-
-function isPathInside(filePath: string, directoryPath: string): boolean {
-  const relative = path.relative(directoryPath, filePath);
-  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 async function refreshTestItem(item: vscode.TestItem): Promise<void> {

@@ -119,6 +119,24 @@ describe('PHPUnit JSONL coverage integration helpers', () => {
     ]);
   });
 
+  it('merges repeated test identities instead of discarding earlier line coverage', () => {
+    const report = parsePhpUnitCoverageJsonl(
+      JSON.stringify({ schemaVersion: 1, sourceRoot: '/project/src' }),
+      [
+        JSON.stringify({ test: 'App\\MoneyTest::testFormat', covers: { 'Money.php': ['10-12', '20'] } }),
+        JSON.stringify({ test: 'App\\MoneyTest::testFormat', covers: { 'Money.php': ['12-15', '30'] } }),
+      ].join('\n'),
+    );
+
+    assert.deepEqual(mapPhpUnitCoverageFiles(report), [{
+      path: '/project/src/Money.php',
+      tests: [{
+        testId: 'App\\MoneyTest::testFormat',
+        lines: [{ start: 10, end: 15 }, { start: 20, end: 20 }, { start: 30, end: 30 }],
+      }],
+    }]);
+  });
+
   it('maps only exact non-data-provider PHPUnit method identifiers', () => {
     assert.deepEqual(parsePhpUnitCoverageTestMethodId('App\\MoneyTest::testFormat'), {
       className: 'App\\MoneyTest',

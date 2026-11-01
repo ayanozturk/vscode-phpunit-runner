@@ -253,6 +253,18 @@ describe('suggestTestDestination', () => {
     );
   });
 
+  it('suggests the next unused conventional filename when the default test already exists', () => {
+    const existing = [
+      path.join(root, 'tests', 'Unit', 'Billing', 'InvoiceTest.php'),
+      path.join(root, 'tests', 'Unit', 'Billing', 'Invoice2Test.php'),
+    ];
+
+    assert.equal(
+      suggestTestDestination(root, path.join(root, 'src', 'Billing', 'Invoice.php'), existing),
+      path.join(root, 'tests', 'Unit', 'Billing', 'Invoice3Test.php'),
+    );
+  });
+
   it('falls back to a safe tests path when the source is outside the workspace', () => {
     assert.equal(
       suggestTestDestination(root, path.resolve('/outside', 'SecretService.php')),
