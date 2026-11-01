@@ -54,7 +54,7 @@ import {
   firstFailureMessage,
   readJUnitReport,
 } from './junit';
-import { normalizeClassName, parseTestSource } from './parser';
+import { classNamesMatch, methodNameFromTestCase, normalizeClassName, parseTestSource } from './parser';
 import { planDatasetItems } from './datasetItemPlan';
 import {
   formatTestOutputSegments,
@@ -1700,9 +1700,15 @@ async function runInsightTest(choice: TestInsightChoice): Promise<void> {
   const uri = vscode.Uri.file(choice.filePath);
   await refreshUri(uri);
   const fileItem = findFileItem(uri);
-  const target = fileItem
-    ? findNarrowestTestItem(fileItem, new vscode.Position(choice.line - 1, 0))
+  const exactTarget = fileItem && choice.testIdentity
+    ? findTestItemForInsight(fileItem, uri, choice.testIdentity)
     : undefined;
+  const exactData = exactTarget ? itemData.get(exactTarget) : undefined;
+  const target = exactTarget
+    && (exactData?.kind === 'method' || exactData?.kind === 'dataset')
+    && exactTarget.uri?.fsPath === uri.fsPath
+    ? exactTarget
+    : (fileItem ? findNarrowestTestItem(fileItem, new vscode.Position(choice.line - 1, 0)) : undefined);
   if (!target || (itemData.get(target)?.kind !== 'method' && itemData.get(target)?.kind !== 'dataset')) {
     void vscode.window.showWarningMessage('Could not map this insight to a discovered test. Open its source to choose a test manually.');
     await openInsightLocation(choice);
@@ -1710,6 +1716,46 @@ async function runInsightTest(choice: TestInsightChoice): Promise<void> {
   }
 
   await runTests(new vscode.TestRunRequest([target]), new vscode.CancellationTokenSource().token);
+}
+
+function findTestItemForInsight(
+  fileItem: vscode.TestItem,
+  uri: vscode.Uri,
+  identity: string,
+): vscode.TestItem | undefined {
+  const folder = vscode.workspace.getWorkspaceFolder(uri);
+  const prefix = folder ? `${folder.uri.toString()}::` : '';
+  const reportIdentity = prefix && identity.startsWith(prefix) ? identity.slice(prefix.length) : identity;
+  const separator = reportIdentity.indexOf('::');
+  if (separator < 1) {
+    return undefined;
+  }
+  const reportClass = reportIdentity.slice(0, separator);
+  const reportCase = reportIdentity.slice(separator + 2);
+  const methodName = methodNameFromTestCase(reportCase);
+  let match: vscode.TestItem | undefined;
+  const visit = (items: vscode.TestItemCollection): void => {
+    items.forEach((item) => {
+      const data = itemData.get(item);
+      if (
+        !match
+        && (data?.kind === 'method' || data?.kind === 'dataset')
+        && data.uri.fsPath === uri.fsPath
+        && data.className
+        && classNamesMatch(data.className, reportClass)
+        && (data.methodName?.toLowerCase() === methodName.toLowerCase()
+          || data.pestTestName?.toLowerCase() === reportCase.toLowerCase())
+      ) {
+        match = item;
+        return;
+      }
+      if (!match) {
+        visit(item.children);
+      }
+    });
+  };
+  visit(fileItem.children);
+  return match;
 }
 
 async function clearTestInsightsHistory(): Promise<void> {

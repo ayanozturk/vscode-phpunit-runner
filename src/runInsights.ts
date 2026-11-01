@@ -2,6 +2,8 @@ import { findFlakyCandidates, getSlowestTests, type RunHistoryRun } from './runH
 
 export type TestInsightChoice = {
   id: string;
+  /** Stable report identity; this is not a VS Code TestItem id. */
+  testIdentity?: string;
   label: string;
   description: string;
   detail: string;
@@ -36,6 +38,7 @@ export function createTestInsightChoices(
 ): TestInsightChoice[] {
   const slowest = getSlowestTests(history, slowestLimit).map((test): TestInsightChoice => ({
     id: `slow:${test.testId}`,
+    testIdentity: test.testId,
     label: `Slow: ${test.label}`,
     description: `${workspaceName} · ${test.durationMs.toFixed(0)} ms · ${test.outcome}${dateSuffix(test.completedAt)}`,
     detail: sourceDetail(
@@ -56,6 +59,7 @@ export function createTestInsightChoices(
     const latestCompletedAt = test.recentOutcomes[0]?.completedAt;
     return {
       id: `flaky:${test.testId}`,
+      testIdentity: test.testId,
       label: `Flaky: ${test.label}`,
       description: `${workspaceName} · ${passes} passed, ${failures} failed${latestCompletedAt ? dateSuffix(latestCompletedAt, ' · latest ') : ''}`,
       detail: sourceDetail(

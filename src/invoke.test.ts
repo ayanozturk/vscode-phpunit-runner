@@ -532,6 +532,22 @@ describe('resolveInvocation', () => {
     assert.equal(invocation.args.at(-1), 'unit');
   });
 
+  it('keeps aggregate Clover coverage when optional per-test coverage is unavailable', async () => {
+    const invocation = await resolveInvocation({
+      workspacePath: '/proj',
+      target: fileTarget,
+      config,
+      phpunitExecutable: '/proj/vendor/bin/phpunit',
+      coverageCloverPath: '/proj/.phpunit-runner/clover.xml',
+    });
+
+    const cloverIndex = invocation.args.indexOf('--coverage-clover');
+    assert.ok(cloverIndex >= 0);
+    assert.equal(invocation.args[cloverIndex + 1], '/proj/.phpunit-runner/clover.xml');
+    assert.equal(invocation.args.includes('--coverage-jsonl'), false,
+      'per-test details are not requested without an explicitly supported JSONL report');
+  });
+
   it('requests a machine-readable runtime test listing without selecting or executing tests', async () => {
     const invocation = await resolveInvocation({
       workspacePath: '/proj',

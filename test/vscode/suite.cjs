@@ -157,6 +157,10 @@ exports.run = async () => {
         '  cat > "$report" <<XML',
         "<testsuites><testsuite><testcase name='testAlpha' classname='" + className + "' file='tests/" + className + ".php' time='0.01'/><testcase name='testAlpha with data set #0' classname='" + className + "' file='tests/" + className + ".php' line='2' time='0.02'><failure message='Summary assertion failed'>Summary failure detail</failure></testcase></testsuite></testsuites>",
         'XML',
+        'elif [ "$PHPUNIT_RUNNER_MODE" = "insight-location" ]; then',
+        '  cat > "$report" <<XML',
+        "<testsuites><testcase name='$testcaseName' classname='$testcaseClass' file='$testcaseFile' line='4' time='0.01'/></testsuites>",
+        'XML',
         'elif [ "$PHPUNIT_RUNNER_MODE" = "fail" ]; then',
         '  cat > "$report" <<XML',
         "<testsuites><testcase name='$testcaseName' classname='" + className + "' file='tests/" + className + ".php' line='2' time='0.01'><failure message='Assertion failed'>Assertion failed</failure></testcase></testsuites>",
@@ -899,6 +903,64 @@ class DynamicDataProviderTest
     await vscode.commands.executeCommand('phpunitRunner.showTestInsights');
     assert.ok(diagnosticOutput.includes('Slowest tests:'), 'test insights show persisted durations from reported runs');
     assert.ok(diagnosticOutput.includes('Flaky candidates (pass and fail in the latest 10 outcomes):'));
+
+    const insightTarget = findMethod('testAlpha');
+    await workspaceAConfig.update('environment', { PHPUNIT_RUNNER_MODE: 'insight-location' }, vscode.ConfigurationTarget.WorkspaceFolder);
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([insightTarget], undefined, testRunProfile),
+      new vscode.CancellationTokenSource().token,
+    );
+    await workspaceAConfig.update('environment', { PHPUNIT_RUNNER_MODE: '' }, vscode.ConfigurationTarget.WorkspaceFolder);
+
+    const originalCreateQuickPick = vscode.window.createQuickPick;
+    let insightPicker;
+    vscode.window.createQuickPick = () => {
+      const picker = {
+        items: [],
+        selectedItems: [],
+        onDidAccept() { return { dispose() {} }; },
+        onDidTriggerItemButton(listener) { this.buttonListener = listener; return { dispose() {} }; },
+        onDidHide(listener) { this.hideListener = listener; return { dispose() {} }; },
+        show() {},
+        hide() { this.hideListener?.(); },
+        dispose() {},
+      };
+      insightPicker = picker;
+      return picker;
+    };
+    const insightEvents = [];
+    const insightWarnings = [];
+    const originalInsightWarning = vscode.window.showWarningMessage;
+    const restoreInsightCapture = captureRunEvents(api.controller, insightEvents);
+    try {
+      await vscode.commands.executeCommand('phpunitRunner.showTestInsights');
+      const slowChoice = insightPicker.items.find((item) => item.id.includes('AlphaTest::testAlpha'));
+      assert.ok(slowChoice, 'the current Alpha test appears in the insights picker');
+      assert.match(slowChoice.description, /\d{4}-\d{2}-\d{2}/, 'insight choices show the latest reported run date');
+      const runButton = slowChoice.buttons.find((button) => button.tooltip === 'Run this test');
+      assert.ok(runButton, 'the exact-test action is available when a line can be mapped');
+      await fs.writeFile(path.join(workspaceA.uri.fsPath, 'runner.log'), '', 'utf8');
+      vscode.window.showWarningMessage = async (...args) => { insightWarnings.push(String(args[0])); return originalInsightWarning.apply(vscode.window, args); };
+      insightPicker.buttonListener({ item: slowChoice, button: runButton });
+      try {
+        await until(
+          () => insightEvents.some((event) => event.id === insightTarget.id && event.state === 'passed'),
+          'the insight action runs the mapped test method',
+        );
+      } catch (error) {
+        const runLog = await fs.readFile(path.join(workspaceA.uri.fsPath, 'runner.log'), 'utf8').catch(() => '');
+        throw new Error(`${error.message}; target=${insightTarget.id}; events=${JSON.stringify(insightEvents)}; warnings=${JSON.stringify(insightWarnings)}; log=${runLog}`);
+      }
+      assert.ok(!insightEvents.some((event) => (
+        event.label.includes('data set') && ['started', 'passed', 'failed'].includes(event.state)
+      )), 'the insight action does not run a data set');
+    } finally {
+      vscode.window.showWarningMessage = originalInsightWarning;
+      restoreInsightCapture();
+      vscode.window.createQuickPick = originalCreateQuickPick;
+      await fs.writeFile(path.join(workspaceA.uri.fsPath, 'runner.log'), '', 'utf8');
+    }
+
     const clearHistoryPrompts = [];
     const originalShowWarningMessage = vscode.window.showWarningMessage;
     vscode.window.showWarningMessage = async (message, ...args) => {

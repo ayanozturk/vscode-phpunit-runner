@@ -35,6 +35,7 @@ describe('createTestInsightChoices', () => {
     assert.deepEqual(createTestInsightChoices(history, 'api'), [
       {
         id: 'slow:workspace::ExampleTest::testFlaky',
+        testIdentity: 'workspace::ExampleTest::testFlaky',
         label: 'Slow: ExampleTest::testFlaky',
         description: 'api · 120 ms · passed · 2026-01-02',
         detail: 'Slowest test in its latest reported run. Select to open tests/ExampleTest.php:18.',
@@ -43,6 +44,7 @@ describe('createTestInsightChoices', () => {
       },
       {
         id: 'flaky:workspace::ExampleTest::testFlaky',
+        testIdentity: 'workspace::ExampleTest::testFlaky',
         label: 'Flaky: ExampleTest::testFlaky',
         description: 'api · 1 passed, 1 failed · latest 2026-01-02',
         detail: 'Recent outcomes, newest first: passed → failed. Select to open tests/ExampleTest.php:18.',
