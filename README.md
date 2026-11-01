@@ -20,7 +20,7 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Debug and measure coverage.** Start an Xdebug session for a selected test and inspect statement and named method coverage in the editor; supported single-test coverage can also be inspected per test.
 - **Fit your environment.** Run locally, through Docker, or with a command template for Laravel Sail, DDEV, SSH, and other remote setups. Host-to-remote path mappings keep results connected to local files across multi-root workspaces.
 - **Diagnose setup and remote results.** Check runner, configuration, PHP, and report readiness without starting tests; retrieve JUnit and coverage files from custom remote commands when they are not on a shared mount.
-- **Act on test insights.** Review the slowest tests and possible flaky candidates from recent verified runs, then select one to open its reported source location.
+- **Act on test insights.** Review clearly labeled slow tests and possible flaky candidates from recent verified runs. The picker previews each test's source location and opens it when the report includes one.
 - **Keep results current.** Refresh discovery as PHP files, PHPUnit configuration, or Composer dependencies change, or enable continuous testing to rerun a saved file.
 
 ## Get started
@@ -81,7 +81,7 @@ Core settings:
 - `phpunitRunner.debuggerConfig`
 - `phpunitRunner.xdebugPort` (set to `0` to choose an available port automatically)
 
-Run **PHPUnit Runner: Show Test Insights** from the Command Palette to see the ten slowest reported test cases and possible flaky candidates. History stays in VS Code workspace state, keeps up to 100 runs per workspace, and only includes completed cases from readable JUnit reports.
+Run **PHPUnit Runner: Show Test Insights** from the Command Palette to see the ten slowest reported test cases and possible flaky candidates. The picker previews the reported file and line and opens that location when available. History stays in VS Code workspace state, keeps up to 100 runs per workspace, and only includes completed cases from readable JUnit reports.
 
 Docker settings:
 

@@ -19,8 +19,11 @@ export function indexTestCases(cases: JUnitTestCase[], workspaceRoot?: string): 
   const withoutFile: JUnitTestCase[] = [];
 
   for (const testCase of cases) {
-    const className = normalizeClassName(testCase.className);
-    const methodName = methodNameFromTestCase(testCase.name);
+    // PHP treats class and method identifiers as case-insensitive. Reports can
+    // preserve the declaration spelling while a statically discovered item
+    // uses different casing, so index both by their semantic lookup key.
+    const className = normalizeClassName(testCase.className).toLowerCase();
+    const methodName = methodNameFromTestCase(testCase.name).toLowerCase();
     addToNestedIndex(byClass, className, methodName, testCase);
     if (testCase.file) {
       const filePath = resolveReportPath(testCase.file, workspaceRoot);
@@ -57,8 +60,8 @@ export function indexTestCases(cases: JUnitTestCase[], workspaceRoot?: string): 
 
 export function findIndexedMethodCases(index: TestCaseIndex, className: string, methodName: string): JUnitTestCase[] {
   const result: JUnitTestCase[] = [];
-  forEachByClass(index.byClass, index, className, (cases) => {
-    result.push(...(cases.get(methodName) ?? []));
+  forEachByClass(index.byClass, index, className.toLowerCase(), (cases) => {
+    result.push(...(cases.get(methodName.toLowerCase()) ?? []));
   });
   return result;
 }
@@ -68,11 +71,11 @@ export function findIndexedDatasetCases(
   className: string,
   datasetName: string,
 ): JUnitTestCase[] {
-  const methodName = methodNameFromTestCase(datasetName);
+  const methodName = methodNameFromTestCase(datasetName).toLowerCase();
   const result: JUnitTestCase[] = [];
-  forEachByClass(index.byClass, index, className, (cases) => {
+  forEachByClass(index.byClass, index, className.toLowerCase(), (cases) => {
     for (const testCase of cases.get(methodName) ?? []) {
-      if (testCase.name === datasetName) {
+      if (testCaseNamesMatch(testCase.name, datasetName)) {
         result.push(testCase);
       }
     }
@@ -111,7 +114,7 @@ export function findIndexedFileCases(
   const result = [...(index.byFile.get(path.resolve(filePath)) ?? [])];
   const included = new Set(result);
   for (const className of classNames) {
-    forEachByClass(index.byClassWithoutFile, index, className, (methods) => {
+    forEachByClass(index.byClassWithoutFile, index, className.toLowerCase(), (methods) => {
       for (const cases of methods.values()) {
         for (const testCase of cases) {
           if (!included.has(testCase)) {
@@ -131,7 +134,7 @@ function forEachByClass(
   requestedClassName: string,
   visit: (methods: Map<string, JUnitTestCase[]>) => void,
 ): void {
-  const normalized = normalizeClassName(requestedClassName);
+  const normalized = normalizeClassName(requestedClassName).toLowerCase();
   const exact = source.get(normalized);
   if (exact) {
     visit(exact);
@@ -164,6 +167,13 @@ function classNameSuffixesFor(className: string): string[] {
     }
   }
   return suffixes;
+}
+
+function testCaseNamesMatch(actual: string, requested: string): boolean {
+  const actualMethod = methodNameFromTestCase(actual);
+  const requestedMethod = methodNameFromTestCase(requested);
+  return actualMethod.toLowerCase() === requestedMethod.toLowerCase()
+    && actual.slice(actualMethod.length) === requested.slice(requestedMethod.length);
 }
 
 const MIN_PEST_TRIGRAM_CASES = 128;

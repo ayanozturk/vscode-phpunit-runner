@@ -87,4 +87,20 @@ describe('remote report transfer command', () => {
 
     assert.equal(command, "scp /remote/junit.xml /workspace/junit.xml '' ''");
   });
+
+  it('does not treat placeholder-shaped text inside a path as another template variable', () => {
+    const command = renderRemoteReportTransferCommand(
+      'scp ${remoteJunitReport} ${localJunitReport}',
+      {
+        workspaceFolder: '/workspace',
+        remoteJunitReport: '/remote/${localJunitReport}/junit.xml',
+        localJunitReport: '/workspace/${remoteJunitReport}/junit.xml',
+      },
+    );
+
+    assert.equal(
+      command,
+      "scp '/remote/${localJunitReport}/junit.xml' '/workspace/${remoteJunitReport}/junit.xml'",
+    );
+  });
 });

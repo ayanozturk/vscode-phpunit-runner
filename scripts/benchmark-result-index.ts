@@ -64,6 +64,42 @@ function benchmark(itemCount: number, iterations: number): void {
     heapDeltaMiB: round((heapAfter - heapBefore) / 1024 / 1024, 1),
     forcedGarbageCollection: Boolean(collectGarbage),
   }));
+  benchmarkPestWithoutFileMetadata(itemCount, iterations);
+}
+
+/** Exercises the bounded trigram candidate index used for JUnit cases without file attributes. */
+function benchmarkPestWithoutFileMetadata(itemCount: number, iterations: number): void {
+  const cases = Array.from({ length: itemCount }, (_, index): JUnitTestCase => ({
+    name: `Generated Pest behavior ${String(index).padStart(5, '0')} should stay discoverable`,
+    className: 'Pest tests',
+    timeSeconds: 0.001,
+    status: 'passed',
+    message: '',
+  }));
+  const buildStart = performance.now();
+  const index = indexTestCases(cases, '/benchmark');
+  const buildMs = performance.now() - buildStart;
+  const lookupDurations: number[] = [];
+
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const start = performance.now();
+    for (let caseIndex = 0; caseIndex < itemCount; caseIndex += 1) {
+      findIndexedPestCases(
+        index,
+        `Generated Pest behavior ${String(caseIndex).padStart(5, '0')}`,
+        '/benchmark/tests/GeneratedPestTest.php',
+      );
+    }
+    lookupDurations.push(performance.now() - start);
+  }
+
+  console.log(JSON.stringify({
+    casesWithoutFileMetadata: itemCount,
+    trigramIndexBuildMs: round(buildMs, 1),
+    pestLookupMsMedian: round(median(lookupDurations), 1),
+    iterations,
+    usesTrigramIndex: index.withoutFileByTrigram.size > 0,
+  }));
 }
 
 function median(values: number[]): number {

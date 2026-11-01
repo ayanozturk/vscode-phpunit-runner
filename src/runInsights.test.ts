@@ -36,8 +36,8 @@ describe('createTestInsightChoices', () => {
       {
         id: 'slow:workspace::ExampleTest::testFlaky',
         label: 'ExampleTest::testFlaky',
-        description: 'api · 120 ms · passed',
-        detail: 'Slowest test in its latest reported run. Select to open its source file.',
+        description: 'api · slow · 120 ms · passed',
+        detail: 'Slowest test in its latest reported run. Select to open tests/ExampleTest.php:18.',
         filePath: '/workspace/tests/ExampleTest.php',
         line: 18,
       },
@@ -45,7 +45,7 @@ describe('createTestInsightChoices', () => {
         id: 'flaky:workspace::ExampleTest::testFlaky',
         label: 'ExampleTest::testFlaky',
         description: 'api · possible flaky · 1 passed, 1 failed',
-        detail: 'Both pass and fail outcomes appeared within the latest 10 reported runs. Select to open its source file.',
+        detail: 'Both pass and fail outcomes appeared within the latest 10 reported runs. Select to open tests/ExampleTest.php:18.',
         filePath: '/workspace/tests/ExampleTest.php',
         line: 18,
       },
@@ -60,5 +60,36 @@ describe('createTestInsightChoices', () => {
     }];
 
     assert.equal(createTestInsightChoices(history, 'workspace')[0].filePath, undefined);
+  });
+
+  it('explains when a test report has no source location to open', () => {
+    const history: RunHistoryRun[] = [{
+      id: 'run',
+      completedAt: '2026-01-01T00:00:00.000Z',
+      cases: [{ testId: 'id', label: 'Test::method', outcome: 'passed', durationMs: 20 }],
+    }];
+
+    const [choice] = createTestInsightChoices(history, 'workspace');
+    assert.match(choice.description, /slow/);
+    assert.match(choice.detail, /Source location was not included/);
+    assert.doesNotMatch(choice.detail, /Select to open/);
+  });
+
+  it('shows the source file when the report has no line number', () => {
+    const history: RunHistoryRun[] = [{
+      id: 'run',
+      completedAt: '2026-01-01T00:00:00.000Z',
+      cases: [{
+        testId: 'id',
+        label: 'Test::method',
+        outcome: 'passed',
+        durationMs: 20,
+        filePath: 'C:\\workspace\\tests\\ExampleTest.php',
+      }],
+    }];
+
+    const [choice] = createTestInsightChoices(history, 'workspace');
+    assert.match(choice.detail, /tests\/ExampleTest\.php/);
+    assert.doesNotMatch(choice.detail, /:0/);
   });
 });

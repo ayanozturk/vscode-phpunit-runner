@@ -30,6 +30,22 @@ describe('JUnit result index', () => {
     assert.deepEqual(findIndexedDatasetCases(index, 'Tests.ExampleTest', datasetCase.name), [datasetCase]);
   });
 
+  it('matches PHP class and method identifiers without regard to casing', () => {
+    const methodCase = testCase({ className: 'App\\Tests\\ExampleTest', name: 'TestValues' });
+    const datasetCase = testCase({
+      className: 'app\\tests\\exampletest',
+      name: 'testValues with data set "First Case"',
+    });
+    const index = indexTestCases([methodCase, datasetCase]);
+
+    assert.deepEqual(findIndexedMethodCases(index, 'app.tests.exampletest', 'testvalues'), [methodCase, datasetCase]);
+    assert.deepEqual(
+      findIndexedDatasetCases(index, 'APP\\TESTS\\EXAMPLETEST', 'TESTVALUES with data set "First Case"'),
+      [datasetCase],
+      'method-name casing is ignored while the data set label remains case-sensitive',
+    );
+  });
+
   it('prefers a normalized fully qualified class over an ambiguous short-name suffix', () => {
     const firstNamespace = testCase({ name: 'testSame', className: 'App\\One\\ExampleTest' });
     const secondNamespace = testCase({ name: 'testSame', className: 'App\\Two\\ExampleTest' });

@@ -14,6 +14,9 @@ Research confirms that machine-readable test listing and result formats are avai
 - **Delivered:** Node 22/24 quality and PHPUnit 10–13/Pest 3–5 CLI compatibility GitHub Actions matrices, plus focused modules for run history and excluded test scopes. Compatibility fixtures exercise PHPUnit runtime listing, JUnit output, and Pest parallel runs. Result mapping avoids intermediate nested-array allocations in its lookup paths.
 - **Baselines added:** `npm run benchmark:discovery` and `npm run benchmark:result-index` measure synthetic 1k/10k test workloads without machine-dependent thresholds. On this local machine, initial discovery medians were about 19/180 ms; result mapping improved from 5.8 to 3.9 ms for 10k method lookups and 258 to 221 ms for Pest lookups.
 - **Performance note:** A measured alternative to the parser's comment/string masking was slower on both benchmark sizes, so it was discarded without changing parser behavior.
+- **Delivered:** Process creation, output capture, cancellation, and exit handling for test and remote-transfer commands now share a tested process runner. Remote report template variables are substituted in one pass so placeholder-like text inside a path remains literal.
+- **Delivered:** Result mapping now treats PHP class and method names case-insensitively while preserving data-set label matching. Composer-driven runtime discovery now ignores stale cancelled runs, preventing them from suppressing the latest refresh. The benchmark exercises the bounded trigram fallback used for JUnit cases without file metadata.
+- **Measured:** On this local machine, trigram fallback across 10k JUnit cases took about 69 ms to index and 351 ms for 10k lookups; the fallback is now represented in the benchmark for future comparisons.
 - **Still planned:** Further module boundaries around invocation and result mapping, plus coverage attribution for multi-test runs if the report format can support it safely.
 
 ## Roadmap

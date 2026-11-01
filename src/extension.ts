@@ -14,6 +14,7 @@ import { autoDetectConfigurationFile, autoDetectPhpUnit, resolveInvocation } fro
 import { renderRemoteReportTransferCommand } from './remoteReports';
 import { parseRuntimeTestListing, reconcileRuntimeTestListing } from './runtimeDiscovery';
 import { createTestInsightChoices, type TestInsightChoice } from './runInsights';
+import { runProcess } from './processRunner';
 import {
   appendRunHistory,
   findFlakyCandidates,
@@ -78,6 +79,7 @@ const suiteConfigCache = new Map<string, SuiteConfigCache>();
 const runtimeListedWorkspaces = new Set<string>();
 const runtimeDatasetIdsByWorkspace = new Map<string, Set<string>>();
 const runtimeDiscoveryProcesses = new Map<string, ChildProcess>();
+const runtimeDiscoveryGenerations = new Map<string, number>();
 const runtimeOwnedDatasetItems = new WeakSet<vscode.TestItem>();
 
 let outputChannel: vscode.OutputChannel;
@@ -321,16 +323,19 @@ function scheduleRuntimeDiscoveryForUri(uri: vscode.Uri): void {
 
 function scheduleRuntimeDiscoveryForWorkspace(folder: vscode.WorkspaceFolder): void {
   const key = folder.uri.fsPath;
+  const generation = (runtimeDiscoveryGenerations.get(key) ?? 0) + 1;
+  runtimeDiscoveryGenerations.set(key, generation);
   const running = runtimeDiscoveryProcesses.get(key);
   if (running) {
     terminateProcessTree(running);
   }
   runtimeListedWorkspaces.delete(key);
-  runtimeDiscoveryScheduler?.schedule(key, () => discoverRuntimeProviderCases(folder));
+  runtimeDiscoveryScheduler?.schedule(key, () => discoverRuntimeProviderCases(folder, generation));
 }
 
-async function discoverRuntimeProviderCases(folder: vscode.WorkspaceFolder): Promise<void> {
+async function discoverRuntimeProviderCases(folder: vscode.WorkspaceFolder, generation: number): Promise<void> {
   const workspacePath = folder.uri.fsPath;
+  const isCurrentGeneration = () => runtimeDiscoveryGenerations.get(workspacePath) === generation;
   if (runtimeListedWorkspaces.has(workspacePath)) {
     return;
   }
@@ -360,6 +365,9 @@ async function discoverRuntimeProviderCases(folder: vscode.WorkspaceFolder): Pro
   }
 
   const runner = config.phpunitCommand.trim() || await autoDetectPhpUnit(workspacePath);
+  if (!isCurrentGeneration()) {
+    return;
+  }
   if (/(?:^|[\\/])pest(?:\.bat|\.cmd)?$/i.test(runner)) {
     runtimeListedWorkspaces.add(workspacePath);
     return;
@@ -378,8 +386,14 @@ async function discoverRuntimeProviderCases(folder: vscode.WorkspaceFolder): Pro
         ? undefined
         : await autoDetectConfigurationFile(workspacePath),
     });
+    if (!isCurrentGeneration()) {
+      return;
+    }
     outputChannel.appendLine(`[phpunit-runner] Discovering dynamic PHPUnit data sets in ${workspacePath}`);
     const result = await runDiscoveryCommand(invocation, workspacePath);
+    if (!isCurrentGeneration()) {
+      return;
+    }
     if (result.exitCode !== 0) {
       outputChannel.appendLine(`[phpunit-runner] Runtime test listing is unavailable; keeping static discovery. ${result.output.trim()}`);
       return;
@@ -403,7 +417,9 @@ async function discoverRuntimeProviderCases(folder: vscode.WorkspaceFolder): Pro
   } catch (error) {
     outputChannel.appendLine(`[phpunit-runner] Runtime test listing failed; keeping static discovery: ${String(error)}`);
   } finally {
-    runtimeListedWorkspaces.add(workspacePath);
+    if (isCurrentGeneration()) {
+      runtimeListedWorkspaces.add(workspacePath);
+    }
     await fs.rm(listingPath, { force: true }).catch(() => undefined);
   }
 }
@@ -1466,52 +1482,14 @@ async function executePhpUnit(
     : [invocation.command, ...invocation.args].join(' ')}`);
 
   try {
-    const result = await new Promise<{ output: string; exitCode: number }>((resolve, reject) => {
-      const env = {
-        ...process.env,
-        ...invocation.env,
-      };
-      const detached = process.platform !== 'win32';
-      const child = invocation.shell
-        ? spawn(invocation.command, { cwd: invocation.cwd, env, shell: true, detached })
-        : spawn(invocation.command, invocation.args, { cwd: invocation.cwd, env, detached });
-
-      let output = '';
-      const append = (chunk: string | Buffer) => {
-        const text = chunk.toString();
-        output += text;
-        outputChannel.append(text);
-      };
-
-      child.stdout.on('data', append);
-      child.stderr.on('data', append);
-
-      let terminationRequested = false;
-      const terminateChildProcessTree = () => {
-        if (terminationRequested) {
-          return;
-        }
-        terminationRequested = true;
-        terminateProcessTree(child);
-      };
-
-      const subscription = token.onCancellationRequested(terminateChildProcessTree);
-      if (token.isCancellationRequested) {
-        terminateChildProcessTree();
-      }
-
-      child.on('error', (error) => {
-        subscription.dispose();
-        reject(error);
-      });
-
-      child.on('close', (exitCode) => {
-        subscription.dispose();
-        resolve({
-          output,
-          exitCode: exitCode ?? 1,
-        });
-      });
+    const result = await runProcess({
+      command: invocation.command,
+      args: invocation.args,
+      cwd: invocation.cwd,
+      env: { ...process.env, ...invocation.env },
+      shell: invocation.shell,
+      token,
+      onOutput: (chunk) => outputChannel.append(chunk),
     });
 
     let reportTransferWarning: string | undefined;
@@ -1682,35 +1660,13 @@ async function executeReportTransfer(
   configuredEnvironment: Record<string, string>,
   token: vscode.CancellationToken,
 ): Promise<{ output: string; exitCode: number }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, {
-      cwd,
-      env: { ...process.env, ...configuredEnvironment },
-      shell: true,
-      detached: process.platform !== 'win32',
-    });
-    let output = '';
-    const append = (chunk: string | Buffer) => {
-      const text = chunk.toString();
-      output += text;
-      outputChannel.append(text);
-    };
-    child.stdout.on('data', append);
-    child.stderr.on('data', append);
-
-    const cancel = () => terminateProcessTree(child);
-    const subscription = token.onCancellationRequested(cancel);
-    if (token.isCancellationRequested) {
-      cancel();
-    }
-    child.on('error', (error) => {
-      subscription.dispose();
-      reject(error);
-    });
-    child.on('close', (exitCode) => {
-      subscription.dispose();
-      resolve({ output, exitCode: exitCode ?? 1 });
-    });
+  return runProcess({
+    command,
+    cwd,
+    env: { ...process.env, ...configuredEnvironment },
+    shell: true,
+    token,
+    onOutput: (chunk) => outputChannel.append(chunk),
   });
 }
 

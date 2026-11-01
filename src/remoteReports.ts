@@ -1,4 +1,4 @@
-import { quoteTemplateShellArg, substituteVariables } from './commandTemplate';
+import { quoteTemplateShellArg } from './commandTemplate';
 
 export type RemoteReportTransferPaths = {
   workspaceFolder: string;
@@ -36,12 +36,21 @@ export function renderRemoteReportTransferCommand(
       localCoverageReport: paths.localCoverageReport ?? '',
     }).map(([name, value]) => [name, quoteTemplateShellArg(value)]),
   );
-  const command = substituteVariables(trimmed, values);
-  const unresolved = [...command.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)]
-    .map((match) => match[1]);
-  if (unresolved.length > 0) {
+  const unresolved = new Set<string>();
+  // Substitute the template in one pass. Repeatedly replacing variables can
+  // accidentally interpret a placeholder-shaped string inside a quoted path
+  // value as a second template variable.
+  const command = trimmed.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (placeholder, name: string) => {
+    const value = values[name];
+    if (value === undefined) {
+      unresolved.add(name);
+      return placeholder;
+    }
+    return value;
+  });
+  if (unresolved.size > 0) {
     throw new Error(
-      `Unknown variable(s) in phpunitRunner.remote.reportTransferCommand: ${[...new Set(unresolved)].join(', ')}.`,
+      `Unknown variable(s) in phpunitRunner.remote.reportTransferCommand: ${[...unresolved].join(', ')}.`,
     );
   }
 
