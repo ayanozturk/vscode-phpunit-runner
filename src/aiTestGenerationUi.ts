@@ -7,6 +7,7 @@ import {
   buildTestGenerationPrompt,
   detectAiCliTools,
   extractGeneratedPhpTest,
+  formatDetectedAiTools,
   isTestDestination,
   type AiCliTool,
 } from './aiTestGeneration';
@@ -17,21 +18,8 @@ import { runProcess } from './processRunner';
 
 export async function showDetectedAiTools(output: vscode.OutputChannel): Promise<void> {
   const tools = await detectAiCliTools();
-  output.clear();
-  output.appendLine('Supported AI CLI tools on PATH');
-  if (tools.length === 0) {
-    output.appendLine('None found. Install Codex CLI, GitHub Copilot CLI, or Claude Code, then run this command again.');
-  } else {
-    for (const tool of tools) {
-      const version = tool.version
-        ? ` (${tool.version})`
-        : tool.versionProbeFailed
-          ? ' (version probe failed; check the CLI installation)'
-          : ' (version unavailable)';
-      output.appendLine(`${tool.label}${version}`);
-      output.appendLine(`  ${tool.executablePath}`);
-    }
-  }
+  output.appendLine('');
+  output.appendLine(formatDetectedAiTools(tools));
   output.show(true);
 }
 

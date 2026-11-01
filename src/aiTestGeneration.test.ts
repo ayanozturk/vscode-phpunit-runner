@@ -8,6 +8,7 @@ import {
   buildTestGenerationPrompt,
   detectAiCliTools,
   extractGeneratedPhpTest,
+  formatDetectedAiTools,
   isTestDestination,
   type AiCliTool,
 } from './aiTestGeneration';
@@ -69,6 +70,25 @@ describe('detectAiCliTools', () => {
     const bin = await makeTemporaryBin('phpunit ai cli unlisted ');
     await makeExecutable(bin, 'unlisted-tool');
     assert.deepEqual(await detectAiCliTools({ pathValue: bin }), []);
+  });
+});
+
+describe('formatDetectedAiTools', () => {
+  it('reports only supported tools with versions and executable paths', () => {
+    const result = formatDetectedAiTools([
+      { id: 'codex', label: 'Codex CLI', executablePath: '/tools/codex', version: 'codex 1.2.3' },
+      { id: 'copilot', label: 'GitHub Copilot CLI', executablePath: '/tools/copilot', versionProbeFailed: true },
+      { id: 'claude', label: 'Claude Code', executablePath: '/tools/claude' },
+    ]);
+
+    assert.match(result, /Codex CLI \(codex 1\.2\.3\)\n  \/tools\/codex/);
+    assert.match(result, /GitHub Copilot CLI \(version probe failed; check the CLI installation\)\n  \/tools\/copilot/);
+    assert.match(result, /Claude Code \(version unavailable\)\n  \/tools\/claude/);
+    assert.doesNotMatch(result, /Gemini|Aider/);
+  });
+
+  it('explains how to make a supported CLI available when none are found', () => {
+    assert.match(formatDetectedAiTools([]), /Install Codex CLI, GitHub Copilot CLI, or Claude Code/);
   });
 });
 

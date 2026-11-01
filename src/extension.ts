@@ -53,6 +53,7 @@ import {
   type TestCaseIndex,
 } from './resultIndex';
 import { readFailureSourceSnippets as readSourceFailureSnippets } from './sourceSnippets';
+import { makeFolderItemId, makeSuiteItemId, makeWorkspaceItemId } from './testItemIds';
 import {
   findAcrossScopes,
   findWithGlobs as findWorkspaceFilesWithGlobs,
@@ -2212,7 +2213,7 @@ function addFileItemToHierarchy(
 
   let parent = root;
   if (suiteName) {
-    const suiteId = makeSuiteItemId(workspaceFolder, suiteName);
+    const suiteId = makeSuiteItemId(workspaceFolder.uri.toString(), suiteName);
     let suiteItem = root.children.get(suiteId);
     if (!suiteItem) {
       suiteItem = controller.createTestItem(suiteId, suiteName, workspaceFolder.uri);
@@ -2230,7 +2231,7 @@ function addFileItemToHierarchy(
   const folderSegments: string[] = [];
   for (const segment of segments) {
     folderSegments.push(segment);
-    const folderId = makeFolderItemId(workspaceFolder, folderSegments, suiteName);
+    const folderId = makeFolderItemId(workspaceFolder.uri.toString(), folderSegments, suiteName);
     let folderItem = parent.children.get(folderId);
     if (!folderItem) {
       folderItem = controller.createTestItem(folderId, segment);
@@ -2279,26 +2280,13 @@ function removeFileItem(uri: vscode.Uri): void {
 }
 
 function getOrCreateWorkspaceItem(workspaceFolder: vscode.WorkspaceFolder): vscode.TestItem {
-  const rootId = makeWorkspaceItemId(workspaceFolder);
+  const rootId = makeWorkspaceItemId(workspaceFolder.uri.toString());
   let root = controller.items.get(rootId);
   if (!root) {
     root = controller.createTestItem(rootId, workspaceFolder.name, workspaceFolder.uri);
     controller.items.add(root);
   }
   return root;
-}
-
-function makeWorkspaceItemId(workspaceFolder: vscode.WorkspaceFolder): string {
-  return `workspace:${workspaceFolder.uri.toString()}`;
-}
-
-function makeSuiteItemId(workspaceFolder: vscode.WorkspaceFolder, suiteName: string): string {
-  return `suite:${workspaceFolder.uri.toString()}:${suiteName}`;
-}
-
-function makeFolderItemId(workspaceFolder: vscode.WorkspaceFolder, segments: string[], suiteName?: string): string {
-  const prefix = suiteName ? `${makeSuiteItemId(workspaceFolder, suiteName)}:` : `folder:${workspaceFolder.uri.toString()}:`;
-  return `${prefix}${segments.join('/')}`;
 }
 
 function collectTestItems(collection: vscode.TestItemCollection): vscode.TestItem[] {

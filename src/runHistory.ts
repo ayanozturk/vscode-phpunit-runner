@@ -101,7 +101,13 @@ export function getSlowestTests(
     return [];
   }
 
-  const latestByTest = new Map<string, { occurrence: SlowTestOccurrence; historyIndex: number; timestamp: number }>();
+  const latestByTest = new Map<string, {
+    testCase: RunHistoryCase;
+    run: RunHistoryRun;
+    durationMs: number;
+    historyIndex: number;
+    timestamp: number;
+  }>();
   history.forEach((run, historyIndex) => {
     const timestamp = Date.parse(run.completedAt);
     for (const testCase of run.cases) {
@@ -109,16 +115,6 @@ export function getSlowestTests(
         continue;
       }
 
-      const occurrence: SlowTestOccurrence = {
-        testId: testCase.testId,
-        label: testCase.label,
-        outcome: testCase.outcome,
-        durationMs: testCase.durationMs,
-        runId: run.id,
-        completedAt: run.completedAt,
-        ...(testCase.filePath ? { filePath: testCase.filePath } : {}),
-        ...(isValidLine(testCase.line) ? { line: testCase.line } : {}),
-      };
       const previous = latestByTest.get(testCase.testId);
       const previousHasTimestamp = previous !== undefined && Number.isFinite(previous.timestamp);
       const currentHasTimestamp = Number.isFinite(timestamp);
@@ -133,13 +129,25 @@ export function getSlowestTests(
       }
 
       if (isNewer) {
-        latestByTest.set(testCase.testId, { occurrence, historyIndex, timestamp });
+        // Retain the source record and construct the public occurrence only
+        // after scanning history. Most cases are older repeats, so this avoids
+        // allocating an output object for every stored result.
+        latestByTest.set(testCase.testId, { testCase, run, durationMs: testCase.durationMs, historyIndex, timestamp });
       }
     }
   });
 
   return [...latestByTest.values()]
-    .map(({ occurrence }) => occurrence)
+    .map(({ testCase, run, durationMs }): SlowTestOccurrence => ({
+      testId: testCase.testId,
+      label: testCase.label,
+      outcome: testCase.outcome,
+      durationMs,
+      runId: run.id,
+      completedAt: run.completedAt,
+      ...(testCase.filePath ? { filePath: testCase.filePath } : {}),
+      ...(isValidLine(testCase.line) ? { line: testCase.line } : {}),
+    }))
     .sort((left, right) => (
       right.durationMs - left.durationMs
       || right.completedAt.localeCompare(left.completedAt)

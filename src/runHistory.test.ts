@@ -111,6 +111,17 @@ describe('run history', () => {
     ]);
   });
 
+  it('uses valid completion timestamps when history records are out of order', () => {
+    const history = [
+      { ...run('newer', [{ testId: 'out-of-order', outcome: 'passed', durationMs: 300 }]), completedAt: '2026-01-03T00:00:00.000Z' },
+      { ...run('older', [{ testId: 'out-of-order', outcome: 'passed', durationMs: 100 }]), completedAt: '2026-01-02T00:00:00.000Z' },
+    ];
+
+    assert.deepEqual(getSlowestTests(history).map(({ runId, durationMs }) => ({ runId, durationMs })), [
+      { runId: 'newer', durationMs: 300 },
+    ]);
+  });
+
   it('uses history order when either completion timestamp is invalid', () => {
     const history = [
       { ...run('valid', [{ testId: 'invalid-time', outcome: 'passed', durationMs: 100 }]), completedAt: '2026-01-01T00:00:00.000Z' },

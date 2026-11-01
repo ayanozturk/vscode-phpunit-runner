@@ -4,6 +4,9 @@
 
 ### Improved
 
+- Preserve earlier PHPUnit Runner output when listing supported AI CLI tools.
+- Reduce transient allocations when selecting slow tests from large run histories, with regression coverage for out-of-order completion timestamps.
+- Extract stable test hierarchy IDs into a focused module and add parser groundwork for PHPUnit 13.4's test-to-code coverage report.
 - Detect Pest and ParaTest Composer shims across Windows `.bat`, `.cmd`, and `.exe` forms.
 - Read Clover file totals accurately when files contain multiple classes, with a class-metric fallback when file totals are absent.
 - Isolate and test Composer framework metadata parsing used by project diagnosis.

@@ -71,6 +71,28 @@ export async function detectAiCliTools(options: DetectAiCliOptions = {}): Promis
   return candidates.filter((tool): tool is AiCliTool => tool !== undefined);
 }
 
+/** Formats a detection result without discarding earlier runner output. */
+export function formatDetectedAiTools(tools: readonly AiCliTool[]): string {
+  if (tools.length === 0) {
+    return [
+      'Supported AI CLI tools on PATH',
+      'None found. Install Codex CLI, GitHub Copilot CLI, or Claude Code, then run this command again.',
+    ].join('\n');
+  }
+
+  return [
+    'Supported AI CLI tools on PATH',
+    ...tools.flatMap((tool) => {
+      const version = tool.version
+        ? ` (${tool.version})`
+        : tool.versionProbeFailed
+          ? ' (version probe failed; check the CLI installation)'
+          : ' (version unavailable)';
+      return [`${tool.label}${version}`, `  ${tool.executablePath}`];
+    }),
+  ].join('\n');
+}
+
 /** Builds a prompt from explicitly selected PHP context without interpreting its contents. */
 export function buildTestGenerationPrompt(request: AiGenerationRequest): string {
   const guidance = request.projectGuidance?.trim();
