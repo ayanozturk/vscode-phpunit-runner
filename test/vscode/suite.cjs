@@ -112,6 +112,7 @@ exports.run = async () => {
         '    case "$argument" in',
         '      *"generated values"*) testcaseName=\'generated values with data set "first"\';;',
         '      *"TestDoxTest::testRawMethodName"*) testcaseName=\'testRawMethodName\'; testcaseClass=\'TestDoxTest\'; testcaseFile=\'tests/TestDoxTest.php\';;',
+        "      *'DataProviderTest::testPairs with data set \"positive pair\"'*) testcaseName='testPairs with data set &quot;positive pair&quot;'; testcaseClass='DataProviderTest'; testcaseFile='tests/DataProviderTest.php';;",
         '      *"TestWithTest::testWithRows with data set #0"*) testcaseName=\'testWithRows with data set #0\'; testcaseClass=\'TestWithTest\'; testcaseFile=\'tests/TestWithTest.php\';;',
         "      *'TestWithTest::testWithRows with data set \"positive pair\"'*) testcaseName='testWithRows with data set &quot;positive pair&quot;'; testcaseClass='TestWithTest'; testcaseFile='tests/TestWithTest.php';;",
         "      *'TestWithJsonTest::testJsonRows with data set \"json named\"'*) testcaseName='testJsonRows with data set &quot;json named&quot;'; testcaseClass='TestWithJsonTest'; testcaseFile='tests/TestWithJsonTest.php';;",
@@ -199,6 +200,24 @@ class TestDoxTest
 }
 `, 'utf8');
 
+    await fs.writeFile(path.join(workspaceA.uri.fsPath, 'tests', 'DataProviderTest.php'), `<?php
+use PHPUnit\\Framework\\Attributes\\DataProvider;
+
+class DataProviderTest
+{
+    #[DataProvider('providePairs')]
+    public function testPairs(int $left, int $right): void {}
+
+    public static function providePairs(): array
+    {
+        return [
+            'positive pair' => [1, 2],
+            [3, 4],
+        ];
+    }
+}
+`, 'utf8');
+
     await api.refresh();
     const findMethod = (name) => flatten(api.controller.items).find((item) => item.label === name);
     assert.ok(findMethod('testAlpha'), 'workspace A test is discovered');
@@ -233,6 +252,13 @@ class TestDoxTest
       ['#0', 'json named'],
       'literal TestWithJson rows are selectable before running the test',
     );
+    const dataProviderParent = findMethod('testPairs');
+    assert.ok(dataProviderParent, 'PHPUnit DataProvider method is discovered');
+    assert.deepEqual(
+      [...dataProviderParent.children].map(([, item]) => item.label),
+      ['positive pair', '#0'],
+      'literal DataProvider rows are selectable before running the test',
+    );
     const pestEvents = [];
     const restorePestCapture = captureRunEvents(api.controller, pestEvents);
     const testRunProfile = api.profiles.find((profile) => profile.kind === vscode.TestRunProfileKind.Run);
@@ -252,6 +278,24 @@ class TestDoxTest
     assert.ok(
       testDoxEvents.some((event) => event.id === testDoxItem.id && event.state === 'passed'),
       `the TestDox label still runs and maps to its method: ${JSON.stringify(testDoxEvents)}`,
+    );
+
+    const dataProviderDataset = [...dataProviderParent.children].map(([, item]) => item).find((item) => item.label === 'positive pair');
+    assert.ok(dataProviderDataset);
+    const dataProviderLog = path.join(workspaceA.uri.fsPath, 'runner.log');
+    await fs.writeFile(dataProviderLog, '', 'utf8');
+    const dataProviderEvents = [];
+    const restoreDataProviderCapture = captureRunEvents(api.controller, dataProviderEvents);
+    await testRunProfile.runHandler(
+      new vscode.TestRunRequest([dataProviderDataset]),
+      new vscode.CancellationTokenSource().token,
+    );
+    restoreDataProviderCapture();
+    const dataProviderInvocation = await fs.readFile(dataProviderLog, 'utf8');
+    assert.ok(dataProviderInvocation.includes('--filter ~^DataProviderTest::testPairs with data set "positive pair"$~i'), dataProviderInvocation);
+    assert.ok(
+      dataProviderEvents.some((event) => event.id === dataProviderDataset.id && event.state === 'passed'),
+      `the selected provider row is run and mapped: ${JSON.stringify(dataProviderEvents)}`,
     );
 
     const outputFormatConfig = vscode.workspace.getConfiguration('phpunitRunner', workspaceA);

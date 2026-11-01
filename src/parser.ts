@@ -8,6 +8,7 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
   const namespaces = findNamespaces(code);
   const namespaceAliases = new Map<string, Set<string>>();
   const namespaceTestDoxAliases = new Map<string, Set<string>>();
+  const namespaceDataProviderAliases = new Map<string, Set<string>>();
   const namespaceTestWithAliases = new Map<string, Set<string>>();
   const namespaceTestWithJsonAliases = new Map<string, Set<string>>();
   const classPattern = /\b(?:(?:final|abstract|readonly)\s+)*class\s+([A-Za-z_][A-Za-z0-9_]*)[^\{]*\{/gi;
@@ -43,6 +44,15 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
       );
       namespaceTestDoxAliases.set(namespaceKey, testDoxAliases);
     }
+    let dataProviderAliases = namespaceDataProviderAliases.get(namespaceKey);
+    if (!dataProviderAliases) {
+      dataProviderAliases = findDataProviderAttributeAliases(
+        code,
+        namespace?.start ?? 0,
+        namespace?.end ?? code.length,
+      );
+      namespaceDataProviderAliases.set(namespaceKey, dataProviderAliases);
+    }
     let testWithAttributeAliases = namespaceTestWithAliases.get(namespaceKey);
     if (!testWithAttributeAliases) {
       testWithAttributeAliases = findTestWithAttributeAliases(
@@ -69,6 +79,7 @@ export function parseTestSource(filePath: string, source: string): ParsedTestFil
       testDoxAliases,
       testWithAttributeAliases,
       testWithJsonAttributeAliases,
+      dataProviderAliases,
     );
     if (methods.length === 0) {
       continue;
@@ -659,9 +670,11 @@ export function parseTestMethods(
   testDoxAttributeAliases: ReadonlySet<string> = new Set(),
   testWithAttributeAliases: ReadonlySet<string> = new Set(),
   testWithJsonAttributeAliases: ReadonlySet<string> = new Set(),
+  dataProviderAttributeAliases: ReadonlySet<string> = new Set(),
 ): TestMethod[] {
   const methods: TestMethod[] = [];
   const code = maskNonCode(body);
+  const dataProviders = parseStaticDataProviderMethods(body);
   const methodPattern = /(?:(?:abstract|final|static)\s+)*(?:public|protected)\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/gi;
 
   for (const match of code.matchAll(methodPattern)) {
@@ -688,7 +701,10 @@ export function parseTestMethods(
       groups: extractGroups(header),
     });
 
-    const datasets = testWithDatasetNames(header, testWithAttributeAliases, testWithJsonAttributeAliases);
+    const providerDatasets = testDataProviderDatasetNames(header, dataProviderAttributeAliases, dataProviders);
+    const datasets = providerDatasets.found
+      ? providerDatasets.datasets
+      : testWithDatasetNames(header, testWithAttributeAliases, testWithJsonAttributeAliases);
     for (const dataset of datasets ?? []) {
       methods.push({
         name: dataset.label,
@@ -741,6 +757,178 @@ function testDoxDisplayName(header: string, aliases: ReadonlySet<string>): strin
   }
 
   return displayName;
+}
+
+function parseStaticDataProviderMethods(body: string): Map<string, Array<string | undefined> | undefined> {
+  const code = maskNonCode(body);
+  const providers = new Map<string, Array<string | undefined> | undefined>();
+  const methodPattern = /((?:(?:public|protected|private|static|final)\s+)*)function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/gi;
+
+  for (const match of code.matchAll(methodPattern)) {
+    const modifiers = match[1];
+    if (!/\bpublic\b/i.test(modifiers) || !/\bstatic\b/i.test(modifiers)) {
+      continue;
+    }
+
+    const methodName = match[2].toLowerCase();
+    const methodStart = match.index ?? 0;
+    const openParen = methodStart + match[0].lastIndexOf('(');
+    const closeParen = findMatchingParenthesis(code, openParen);
+    const bodyOpen = closeParen >= 0 ? code.indexOf('{', closeParen + 1) : -1;
+    const bodyClose = bodyOpen >= 0 ? findMatchingBrace(code, bodyOpen) : -1;
+    const rows = bodyOpen >= 0 && bodyClose > bodyOpen
+      ? parseStaticDataProviderMethod(body, code, bodyOpen, bodyClose)
+      : undefined;
+
+    providers.set(methodName, providers.has(methodName) ? undefined : rows);
+  }
+
+  return providers;
+}
+
+function parseStaticDataProviderMethod(
+  source: string,
+  code: string,
+  bodyOpen: number,
+  bodyClose: number,
+): Array<string | undefined> | undefined {
+  let arrayOpen = bodyOpen + 1;
+  while (arrayOpen < bodyClose && /\s/.test(code[arrayOpen])) {
+    arrayOpen += 1;
+  }
+  const returnMatch = code.slice(arrayOpen, bodyClose).match(/^return\b\s*/i);
+  if (!returnMatch) {
+    return undefined;
+  }
+  arrayOpen += returnMatch[0].length;
+  while (arrayOpen < bodyClose && /\s/.test(code[arrayOpen])) {
+    arrayOpen += 1;
+  }
+  if (code[arrayOpen] !== '[') {
+    return undefined;
+  }
+
+  const arrayClose = findMatchingArrayBracket(code, arrayOpen);
+  if (arrayClose < 0 || code.slice(arrayClose + 1, bodyClose).trim() !== ';') {
+    return undefined;
+  }
+
+  const expression = source.slice(arrayOpen, arrayClose + 1);
+  if (!isStaticPhpLiteral(expression)) {
+    return undefined;
+  }
+
+  const entries = splitArrayEntries(expression, maskNonCode(expression), 0, expression.length - 1);
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const rows: Array<string | undefined> = [];
+  const namedKeys = new Set<string>();
+  for (const entry of entries) {
+    if (/^\s*\.\.\./.test(entry.code)) {
+      return undefined;
+    }
+
+    const arrowIndex = findTopLevelArrow(entry.code);
+    const keySource = arrowIndex >= 0 ? entry.source.slice(0, arrowIndex).trim() : undefined;
+    const rowSource = arrowIndex >= 0 ? entry.source.slice(arrowIndex + 2).trim() : entry.source.trim();
+    if (!rowSource.startsWith('[') || !isStaticPhpLiteral(rowSource)) {
+      return undefined;
+    }
+
+    let datasetName: string | undefined;
+    if (keySource !== undefined) {
+      const stringKey = readPhpStringLiteral(keySource);
+      if (stringKey !== undefined) {
+        if (!isNumericPhpArrayKey(stringKey)) {
+          datasetName = stringKey;
+        }
+      } else if (!/^[+-]?\d+$/.test(keySource)) {
+        return undefined;
+      }
+    }
+
+    if (datasetName !== undefined) {
+      if (!datasetName || namedKeys.has(datasetName)) {
+        return undefined;
+      }
+      namedKeys.add(datasetName);
+    }
+    rows.push(datasetName);
+  }
+
+  return rows;
+}
+
+function isNumericPhpArrayKey(key: string): boolean {
+  return /^(?:0|-?[1-9]\d*)$/.test(key);
+}
+
+function testDataProviderDatasetNames(
+  header: string,
+  aliases: ReadonlySet<string>,
+  providers: ReadonlyMap<string, Array<string | undefined> | undefined>,
+): { found: false } | { found: true; datasets?: Array<{ label: string; caseSuffix: string }> } {
+  const code = maskNonCode(header);
+  const attributePattern = /#\[\s*(\\?[A-Za-z_][A-Za-z0-9_\\]*)/g;
+  const datasets: Array<{ label: string; caseSuffix: string }> = [];
+  const namedKeys = new Set<string>();
+  let unnamedIndex = 0;
+  let found = false;
+
+  for (const match of code.matchAll(attributePattern)) {
+    const attributeName = match[1].replace(/^\\/, '').toLowerCase();
+    if (attributeName !== 'phpunit\\framework\\attributes\\dataprovider' && !aliases.has(attributeName)) {
+      continue;
+    }
+    found = true;
+
+    let argumentStart = (match.index ?? 0) + match[0].length;
+    while (argumentStart < code.length && /\s/.test(code[argumentStart])) {
+      argumentStart += 1;
+    }
+    if (code[argumentStart] !== '(') {
+      return { found: true };
+    }
+    const closeParen = findMatchingParenthesis(code, argumentStart);
+    if (closeParen < 0) {
+      return { found: true };
+    }
+    const attributeEnd = code.indexOf(']', closeParen + 1);
+    if (attributeEnd < 0 || code.slice(closeParen + 1, attributeEnd).trim()) {
+      return { found: true };
+    }
+
+    const args = splitPhpArguments(header.slice(argumentStart + 1, closeParen), code.slice(argumentStart + 1, closeParen));
+    const providerName = args[0] ? readPhpStringLiteral(args[0].trim()) : undefined;
+    if (
+      !providerName
+      || args.length > 2
+      || (args.length === 2 && !/^(?:true|false)$/i.test(args[1].trim()))
+    ) {
+      return { found: true };
+    }
+
+    const rows = providers.get(providerName.toLowerCase());
+    if (!rows?.length) {
+      return { found: true };
+    }
+    for (const name of rows) {
+      if (name === undefined) {
+        datasets.push({ label: `#${unnamedIndex}`, caseSuffix: `with data set #${unnamedIndex}` });
+        unnamedIndex += 1;
+        continue;
+      }
+      if (namedKeys.has(name)) {
+        return { found: true };
+      }
+      namedKeys.add(name);
+      datasets.push({ label: name, caseSuffix: `with data set "${sanitizePhpUnitDataSetName(name)}"` });
+    }
+  }
+
+  return found ? { found: true, datasets } : { found: false };
 }
 
 function testWithDatasetNames(
@@ -919,6 +1107,10 @@ function findTestAttributeAliases(code: string, namespaceStart: number, namespac
 
 function findTestDoxAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {
   return findAttributeAliases(code, namespaceStart, namespaceEnd, 'phpunit\\framework\\attributes\\testdox');
+}
+
+function findDataProviderAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {
+  return findAttributeAliases(code, namespaceStart, namespaceEnd, 'phpunit\\framework\\attributes\\dataprovider');
 }
 
 function findTestWithAttributeAliases(code: string, namespaceStart: number, namespaceEnd: number): Set<string> {

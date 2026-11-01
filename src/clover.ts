@@ -11,6 +11,19 @@ export type CloverFileCoverage = {
   coveredStatements: number;
 };
 
+const XML_ATTRIBUTES = `(?:"[^"]*"|'[^']*'|[^'">])*`;
+const FILE_PATTERN = new RegExp(`<file\\b(${XML_ATTRIBUTES})>([\\s\\S]*?)<\\/file>`, 'gi');
+const LINE_PATTERN = new RegExp(`<line\\b(${XML_ATTRIBUTES})\\s*\\/?>`, 'gi');
+const METRICS_PATTERN = new RegExp(`<metrics\\b(${XML_ATTRIBUTES})\\s*\\/?>`, 'i');
+const ATTRIBUTE_PATTERNS: Record<string, RegExp> = {
+  name: /\bname\s*=\s*(?:"([^"]*)"|'([^']*)')/i,
+  num: /\bnum\s*=\s*(?:"([^"]*)"|'([^']*)')/i,
+  count: /\bcount\s*=\s*(?:"([^"]*)"|'([^']*)')/i,
+  type: /\btype\s*=\s*(?:"([^"]*)"|'([^']*)')/i,
+  statements: /\bstatements\s*=\s*(?:"([^"]*)"|'([^']*)')/i,
+  coveredstatements: /\bcoveredstatements\s*=\s*(?:"([^"]*)"|'([^']*)')/i,
+};
+
 export function parseCloverXml(xml: string): CloverFileCoverage[] {
   if (!xml.trim()) {
     return [];
@@ -19,9 +32,8 @@ export function parseCloverXml(xml: string): CloverFileCoverage[] {
   // Do not interpret report-looking tags embedded in XML comments as coverage.
   const report = xml.replace(/<!--[\s\S]*?-->/g, '');
   const files: CloverFileCoverage[] = [];
-  const filePattern = /<file\b([^>]*)>([\s\S]*?)<\/file>/gi;
 
-  for (const match of report.matchAll(filePattern)) {
+  for (const match of report.matchAll(FILE_PATTERN)) {
     const pathValue = decodeXml(readAttribute(match[1], 'name')).trim();
     if (!pathValue) {
       continue;
@@ -29,8 +41,7 @@ export function parseCloverXml(xml: string): CloverFileCoverage[] {
 
     const body = match[2];
     const lines: CloverLine[] = [];
-    const linePattern = /<line\b([^>]*)\/?>/gi;
-    for (const lineMatch of body.matchAll(linePattern)) {
+    for (const lineMatch of body.matchAll(LINE_PATTERN)) {
       const num = Number(readAttribute(lineMatch[1], 'num'));
       const rawCount = readAttribute(lineMatch[1], 'count');
       const count = rawCount ? Number(rawCount) : 0;
@@ -42,7 +53,7 @@ export function parseCloverXml(xml: string): CloverFileCoverage[] {
       lines.push({ line: num, count: Number.isInteger(count) && count >= 0 ? count : 0, type });
     }
 
-    const metrics = body.match(/<metrics\b([^>]*)\/?>/i)?.[1] ?? '';
+    const metrics = body.match(METRICS_PATTERN)?.[1] ?? '';
     const statements = readNonnegativeIntegerAttribute(metrics, 'statements');
     const coveredStatements = readNonnegativeIntegerAttribute(metrics, 'coveredstatements');
     const stmtLines = lines.filter((item) => item.type === 'stmt');
@@ -67,10 +78,9 @@ function readNonnegativeIntegerAttribute(source: string, name: string): number |
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
-function readAttribute(source: string, name: string): string {
-  const match = source.match(new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, 'i'))
-    ?? source.match(new RegExp(`\\b${name}\\s*=\\s*'([^']*)'`, 'i'));
-  return match?.[1] ?? '';
+function readAttribute(source: string, name: keyof typeof ATTRIBUTE_PATTERNS): string {
+  const match = source.match(ATTRIBUTE_PATTERNS[name]);
+  return match?.[1] ?? match?.[2] ?? '';
 }
 
 function decodeXml(value: string): string {

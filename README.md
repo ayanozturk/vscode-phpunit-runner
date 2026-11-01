@@ -11,6 +11,7 @@ PHPUnit Runner discovers tests as you work and gives you fast access to the test
 - **Run the right amount.** Run a test at the cursor, the open file, failed tests, a group, or the whole suite. Rerun the last selection when you need another pass.
 - **Run or debug inline.** Use the Run Test and Debug Test actions shown above discovered PHPUnit methods and Pest cases.
 - **Work with data providers.** Literal PHPUnit `#[TestWith]` and `#[TestWithJson]` rows appear beneath each test before the first run; data-provider cases discovered from results can also be run individually.
+- **See provider cases before running.** Same-class PHPUnit `#[DataProvider]` methods that return literal arrays are expanded into selectable data sets in the Testing view.
 - **Run Pest data sets individually.** Literal arrays and inline generators with literal `yield` values passed to Pest’s `->with()` appear under their test, including chained data sets.
 - **Understand failures quickly.** See colored outcomes, assertion messages, source locations, and a short PHP code frame for readable local failure files in VS Code’s Test Results panel.
 - **Choose your test output.** Switch between detailed per-test results, a compact progress summary, or plain per-test lines.
@@ -30,6 +31,7 @@ The runner reads `phpunit.xml` or `phpunit.xml.dist` when available. You can als
 
 - Discovers PHPUnit methods marked with a `test*` name, `@test` docblock, or `#[Test]` attribute.
 - Shows static method-level PHPUnit `#[TestDox('...')]` descriptions in the Testing view while keeping the actual method name for execution.
+- Discovers same-class PHPUnit `#[DataProvider('providerMethod')]` rows when the provider returns a literal array, including named cases, before the first run.
 - Discovers literal PHPUnit `#[TestWith([...])]` and `#[TestWithJson('...')]` rows before the first run, showing numeric labels such as `#0` or custom names such as `positive pair` as selectable data-set tests.
 - Discovers function-style Pest `test()` and `it()` cases with literal string names.
 - Discovers statically declared Pest `dataset()` values, `->with([...])` data sets, and inline generator closures with literal `yield` values as selectable child tests, including chained data sets.

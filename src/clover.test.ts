@@ -48,6 +48,20 @@ describe('parseCloverXml', () => {
     assert.equal(files[0].path, "/proj/white space/Quote'Test.php");
   });
 
+  it('keeps literal greater-than characters inside quoted file paths', () => {
+    const files = parseCloverXml(`<coverage>
+      <file name='/proj/first>second.php'>
+        <line label='branch > operator' num='2' type='stmt' count='1'/>
+        <metrics note='covered > total' statements='0' coveredstatements='0'/>
+      </file>
+    </coverage>`);
+
+    assert.equal(files[0].path, '/proj/first>second.php');
+    assert.deepEqual(files[0].lines, [{ line: 2, count: 1, type: 'stmt' }]);
+    assert.equal(files[0].statements, 0);
+    assert.equal(files[0].coveredStatements, 0);
+  });
+
   it('uses only positive integer line numbers and nonnegative integer execution counts', () => {
     const files = parseCloverXml(`<coverage><file name="/proj/Numbers.php">
       <line num="1" type="stmt" count="1.5"/>

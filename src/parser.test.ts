@@ -160,6 +160,62 @@ class TestDoxTest {
     ]);
   });
 
+  it('discovers literal same-class PHPUnit DataProvider rows with named and numeric keys', () => {
+    const source = `<?php
+use PHPUnit\\Framework\\Attributes\\DataProvider as Provides;
+
+class StaticDataProviderTest {
+    #[Provides('providePairs')]
+    public function testPairs(int $left, int $right): void {}
+
+    public static function providePairs(): array {
+        return [
+            'positive pair' => [1, 2],
+            [3, 4],
+        ];
+    }
+}
+`;
+
+    const methods = parseTestSource('/tmp/StaticDataProviderTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map(({ name, phpunitDatasetName }) => ({ name, phpunitDatasetName })), [
+      { name: 'testPairs', phpunitDatasetName: undefined },
+      { name: 'positive pair', phpunitDatasetName: 'with data set "positive pair"' },
+      { name: '#0', phpunitDatasetName: 'with data set #0' },
+    ]);
+  });
+
+  it('does not guess PHPUnit DataProvider rows when the provider is dynamic, missing, or ambiguous', () => {
+    const source = `<?php
+use PHPUnit\\Framework\\Attributes\\DataProvider;
+
+class DynamicDataProviderTest {
+    #[DataProvider('provideValues')]
+    public function testDynamic(mixed $value): void {}
+
+    public static function provideValues(): array {
+        return self::loadValues();
+    }
+
+    #[DataProvider('missingProvider')]
+    public function testMissing(mixed $value): void {}
+
+    #[DataProvider('duplicateProvider')]
+    #[DataProvider('duplicateProvider')]
+    public function testAmbiguous(mixed $value): void {}
+
+    public static function duplicateProvider(): array { return ['same' => [1]]; }
+}
+`;
+
+    const methods = parseTestSource('/tmp/DynamicDataProviderTest.php', source).classes[0].methods;
+    assert.deepEqual(methods.map(({ name, phpunitDatasetName }) => ({ name, phpunitDatasetName })), [
+      { name: 'testDynamic', phpunitDatasetName: undefined },
+      { name: 'testMissing', phpunitDatasetName: undefined },
+      { name: 'testAmbiguous', phpunitDatasetName: undefined },
+    ]);
+  });
+
   it('discovers literal repeated PHPUnit TestWith attributes as selectable data sets', () => {
     const source = `<?php
 namespace App\\Tests;
