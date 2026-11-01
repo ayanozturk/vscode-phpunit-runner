@@ -32,6 +32,27 @@ describe('parallel runner detection', () => {
     }
   });
 
+  it('detects Composer shims with cmd and exe extensions', async () => {
+    const pestWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit parallel pest cmd '));
+    const paratestWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit parallel paratest exe '));
+    try {
+      await fs.mkdir(path.join(pestWorkspace, 'vendor', 'bin'), { recursive: true });
+      await fs.writeFile(path.join(pestWorkspace, 'composer.json'), '{"require-dev":{"pestphp/pest":"^5"}}');
+      await fs.writeFile(path.join(pestWorkspace, 'vendor', 'bin', 'pest.cmd'), '');
+      assert.equal(await detectParallelRunner({ workspacePath: pestWorkspace, configuredRunner: '' }), 'pest');
+
+      await fs.mkdir(path.join(paratestWorkspace, 'vendor', 'bin'), { recursive: true });
+      await fs.writeFile(path.join(paratestWorkspace, 'vendor', 'bin', 'paratest.exe'), '');
+      assert.equal(await detectParallelRunner({
+        workspacePath: paratestWorkspace,
+        configuredRunner: 'vendor/bin/phpunit',
+      }), 'paratest');
+    } finally {
+      await fs.rm(pestWorkspace, { recursive: true, force: true });
+      await fs.rm(paratestWorkspace, { recursive: true, force: true });
+    }
+  });
+
   it('detects ParaTest beside an explicitly configured PHPUnit runner', async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'phpunit parallel paratest '));
     try {

@@ -19,8 +19,10 @@ export type CloverFileCoverage = {
 
 const XML_ATTRIBUTES = `(?:"[^"]*"|'[^']*'|[^'">])*`;
 const FILE_PATTERN = new RegExp(`<file\\b(${XML_ATTRIBUTES})>([\\s\\S]*?)<\\/file>`, 'gi');
+const CLASS_PATTERN = new RegExp(`<class\\b${XML_ATTRIBUTES}>([\\s\\S]*?)<\\/class>`, 'gi');
 const LINE_PATTERN = new RegExp(`<line\\b(${XML_ATTRIBUTES})\\s*\\/?>`, 'gi');
 const METRICS_PATTERN = new RegExp(`<metrics\\b(${XML_ATTRIBUTES})\\s*\\/?>`, 'i');
+const ALL_METRICS_PATTERN = new RegExp(METRICS_PATTERN.source, 'gi');
 const ATTRIBUTE_PATTERNS: Record<string, RegExp> = {
   name: /\bname\s*=\s*(?:"([^"]*)"|'([^']*)')/i,
   num: /\bnum\s*=\s*(?:"([^"]*)"|'([^']*)')/i,
@@ -68,11 +70,11 @@ export function parseCloverXml(xml: string): CloverFileCoverage[] {
       }
     }
 
-    const metrics = body.match(METRICS_PATTERN)?.[1] ?? '';
-    const statements = readNonnegativeIntegerAttribute(metrics, 'statements');
-    const coveredStatements = readNonnegativeIntegerAttribute(metrics, 'coveredstatements');
-    const methods = readNonnegativeIntegerAttribute(metrics, 'methods');
-    const coveredMethods = readNonnegativeIntegerAttribute(metrics, 'coveredmethods');
+    const metricSources = getFileAndClassMetricSources(body);
+    const statements = readMetricWithClassFallback(metricSources, 'statements');
+    const coveredStatements = readMetricWithClassFallback(metricSources, 'coveredstatements');
+    const methods = readMetricWithClassFallback(metricSources, 'methods');
+    const coveredMethods = readMetricWithClassFallback(metricSources, 'coveredmethods');
     const stmtLines = lines.filter((item) => item.type === 'stmt');
 
     files.push({
@@ -87,6 +89,39 @@ export function parseCloverXml(xml: string): CloverFileCoverage[] {
   }
 
   return files;
+}
+
+function getFileAndClassMetricSources(body: string): { file?: string; classes: string[] } {
+  const classes = [...body.matchAll(CLASS_PATTERN)];
+  const classSources = classes.flatMap((classMatch) => (
+    [...classMatch[1].matchAll(ALL_METRICS_PATTERN)].map((metricsMatch) => metricsMatch[1])
+  ));
+  const fileBody = body.replace(CLASS_PATTERN, '');
+  return {
+    file: fileBody.match(METRICS_PATTERN)?.[1],
+    classes: classSources,
+  };
+}
+
+function readMetricWithClassFallback(
+  sources: { file?: string; classes: string[] },
+  attribute: 'statements' | 'coveredstatements' | 'methods' | 'coveredmethods',
+): number | undefined {
+  const fileMetric = sources.file ? readNonnegativeIntegerAttribute(sources.file, attribute) : undefined;
+  if (fileMetric !== undefined) {
+    return fileMetric;
+  }
+
+  let total = 0;
+  let hasMetric = false;
+  for (const classSource of sources.classes) {
+    const classMetric = readNonnegativeIntegerAttribute(classSource, attribute);
+    if (classMetric !== undefined) {
+      total += classMetric;
+      hasMetric = true;
+    }
+  }
+  return hasMetric ? total : undefined;
 }
 
 function getDeclarationName(attributes: string): string {

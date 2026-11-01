@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Improved
+
+- Detect Pest and ParaTest Composer shims across Windows `.bat`, `.cmd`, and `.exe` forms.
+- Read Clover file totals accurately when files contain multiple classes, with a class-metric fallback when file totals are absent.
+- Isolate and test Composer framework metadata parsing used by project diagnosis.
+
 ## 0.5.0 - 2026-11-01
 
 ### Added

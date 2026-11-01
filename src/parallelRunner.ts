@@ -31,21 +31,21 @@ export async function detectParallelRunner(options: {
   }
 
   const composerDeclaresPest = await declaresPest(options.workspacePath);
-  if (!configuredRunner && composerDeclaresPest && await exists(path.join(options.workspacePath, 'vendor', 'bin', 'pest'))) {
+  if (!configuredRunner && composerDeclaresPest && await runnerShimExists(options.workspacePath, 'pest')) {
     return 'pest';
   }
 
-  // On Windows Composer installs the Pest shim as `.bat`; keep the same
-  // Pest-first selection as the extensionless executable path above.
-  if (!configuredRunner && composerDeclaresPest && await exists(path.join(options.workspacePath, 'vendor', 'bin', 'pest.bat'))) {
-    return 'pest';
-  }
-
-  if (await exists(path.join(options.workspacePath, 'vendor', 'bin', 'paratest'))
-    || await exists(path.join(options.workspacePath, 'vendor', 'bin', 'paratest.bat'))) {
+  if (await runnerShimExists(options.workspacePath, 'paratest')) {
     return 'paratest';
   }
   return undefined;
+}
+
+async function runnerShimExists(workspacePath: string, runner: 'pest' | 'paratest'): Promise<boolean> {
+  const binDirectory = path.join(workspacePath, 'vendor', 'bin');
+  const candidates = ['', '.bat', '.cmd', '.exe'].map((suffix) => path.join(binDirectory, `${runner}${suffix}`));
+  const results = await Promise.all(candidates.map(exists));
+  return results.some(Boolean);
 }
 
 export function parallelRunnerArguments(runner: ParallelRunner, processes: number): string[] {

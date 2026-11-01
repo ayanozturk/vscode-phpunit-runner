@@ -46,6 +46,33 @@ describe('parseCloverXml', () => {
     assert.deepEqual(file.lines[0], { line: 10, count: 4, type: 'method', declarationName: 'find' });
   });
 
+  it('prefers file totals over nested class metrics in multi-class files', () => {
+    const [file] = parseCloverXml(`<coverage><file name="/proj/src/SeveralClasses.php">
+      <class name="First"><metrics statements="2" coveredstatements="1" methods="1" coveredmethods="1"/></class>
+      <class name="Second"><metrics statements="3" coveredstatements="2" methods="2" coveredmethods="1"/></class>
+      <line num="1" type="stmt" count="1"/>
+      <metrics statements="8" coveredstatements="6" methods="5" coveredmethods="4"/>
+    </file></coverage>`);
+
+    assert.equal(file.statements, 8);
+    assert.equal(file.coveredStatements, 6);
+    assert.equal(file.methods, 5);
+    assert.equal(file.coveredMethods, 4);
+  });
+
+  it('sums class metrics when the Clover file has no file-level totals', () => {
+    const [file] = parseCloverXml(`<coverage><file name="/proj/src/SeveralClasses.php">
+      <class name="First"><metrics statements="2" coveredstatements="1" methods="1" coveredmethods="1"/></class>
+      <class name="Second"><metrics statements="3" coveredstatements="2" methods="2" coveredmethods="1"/></class>
+      <line num="1" type="stmt" count="1"/>
+    </file></coverage>`);
+
+    assert.equal(file.statements, 5);
+    assert.equal(file.coveredStatements, 3);
+    assert.equal(file.methods, 3);
+    assert.equal(file.coveredMethods, 2);
+  });
+
   it('omits declarations without a supported name instead of guessing', () => {
     const [file] = parseCloverXml(`<coverage><file name="/proj/src/Anonymous.php">
       <line num="8" type="method" count="2" signature="not a callable"/>

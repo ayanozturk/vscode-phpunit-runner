@@ -22,7 +22,10 @@ Research confirms that machine-readable test listing and result formats are avai
 - **Benchmark quality:** Result-index lookup inputs are prepared outside timed loops, and benchmark runs assert expected match counts so missing results cannot appear as faster timings. A measured optimization attempt showed no meaningful result-index speedup and was reverted.
 - **Performance:** Attribute-alias scanning now limits indentation whitespace to one line instead of rescanning across masked heredocs. On a 5,000-line heredoc fixture this dropped from 11.1 seconds to 16.9 ms; the normal 1k/10k discovery benchmark remained effectively flat. The large-heredoc scenario is now part of that benchmark.
 - **Measured:** On this local machine, trigram fallback across 10k JUnit cases took about 69 ms to index and 351 ms for 10k lookups; the fallback is now represented in the benchmark for future comparisons.
-- **Still planned:** Further module boundaries around invocation and result mapping, plus coverage attribution for multi-test runs if the report format can support it safely.
+- **Delivered:** Parallel runner detection recognizes Composer's extensionless, `.bat`, `.cmd`, and `.exe` shims while preserving Pest-first selection when both supported runners are present. Clover parsing now prefers file-level metrics over nested class metrics and sums class metrics as a fallback for multi-class files.
+- **Delivered:** Composer framework metadata parsing used by project diagnosis now lives in a focused, independently tested module.
+- **Coverage limitation:** Clover reports aggregate line and declaration hit counts without test identities, so those counts cannot be attributed reliably to individual tests in multi-test runs. Keep that attribution out of scope unless a supported report format provides per-test coverage data.
+- **Still planned:** Further module boundaries around invocation and result mapping.
 
 ## Roadmap
 
